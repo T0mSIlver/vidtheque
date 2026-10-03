@@ -102,7 +102,7 @@ export type Back = { href: string; label: string };
 
 /**
  * A refusal as a page: the message as the title, the code as a state, and a
- * panel with somewhere to go — the section's own list and the overview.
+ * panel with somewhere to go — the section's own list and Health.
  */
 export function Refusal({
   code,
@@ -146,7 +146,7 @@ export function Refusal({
             </DashLink>
           )}
           <DashLink className={controls.ghostlink} href={ROOT}>
-            Corpus overview
+            Health
           </DashLink>
           {onRetry ? (
             <button className={controls.ghostlink} type="button" onClick={onRetry}>
@@ -225,7 +225,7 @@ export function Absent({
         detail={children}
         next={
           <>
-            <DashLink href={ROOT}>The overview</DashLink> and{" "}
+            <DashLink href={`${ROOT}/corpus`}>The corpus</DashLink> and{" "}
             <DashLink href={`${ROOT}/videos`}>the videos this index holds</DashLink> are what it
             does answer for.
           </>

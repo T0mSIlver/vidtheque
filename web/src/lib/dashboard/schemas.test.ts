@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { OWNER_OVERVIEW } from "@/test/dashboard/fixtures";
-import { Overview, Session } from "./schemas";
+import { OWNER_LIBRARY } from "@/test/dashboard/library-fixtures";
+import { Library, Session } from "./schemas";
 
 // `static/dashboard.js` had one function guarding every URL it put in the DOM:
 //
@@ -29,8 +29,8 @@ const SESSION = {
 };
 
 const withThumb = (thumb: string | null) => ({
-  ...OWNER_OVERVIEW,
-  recent: [{ ...OWNER_OVERVIEW.recent[0], thumb }],
+  ...OWNER_LIBRARY,
+  videos: [{ ...OWNER_LIBRARY.videos[0], thumb }],
 });
 
 describe("the URL fields of the dashboard payloads", () => {
@@ -41,7 +41,7 @@ describe("the URL fields of the dashboard payloads", () => {
       "http://localhost:3000/frames/kCc8FmEb1nY-000000.jpg",
       null,
     ]) {
-      expect(Overview.safeParse(withThumb(thumb)).success, String(thumb)).toBe(true);
+      expect(Library.safeParse(withThumb(thumb)).success, String(thumb)).toBe(true);
     }
   });
 
@@ -55,7 +55,7 @@ describe("the URL fields of the dashboard payloads", () => {
       "vbscript:msgbox(1)",
       "file:///etc/passwd",
     ]) {
-      expect(Overview.safeParse(withThumb(thumb)).success, thumb).toBe(false);
+      expect(Library.safeParse(withThumb(thumb)).success, thumb).toBe(false);
     }
   });
 

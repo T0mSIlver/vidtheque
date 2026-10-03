@@ -359,7 +359,7 @@ describe("one job's page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("E_UNKNOWN_JOB")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Every job this index has run" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Health" })).toHaveLength(2);
     // Capitalised: Python writes the fragment to trail a colon, and standing
     // on its own under a heading it wants a capital.
     expect(screen.getByText(/^The jobs table lists/)).toBeInTheDocument();

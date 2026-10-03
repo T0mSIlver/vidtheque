@@ -43,7 +43,7 @@ describe("a path that is not a page here", () => {
       "href",
       "/dashboard/videos",
     );
-    expect(screen.getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Health" })).toHaveLength(2);
     expect(screen.getByText("The rail lists every page this surface has.")).toBeInTheDocument();
   });
 });

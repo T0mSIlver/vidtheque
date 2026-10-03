@@ -19,8 +19,8 @@ import { SessionScope } from "./session";
 type Item = { href: string; label: string; section: Section; hook?: string };
 
 const SECTIONS: Item[] = [
-  { href: ROOT, label: "Overview", section: "corpus" },
-  { href: `${ROOT}/ledger`, label: "Ledger", section: "ledger" },
+  { href: ROOT, label: "Health", section: "health" },
+  { href: `${ROOT}/corpus`, label: "Corpus", section: "corpus" },
   { href: `${ROOT}/search`, label: "Search", section: "search" },
   { href: `${ROOT}/videos`, label: "Videos", section: "videos" },
   { href: `${ROOT}/jobs`, label: "Jobs", section: "jobs" },

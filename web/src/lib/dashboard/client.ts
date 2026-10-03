@@ -4,6 +4,7 @@
 import type { ZodType } from "zod";
 import {
   CancelOutcome,
+  Corpus,
   CuePage,
   FollowCreated,
   FollowDeleted,
@@ -11,12 +12,11 @@ import {
   Following,
   FollowQueued,
   FollowWritten,
+  Health,
   IndexOutcome,
   JobDetail,
   Jobs,
-  Ledger,
   Library,
-  Overview,
   PartialRefusal,
   ReindexOutcome,
   RetryOutcome,
@@ -177,11 +177,11 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
   // Queries are the page's URL filtered to the parameters each read takes and
   // sent as typed: every clamp is Python's.
   return {
-    overview(signal?: AbortSignal) {
-      return get(`${ROOT}/api/overview`, Overview, { signal });
+    health(signal?: AbortSignal) {
+      return get(`${ROOT}/api/health`, Health, { signal });
     },
-    ledger(signal?: AbortSignal) {
-      return get(`${ROOT}/api/ledger`, Ledger, { signal });
+    corpus(signal?: AbortSignal) {
+      return get(`${ROOT}/api/corpus`, Corpus, { signal });
     },
     library(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/library${suffix(query)}`, Library, { signal });

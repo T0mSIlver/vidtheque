@@ -53,53 +53,15 @@ const READINESS = {
   checked_at: 1788626080,
 };
 
-export const OWNER_OVERVIEW = {
+export const OWNER_HEALTH = {
   counted_at: 1788626080,
   redacted: false,
   writes_allowed: true,
-  corpus: {
-    videos: 4,
-    queryable_videos: 3,
-    videos_ready: 3,
-    videos_by_index_state: { indexing: 1, ready: 3 },
-    data_status: "indexing",
-    cues: 10,
-    keyframes: 3,
-    ocr_lines: 5,
-    duration_s: 17200.0,
-    published: { oldest: 1673913600, newest: 1740000000 },
-    last_indexed: 1750000000,
-  },
-  channels: [
-    { channel: "3Blue1Brown", videos: 1, seconds: 1200.0 },
-    { channel: "Andrej Karpathy", videos: 1, seconds: 7000.0 },
-    { channel: "GPU MODE", videos: 1, seconds: 3600.0 },
-  ],
-  tags: [
-    { tag: "topic:attention", videos: 3 },
-    { tag: "series:gpu-mode", videos: 1 },
-  ],
-  gaps: { transcript_no_ocr: 1, indexing: 1, failed: 0, failed_cap: 5, failed_capped: false },
+  data_status: "indexing",
+  last_indexed: 1750000000,
+  gaps: { transcript_no_ocr: 1, indexing: 1, has_failed: false },
   embed_backlog: { text: 0, frame: 0 },
-  jobs: { active: 2, running: 1, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
-  recent: [
-    {
-      video_id: "kCc8FmEb1nY",
-      title: "Let's build GPT: from scratch",
-      channel: "Andrej Karpathy",
-      duration_s: 7000.0,
-      indexed_at: 1750000000,
-      thumb: "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70&exp=1788712480&sig=z2RXj",
-    },
-    {
-      video_id: "eMlx5fFNoYc",
-      title: "Visualizing transformers",
-      channel: "3Blue1Brown",
-      duration_s: 1200.0,
-      indexed_at: 1750000000,
-      thumb: null,
-    },
-  ],
+  jobs: { active: 2, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
   readiness: READINESS,
   declared_models: [
     { label: "transcription", key: "stt.model", value: "large-v3", dim: "" },
@@ -110,25 +72,18 @@ export const OWNER_OVERVIEW = {
       dim: "2048",
     },
   ],
-  storage: { keyframe_bytes: 4306, database_bytes: 4653056 },
 };
 
-export const DEMO_OVERVIEW = {
-  ...OWNER_OVERVIEW,
+export const DEMO_HEALTH = {
+  ...OWNER_HEALTH,
   redacted: true,
-  recent: OWNER_OVERVIEW.recent.map((video) => ({
-    ...video,
-    thumb: video.thumb ? "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70" : null,
-  })),
   readiness: { ...READINESS, worker: null },
   declared_models: null,
-  storage: null,
 };
 
-export const OWNER_LEDGER = {
+export const OWNER_CORPUS = {
   counted_at: 1788626080,
   redacted: false,
-  writes_allowed: true,
   corpus: {
     videos: 4,
     duration_s: 17200.0,
@@ -136,23 +91,31 @@ export const OWNER_LEDGER = {
     keyframes: 3,
     ocr_lines: 5,
     chunks: 3,
-    tags: 2,
-    channels: 4,
     published: { oldest: 1673913600, newest: 1740000000 },
-    last_indexed: 1750000000,
   },
   videos_by_state: { ready: 3, pending: 0, indexing: 1, failed: 0, stale: 0 },
+  channels: {
+    rows: [
+      { channel: "3Blue1Brown", videos: 1, seconds: 1200.0 },
+      { channel: "Andrej Karpathy", videos: 1, seconds: 7000.0 },
+      { channel: "GPU MODE", videos: 1, seconds: 3600.0 },
+    ],
+    has_more: false,
+  },
+  tags: {
+    rows: [
+      { tag: "topic:attention", videos: 3 },
+      { tag: "series:gpu-mode", videos: 1 },
+    ],
+    has_more: false,
+  },
   jobs_by_state: { queued: 1, running: 1, done: 0, failed: 1, cancelled: 0 },
   queue: { active: 2, running: 1, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
-  embed_backlog: { text: 0, frame: 0 },
-  gaps: { transcript_no_ocr: 1 },
-  readiness: READINESS,
   storage: { keyframe_bytes: 4306, database_bytes: 4653056 },
 };
 
-export const DEMO_LEDGER = {
-  ...OWNER_LEDGER,
+export const DEMO_CORPUS = {
+  ...OWNER_CORPUS,
   redacted: true,
-  readiness: { ...READINESS, worker: null },
   storage: null,
 };

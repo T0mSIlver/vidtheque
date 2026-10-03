@@ -43,7 +43,7 @@ describe("proxy", () => {
     vi.stubEnv("NODE_ENV", "production");
     for (const path of [
       "/dashboard",
-      "/dashboard/ledger",
+      "/dashboard/corpus",
       "/dashboard/videos/kCc8FmEb1nY",
       "/dashboard/login",
     ]) {
@@ -135,7 +135,7 @@ describe("proxy", () => {
   it("covers every dashboard document, and neither of Python's two", () => {
     for (const path of [
       "/dashboard",
-      "/dashboard/ledger",
+      "/dashboard/corpus",
       "/dashboard/search",
       "/dashboard/videos",
       "/dashboard/videos/kCc8FmEb1nY",
@@ -153,7 +153,7 @@ describe("proxy", () => {
     // POST to one of these never reaches Next (§1d).
     for (const path of [
       "/dashboard/no-such-page",
-      "/dashboard/ledger/anything",
+      "/dashboard/corpus/anything",
       "/dashboard/login/anything",
       "/dashboard/videos/kCc8FmEb1nY/reindex",
       "/dashboard/videos/kCc8FmEb1nY/tags",
@@ -172,7 +172,7 @@ describe("proxy", () => {
     for (const path of [
       "/dashboard/api",
       "/dashboard/api/session",
-      "/dashboard/api/overview",
+      "/dashboard/api/health",
       "/dashboard/api/library",
       "/dashboard/api/library/kCc8FmEb1nY",
       "/dashboard/api/videos/kCc8FmEb1nY/cues",
@@ -190,7 +190,7 @@ describe("proxy", () => {
   it("agrees with the list every link into this surface asks", () => {
     for (const path of [
       "/dashboard",
-      "/dashboard/ledger",
+      "/dashboard/corpus",
       "/dashboard/videos",
       "/dashboard/videos/kCc8FmEb1nY",
       "/dashboard/jobs",

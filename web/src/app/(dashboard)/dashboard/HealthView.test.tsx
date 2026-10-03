@@ -2,131 +2,39 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { mountDashboard, type Answer } from "@/test/dashboard/harness";
-import {
-  DEMO_OVERVIEW,
-  DEMO_SESSION,
-  OWNER_OVERVIEW,
-  OWNER_SESSION,
-} from "@/test/dashboard/fixtures";
+import { DEMO_HEALTH, DEMO_SESSION, OWNER_HEALTH, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import { firstPaint } from "@/test/dashboard/retry";
-import { OverviewView } from "./OverviewView";
+import { HealthView } from "./HealthView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
 // Two payloads, not one: every state that differs is asserted for the owner's
-// instance and for the projection, which drops the box and keeps the corpus.
+// instance and for the projection, which drops the box.
 
-function mount(overview: Answer, session: unknown = OWNER_SESSION, path = "/dashboard") {
-  return mountDashboard(<OverviewView />, {
+function mount(health: Answer, session: unknown = OWNER_SESSION, path = "/dashboard") {
+  return mountDashboard(<HealthView />, {
     path,
     session,
-    routes: { "/dashboard/api/overview": overview },
+    routes: { "/dashboard/api/health": health },
   });
 }
 
-describe("the corpus overview", () => {
+describe("the health page", () => {
   describe("on the owner's instance", () => {
     it("holds the head and the page's space while the read is out", async () => {
-      await mount({ body: OWNER_OVERVIEW });
+      await mount({ body: OWNER_HEALTH });
 
-      expect(screen.getByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Health" })).toBeInTheDocument();
       expect(screen.getByText("reading…")).toBeInTheDocument();
-      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
+      expect(await screen.findByText("The queue")).toBeInTheDocument();
       expect(screen.queryByText("reading…")).not.toBeInTheDocument();
     });
 
-    it("counts the corpus, in the band", async () => {
-      await mount({ body: OWNER_OVERVIEW });
-
-      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-      // Five figures, each with its label; the hours are rounded here and not
-      // on the wire.
-      expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
-      expect(screen.getByText("runtime").closest("div")).toHaveTextContent("4.8h");
-      expect(screen.getByText("transcript cues").closest("div")).toHaveTextContent("10");
-      expect(screen.getByText("keyframes").closest("div")).toHaveTextContent("3");
-      expect(screen.getByText("on-screen lines").closest("div")).toHaveTextContent("5");
-      // The note is several text nodes, because "not ready" is a link.
-      expect(screen.getByText("videos").closest("div")).toHaveTextContent("3 ready · 1 not ready");
-      expect(screen.getByText("2023-01-17")).toBeInTheDocument();
-    });
-
-    // `videos_ready` is ready *only*; `queryable_videos` is ready plus stale.
-    // A page reading the second calls a stale video ready and undercounts "not
-    // ready" by the same one, which is the reading an operator came here to
-    // get: a stale video is precisely one that needs looking at.
-    it("counts a stale video as not ready, the way the rollup does", async () => {
-      await mount({
-        body: {
-          ...OWNER_OVERVIEW,
-          corpus: {
-            ...OWNER_OVERVIEW.corpus,
-            videos: 5,
-            videos_ready: 3,
-            // Ready plus stale — the number the band must not print.
-            queryable_videos: 4,
-            videos_by_index_state: { indexing: 1, ready: 3, stale: 1 },
-          },
-        },
-      });
-
-      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-      expect(screen.getByText("videos").closest("div")).toHaveTextContent("3 ready · 2 not ready");
-    });
-
-    // `queries.gaps` probes with a `LIMIT`, so at the ceiling the count means
-    // "this many or more". The payload carries the cap and the reading of it,
-    // and a `5` written into the page is how a cap gets reported as an exact
-    // count the day the `LIMIT` changes.
-    it("says a capped gap is a ceiling and not a count", async () => {
-      await mount({
-        body: {
-          ...OWNER_OVERVIEW,
-          gaps: { ...OWNER_OVERVIEW.gaps, failed: 5, failed_cap: 5, failed_capped: true },
-        },
-      });
-
-      expect(await screen.findByRole("link", { name: "5+" })).toHaveAttribute(
-        "href",
-        "/dashboard/videos?index_state=failed",
-      );
-    });
-
-    it("prints an uncapped gap as the number it is", async () => {
-      await mount({
-        body: {
-          ...OWNER_OVERVIEW,
-          gaps: { ...OWNER_OVERVIEW.gaps, failed: 3, failed_cap: 5, failed_capped: false },
-        },
-      });
-
-      expect(await screen.findByRole("link", { name: "3" })).toBeInTheDocument();
-      expect(screen.queryByRole("link", { name: "3+" })).not.toBeInTheDocument();
-    });
-
-    // An empty corpus has no oldest video and no newest one. `published —–—`
-    // is a line whose whole content is the absence of one, so there is no
-    // line — the same absent state the ledger renders, because it is the same
-    // note printed from the same place.
-    it("leaves the published span out on a corpus that has none", async () => {
-      await mount({
-        body: {
-          ...OWNER_OVERVIEW,
-          corpus: { ...OWNER_OVERVIEW.corpus, published: { oldest: null, newest: null } },
-        },
-      });
-
-      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-      expect(screen.getByText("videos").closest("div")).not.toHaveTextContent("published");
-      expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
-    });
-
     it("prints corpus-summary's own state word and the last index clock", async () => {
-      await mount({ body: OWNER_OVERVIEW });
+      await mount({ body: OWNER_HEALTH });
 
       expect(await screen.findByText("indexing")).toBeInTheDocument();
-      // The head's clock, and the two arrivals' — one formatter, one reading.
-      expect(screen.getAllByText("2025-06-15 15:06").length).toBeGreaterThan(0);
+      expect(screen.getByText("2025-06-15 15:06")).toBeInTheDocument();
       // The health check is the exception, and it is not a date in the corpus:
       // it is the UTC *second* at which this observation completed (§15), so
       // it prints whole rather than to the minute.
@@ -136,8 +44,8 @@ describe("the corpus overview", () => {
       );
     });
 
-    it("shows the queue, the gaps and the arrivals as sentences with numbers in them", async () => {
-      await mount({ body: OWNER_OVERVIEW });
+    it("shows the queue and the gaps as sentences with numbers in them", async () => {
+      await mount({ body: OWNER_HEALTH });
 
       expect(await screen.findByText(/job\(s\) queued or running/)).toBeInTheDocument();
       expect(screen.getByText("1 of them waiting on a backoff")).toBeInTheDocument();
@@ -145,34 +53,38 @@ describe("the corpus overview", () => {
       expect(
         screen.getByText(/video\(s\) have a transcript but no on-screen text/),
       ).toBeInTheDocument();
-
-      expect(screen.getByText("Let's build GPT: from scratch")).toBeInTheDocument();
-      // 7000 s as a clock, seconds and all — the runtime the detail page this
-      // row links to prints, and the one the videos table prints beside it.
-      expect(screen.getByText("1:56:40")).toBeInTheDocument();
-      // A video with no keyframe keeps the row's height and says so.
-      expect(screen.getByText("no frame")).toBeInTheDocument();
+      expect(screen.getByText(/waiting to embed their transcript/)).toBeInTheDocument();
+      // What is in the corpus is Corpus's page (§24): no band, no lists.
+      expect(screen.queryByText("transcript cues")).not.toBeInTheDocument();
+      expect(screen.queryByText("Recently indexed")).not.toBeInTheDocument();
+      expect(screen.queryByText("Storage")).not.toBeInTheDocument();
     });
 
-    // A video id is a key in the store, not a piece of URL: one carrying a `?`
-    // or a `#` unencoded would open the detail page for a different video, or
-    // for none — with the rest of the id read as a query string.
-    it("encodes the id of the video each arrival links to", async () => {
-      await mount({
-        body: {
-          ...OWNER_OVERVIEW,
-          recent: [{ ...OWNER_OVERVIEW.recent[0], video_id: "a?b#c", title: "An odd id" }],
-        },
-      });
+    // A failed video is counted on Corpus; Health says there is one and links
+    // there, so the number has one home.
+    it("points at Corpus for failed videos instead of counting them", async () => {
+      await mount({ body: { ...OWNER_HEALTH, gaps: { ...OWNER_HEALTH.gaps, has_failed: true } } });
 
-      expect(await screen.findByRole("link", { name: "An odd id" })).toHaveAttribute(
+      expect(await screen.findByRole("link", { name: "Corpus counts them" })).toHaveAttribute(
         "href",
-        "/dashboard/videos/a%3Fb%23c",
+        "/dashboard/corpus#states",
       );
     });
 
-    it("shows the box: the models it was built with, the worker, and the bytes", async () => {
-      await mount({ body: OWNER_OVERVIEW });
+    it("drops the gaps panel when nothing is missing", async () => {
+      await mount({
+        body: {
+          ...OWNER_HEALTH,
+          gaps: { transcript_no_ocr: 0, indexing: 0, has_failed: false },
+        },
+      });
+
+      expect(await screen.findByText("The queue")).toBeInTheDocument();
+      expect(screen.queryByText("What is missing")).not.toBeInTheDocument();
+    });
+
+    it("shows the box: the models it was built with and the worker", async () => {
+      await mount({ body: OWNER_HEALTH });
 
       expect(await screen.findByText("large-v3")).toBeInTheDocument();
       expect(screen.getByText("2048")).toBeInTheDocument();
@@ -180,19 +92,16 @@ describe("the corpus overview", () => {
       // footnote rather than the reading.
       expect(screen.getByText("unavailable")).toBeInTheDocument();
       expect(screen.getByText("The worker did not answer its status check.")).toBeInTheDocument();
-      expect(screen.getByText("Storage")).toBeInTheDocument();
-      expect(screen.getByText("4.3 kB")).toBeInTheDocument();
-      expect(screen.getByText("4.7 MB")).toBeInTheDocument();
       // The fifth state is the deployment's, and it comes from this payload.
       expect(screen.getByText("allowed")).toBeInTheDocument();
     });
 
-    // The flag is on the overview because the two things drawn from it are on
+    // The flag is on this payload because the two things drawn from it are on
     // this page (§19). A session saying otherwise does not get a vote: it is
     // read for other reasons and lands whenever it lands, and a banner that
     // appears a moment after the page is a banner the reader watches arrive.
     it("draws the write state and the drift banner from the payload, not the session", async () => {
-      await mount({ body: { ...OWNER_OVERVIEW, writes_allowed: false } }, OWNER_SESSION);
+      await mount({ body: { ...OWNER_HEALTH, writes_allowed: false } }, OWNER_SESSION);
 
       expect(
         await screen.findByRole("heading", { name: "The corpus and the worker disagree" }),
@@ -210,18 +119,13 @@ describe("the corpus overview", () => {
   });
 
   describe("in the public projection", () => {
-    it("keeps the corpus and drops the box, with no nulls on screen", async () => {
-      await mount({ body: DEMO_OVERVIEW }, DEMO_SESSION);
+    it("keeps the queue and drops the box, with no nulls on screen", async () => {
+      await mount({ body: DEMO_HEALTH }, DEMO_SESSION);
 
-      // The corpus is all still there.
-      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-      expect(screen.getByText("videos").closest("div")).toHaveTextContent("3 ready");
-      expect(screen.getByText("Let's build GPT: from scratch")).toBeInTheDocument();
-      expect(screen.getByText("topic:attention")).toBeInTheDocument();
+      expect(await screen.findByText(/job\(s\) queued or running/)).toBeInTheDocument();
 
-      // The box is absent rather than blank: no storage panel, no model
-      // tables, no worker state, no indexing state.
-      expect(screen.queryByText("Storage")).not.toBeInTheDocument();
+      // The box is absent rather than blank: no model tables, no worker
+      // state, no indexing state.
       expect(screen.queryByText("large-v3")).not.toBeInTheDocument();
       expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
       expect(screen.queryByText("allowed")).not.toBeInTheDocument();
@@ -238,9 +142,9 @@ describe("the corpus overview", () => {
       await mount(
         {
           body: {
-            ...DEMO_OVERVIEW,
+            ...DEMO_HEALTH,
             readiness: {
-              ...DEMO_OVERVIEW.readiness,
+              ...DEMO_HEALTH.readiness,
               vectors: { enabled: false, reason: null },
             },
           },
@@ -277,7 +181,7 @@ describe("the corpus overview", () => {
           name: "This dashboard needs the owner's password, token or session.",
         }),
       ).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: "Corpus overview" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Health" })).not.toBeInTheDocument();
       expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
       // The message and its next: line are the API's own — policy text stays
       // Python's. Only the first letter is this side's call.
@@ -312,12 +216,12 @@ describe("the corpus overview", () => {
         "href",
         "/dashboard/videos",
       );
-      expect(screen.getByRole("link", { name: "Corpus overview" })).toHaveAttribute(
-        "href",
-        "/dashboard",
-      );
-      // Not the jobs list: that link is the jobs section's, and this is the
-      // corpus section.
+      // The rail's and the refusal's: both go to the landing route.
+      for (const link of screen.getAllByRole("link", { name: "Health" })) {
+        expect(link).toHaveAttribute("href", "/dashboard");
+      }
+      // Not the jobs list: that link is the jobs section's, and this is
+      // Health.
       expect(
         screen.queryByRole("link", { name: "Every job this index has run" }),
       ).not.toBeInTheDocument();

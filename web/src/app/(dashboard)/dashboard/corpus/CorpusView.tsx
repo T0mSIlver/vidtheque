@@ -2,10 +2,9 @@
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
-import type { Ledger } from "@/lib/dashboard/schemas";
-import { at, bytes, count, hours, iso } from "@/lib/format";
+import type { Corpus } from "@/lib/dashboard/schemas";
+import { bytes, count, hours, iso } from "@/lib/format";
 import { ReadFailure } from "@/components/dashboard/kit/notice";
-import { Readiness } from "@/components/dashboard/kit/Readiness";
 import {
   CountLink,
   DashLink,
@@ -17,16 +16,14 @@ import {
   Pending,
   Slot,
   publishedNote,
-  Sep,
   ui,
-  Unbroken,
   Unit,
 } from "@/components/dashboard/kit/ui";
 
-// Every key number this instance counts, in one reading stamped once
-// (dashboard.md §17). No chart, no history (§1 non-goal 5).
+// What is in it (dashboard.md §24.1): every count of the corpus, in one reading
+// stamped once. No chart, no history (§1 non-goal 5).
 
-const read = (signal: AbortSignal) => dashboard.ledger(signal);
+const read = (signal: AbortSignal) => dashboard.corpus(signal);
 
 // The five `index_state` words, and the jobs view's filters: `queued` and
 // `running` both link to `active`; `cancelled` has no filter (§4.5).
@@ -39,35 +36,31 @@ const JOB_STATES = [
   { state: "cancelled", filter: null },
 ] as const;
 
-export function LedgerView() {
-  const ledger = useResource("ledger", read);
-  const data = ledger.data;
+export function CorpusView() {
+  const corpus = useResource("corpus", read);
+  const data = corpus.data;
 
-  if (!data && ledger.error !== undefined) {
-    return <ReadFailure error={ledger.error} onRetry={ledger.reload} />;
+  if (!data && corpus.error !== undefined) {
+    return <ReadFailure error={corpus.error} onRetry={corpus.reload} />;
   }
 
   // The instant of the reading, so it keeps its seconds.
   const counted = data ? iso(data.counted_at) : undefined;
   return (
     <>
-      <PageHead title="The ledger">
-        <Unbroken>
-          <Fact
-            label="counted"
-            value={counted ? <time dateTime={counted}>{counted}</time> : <Slot ch={20} />}
-          />
-          <Sep />
-        </Unbroken>
-        <Fact label="indexed" value={data ? at(data.corpus.last_indexed) : <Slot ch={16} />} />
+      <PageHead title="Corpus">
+        <Fact
+          label="counted"
+          value={counted ? <time dateTime={counted}>{counted}</time> : <Slot ch={20} />}
+        />
       </PageHead>
       {data ? <Loaded data={data} /> : <Pending />}
     </>
   );
 }
 
-function Loaded({ data }: { data: Ledger }) {
-  const { corpus, queue, readiness } = data;
+function Loaded({ data }: { data: Corpus }) {
+  const { corpus, queue } = data;
   const failedWindowHours = Math.round(queue.failed_window_s / 3600);
 
   return (
@@ -134,43 +127,71 @@ function Loaded({ data }: { data: Ledger }) {
       </div>
 
       <div className={ui.split}>
-        <Panel id="behind" title="What is missing">
-          <dl className={`${ui.figures} ${ui.figuresTight}`}>
-            <Figure label="no on-screen text" notes={[<>have a transcript, no OCR</>]}>
-              <CountLink
-                href={`${ROOT}/videos?has=transcript&index_state=all`}
-                n={data.gaps.transcript_no_ocr}
-              />
-            </Figure>
-            <Figure label="transcript vectors" notes={[<>chunked, waiting to embed</>]}>
-              {count(data.embed_backlog.text)}
-            </Figure>
-            <Figure label="frame vectors" notes={[<>keyframed, waiting to embed</>]}>
-              {count(data.embed_backlog.frame)}
-            </Figure>
-          </dl>
+        <Panel id="channels" title="Channels">
+          {data.channels.rows.length ? (
+            <ul className={`${ui.rowlist} ${ui.tight}`}>
+              {data.channels.rows.map((entry) => (
+                <li className={ui.minirow} key={entry.channel}>
+                  <DashLink
+                    href={`${ROOT}/videos?channel=${encodeURIComponent(entry.channel)}&index_state=all`}
+                  >
+                    {entry.channel}
+                  </DashLink>
+                  <span className={ui.minirowFigure}>
+                    {count(entry.videos)}
+                    <Unit> vid</Unit>
+                  </span>
+                  <span className={`${ui.minirowFigure} ${ui.dim}`}>
+                    {hours(entry.seconds)}
+                    <Unit>h</Unit>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={ui.emptyNote}>No channels yet.</p>
+          )}
+          {data.channels.has_more ? (
+            <p className={ui.emptyNote}>
+              The largest {data.channels.rows.length};{" "}
+              <DashLink href={`${ROOT}/videos?index_state=all`}>the videos table</DashLink> filters
+              by any channel.
+            </p>
+          ) : null}
         </Panel>
 
-        <Panel id="holds" title="What it is filed under">
-          <dl className={`${ui.figures} ${ui.figuresTight}`}>
-            <Figure label="channels">{count(corpus.channels)}</Figure>
-            <Figure label="tags">{count(corpus.tags)}</Figure>
-          </dl>
-          {/* §2.4: the projection does not take the byte read at all. */}
-          {data.storage ? (
-            <dl className={`${ui.figures} ${ui.figuresTight}`}>
-              <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
-              <Figure label="index file">{bytes(data.storage.database_bytes)}</Figure>
-            </dl>
+        <Panel id="tags" title="Tags">
+          {data.tags.rows.length ? (
+            <ul className={ui.chiplist}>
+              {data.tags.rows.map((entry) => (
+                <li key={entry.tag}>
+                  <DashLink
+                    className={ui.chip}
+                    href={`${ROOT}/videos?tags=${encodeURIComponent(entry.tag)}&index_state=all`}
+                  >
+                    {entry.tag} <span className={ui.chipN}>{entry.videos}</span>
+                  </DashLink>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={ui.emptyNote}>no tags</p>
+          )}
+          {data.tags.has_more ? (
+            <p className={ui.emptyNote}>The {data.tags.rows.length} most used.</p>
           ) : null}
         </Panel>
       </div>
 
-      <Readiness
-        readiness={readiness}
-        redacted={data.redacted}
-        writesAllowed={data.writes_allowed}
-      />
+      {/* §2.4: the projection does not take the byte read at all. */}
+      {data.storage ? (
+        <Panel id="storage" title="Storage">
+          <dl className={`${ui.figures} ${ui.figuresTight}`}>
+            <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
+            <Figure label="index file">{bytes(data.storage.database_bytes)}</Figure>
+          </dl>
+        </Panel>
+      ) : null}
     </>
   );
 }

@@ -60,7 +60,7 @@ different props and carry their own metadata.
 
 In production a reverse proxy puts both behind one origin and routes by path:
 the exact page GETs — `/`, `/demo`, `/paris`, and under the
-dashboard `/dashboard`, `/dashboard/ledger`, `/dashboard/search`,
+dashboard `/dashboard`, `/dashboard/corpus`, `/dashboard/search`,
 `/dashboard/videos`, `/dashboard/videos/{id}`, `/dashboard/jobs`,
 `/dashboard/jobs/{id}`, `/dashboard/following`, `/dashboard/following/{slug}`,
 `/dashboard/index` and `/dashboard/login` — reach Next, and everything else

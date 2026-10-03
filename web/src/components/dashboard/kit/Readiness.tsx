@@ -4,9 +4,9 @@ import { DASH, iso } from "@/lib/format";
 import { Panel, StatePair, ui } from "./ui";
 
 /**
- * The pipeline observation, identical on the overview and the ledger
- * (dashboard.md §15). The projection carries neither the worker probe nor the
- * indexing state, so both are absent there rather than redacted in place.
+ * The pipeline observation, on Health (dashboard.md §15, §24.1). The
+ * projection carries neither the worker probe nor the indexing state, so both
+ * are absent there rather than redacted in place.
  */
 export function Readiness({
   readiness,
