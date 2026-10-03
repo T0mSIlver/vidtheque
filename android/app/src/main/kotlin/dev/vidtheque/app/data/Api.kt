@@ -63,6 +63,42 @@ data class Verdict(
 )
 
 @Serializable
+data class ProfileEntry(
+    val id: Long,
+    val text: String,
+    val weight: Double,
+    val source: String,
+    val evidence: String? = null,
+)
+
+/** One side of a profile event; absent fields did not change. */
+@Serializable
+data class EntryState(val text: String? = null, val weight: Double? = null, val live: Boolean? = null)
+
+@Serializable
+data class ProfileEvent(
+    val id: Long,
+    val at: Long,
+    val actor: String,
+    val op: String,
+    @SerialName("entry_id") val entryId: Long,
+    val before: EntryState? = null,
+    val after: EntryState? = null,
+    val reason: String? = null,
+)
+
+@Serializable
+data class History(val events: List<ProfileEvent>, @SerialName("has_more") val hasMore: Boolean, @SerialName("next_before") val nextBefore: Long? = null)
+
+@Serializable
+data class Profile(
+    val revision: Long,
+    @SerialName("max_entries") val maxEntries: Int,
+    val entries: List<ProfileEntry>,
+    val history: History,
+)
+
+@Serializable
 data class Refusal(val error: String, val message: String)
 
 /** The server said no, in its `{error, message, next}` envelope; [message] is fit to show. */
@@ -76,6 +112,19 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     suspend fun feed(band: String, offset: Int): FeedPage = json.decodeFromString(get("$root/feed?band=$band&offset=$offset&limit=20"))
 
     suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
+
+    suspend fun profile(before: Long? = null): Profile =
+        json.decodeFromString(get("$root/profile" + (before?.let { "?before=$it" } ?: "")))
+
+    suspend fun drop(entryId: Long): Profile = json.decodeFromString(
+        post("$root/profile", buildJsonObject {
+            put("drop", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(entryId))))
+            put("reason", "dropped in the app")
+        }),
+    )
+
+    suspend fun revert(eventId: Long): Profile =
+        json.decodeFromString(post("$root/profile/revert", buildJsonObject { put("event_id", eventId) }))
 
     /** Fire and forget from the caller's point of view: a lost signal costs one data point. */
     suspend fun signal(kind: String, videoId: String, offsetS: Int? = null) {

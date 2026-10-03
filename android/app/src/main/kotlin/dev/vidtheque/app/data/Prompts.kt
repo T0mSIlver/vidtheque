@@ -14,4 +14,21 @@ fun videoPrompt(video: VideoRow): String {
         "with their timestamps.\n\nMy question: "
 }
 
+/** "Ask Claude to build my profile" (§2.2), word for word the web's. */
+const val PROFILE_PROMPT =
+    "Help me build my interest profile in vidtheque. It is a short list of interests in " +
+        "plain words, each with a weight from -1 to 1 (negative means less of this), and it " +
+        "decides which new videos from the channels I follow are worth my time. Start from " +
+        "what you already know about me and my work. If that is not enough, interview me " +
+        "with a few short questions first. Show me the list, then save it with the vidtheque " +
+        "profile tool: call it bare to see what is there, add what is missing, and do not " +
+        "drop entries I wrote."
+
+/** `+0.9`, `−0.8`, `0.0`: a weight always prints its sign. */
+fun signed(weight: Double): String {
+    val fixed = "%.1f".format(kotlin.math.abs(weight))
+    if (fixed == "0.0") return fixed
+    return (if (weight < 0) "−" else "+") + fixed
+}
+
 fun claudeUri(prompt: String): Uri = Uri.parse("https://claude.ai/new?q=${Uri.encode(prompt)}")
