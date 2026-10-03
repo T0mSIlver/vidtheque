@@ -19,9 +19,11 @@ import {
   ui,
   Unbroken,
 } from "@/components/dashboard/kit/ui";
+import { CostsPanel } from "./Costs";
 
 // Is the machine working right now (dashboard.md §24.1): readiness, the
-// models, the queue and what is missing. What is in the corpus is Corpus's.
+// models, the queue, what is missing and what the model calls cost. What is
+// in the corpus is Corpus's.
 
 const read = (signal: AbortSignal) => dashboard.health(signal);
 
@@ -204,6 +206,8 @@ function Loaded({ data }: { data: Health }) {
           </Panel>
         ) : null}
       </div>
+
+      <CostsPanel />
     </>
   );
 }

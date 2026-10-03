@@ -73,6 +73,14 @@ export function count(value: number | null | undefined): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
+/** Micro-USD as dollars: `$12.40` from a dollar up, `$0.0412` below, so a
+ *  verdict's fraction of a cent still reads. `null` is unknown: the dash. */
+export function usd(micro: number | null | undefined): string {
+  if (micro === null || micro === undefined || !Number.isFinite(micro)) return DASH;
+  const dollars = micro / 1_000_000;
+  return `$${dollars.toFixed(Math.abs(dollars) >= 1 ? 2 : 4)}`;
+}
+
 /** `1.4 GB`. Base-10, as a disk reports. */
 export function bytes(value: number | null | undefined): string {
   if (!value || !Number.isFinite(value)) return "0 B";

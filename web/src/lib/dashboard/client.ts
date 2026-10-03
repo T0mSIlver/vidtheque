@@ -5,6 +5,7 @@ import type { ZodType } from "zod";
 import {
   CancelOutcome,
   Corpus,
+  Costs,
   CuePage,
   Feed,
   FollowCreated,
@@ -255,6 +256,10 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     follow(slug: string, query: URLSearchParams, signal?: AbortSignal) {
       const path = `${ROOT}/api/following/${encodeURIComponent(slug)}`;
       return get(`${path}${suffix(query)}`, FollowDetail, { signal });
+    },
+    /** What the model calls cost (§25.8); `404` where there is no write side. */
+    costs(signal?: AbortSignal) {
+      return get(`${ROOT}/api/costs`, Costs, { signal });
     },
     /** One band of verdicts, newest first (§25.2). */
     feed(query: URLSearchParams, signal?: AbortSignal) {
