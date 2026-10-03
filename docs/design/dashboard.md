@@ -3544,3 +3544,11 @@ a link. The stage table it shared with one job's page now lives here alone
 leaves the content whole elsewhere by CSS, so the server render and the first
 paint agree.
 
+### 24.4 Search
+
+Unchanged but for one fold: the leg breakdown (full-text, vector, kNN, OCR,
+frame and the rest) is collapsed by default behind `kit/Fold`, at every width.
+It is owner inspection (§14), and its eight rows pushed the results below the
+first screen on a phone. The notes beside it (a leg that was skipped, a worker
+that did not answer) stay open, because they change how the results read.
+
