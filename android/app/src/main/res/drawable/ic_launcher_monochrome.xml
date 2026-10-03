@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The favicon's "v.": Archivo 500's v and full stop, outlines read from the vendored font. -->
+<!-- Archivo 500's v and full stop, the stop a quarter larger and kerned in under the
+     right arm, the pair centred as one unit in the 66dp safe zone (Tom's pick, 2026-10-03). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <group android:translateX="30" android:translateY="72.5" android:scaleX="0.0706" android:scaleY="-0.0706">
+    <group android:translateX="32.912" android:translateY="74.514" android:scaleX="0.0780" android:scaleY="-0.0780">
         <path android:fillColor="#FFFFFFFF" android:pathData="M204.13 0 9.13 526H118.41L209 275.38Q215.49 257.41 224.23 228.91Q232.97 200.41 242.22 170.39Q251.46 140.38 257.7 116.35H262.7Q269.19 138.87 277.68 168.5Q286.16 198.14 295.27 227.01Q304.38 255.89 311.38 275.38L401.22 526H506.73L310.97 0Z" />
-        <group android:translateX="481">
-            <path android:fillColor="#FFFFFFFF" android:pathData="M87.7 0V115.6H199.38V0Z" />
-        </group>
+        <path android:fillColor="#FFFFFFFF" android:pathData="M392.00 0.00H531.60V144.50H392.00Z" />
     </group>
 </vector>
