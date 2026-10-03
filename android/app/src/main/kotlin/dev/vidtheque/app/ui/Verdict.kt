@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.vidtheque.app.data.Match
@@ -134,12 +133,12 @@ fun Matches(matches: List<Match>, modifier: Modifier = Modifier, maxLines: Int =
         verticalArrangement = Arrangement.spacedBy(6.dp),
         maxLines = maxLines,
     ) {
-        matches.forEach { MatchChip(it, oneLine = maxLines != Int.MAX_VALUE) }
+        matches.forEach { MatchChip(it) }
     }
 }
 
 @Composable
-private fun MatchChip(match: Match, oneLine: Boolean) {
+private fun MatchChip(match: Match) {
     val tones = LocalTones.current
     val up = match.direction == "up"
     val strong = match.strength >= 2
@@ -158,12 +157,8 @@ private fun MatchChip(match: Match, oneLine: Boolean) {
     ) {
         Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text(
-                match.text,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = if (oneLine) 1 else Int.MAX_VALUE,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Never cut: an entry is at most 32 characters, so two lines always hold it.
+            Text(match.text, style = MaterialTheme.typography.labelLarge, maxLines = 2)
         }
     }
 }
