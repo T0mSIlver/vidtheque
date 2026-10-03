@@ -87,7 +87,7 @@ a neighbouring product could not truthfully copy:
   (`docs/design/dashboard.md` §8).
 - **Auth modes:** `none` | `token` | `oauth` (`DECISIONS.md` #1). A browser that
   is not signed in gets a page, not a JSON blob.
-- **Three web surfaces, one product** (aligned 2026-08-11: `/` is the landing,
+- **Four web surfaces, one product** (aligned 2026-08-11: `/` is the landing,
   the demo moved to `/demo` — commit `4ddd45d`):
   - `/` — the landing, static by design; the argument before the product.
   - `/demo` — the public demo, a read-only projection of the same corpus,
@@ -224,7 +224,7 @@ surfaces. Layout shift is treated as a defect: every image ships explicit
 
 ## Surfaces and modes
 
-Mode is a property of the surface, not of the product. All three surfaces
+Mode is a property of the surface, not of the product. All four surfaces
 share one identity (the 2026-08-10 `DESIGN.md` system: the landing's world)
 and differ in register, not in world.
 
