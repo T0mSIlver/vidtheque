@@ -27,7 +27,9 @@ import dev.vidtheque.app.ui.feed.FeedViewModel
 import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.profile.ProfileScreen
 import dev.vidtheque.app.ui.video.VideoScreen
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.ContentScale
 
 @Serializable
@@ -56,8 +58,15 @@ val sharedStill: Still = { id, modifier ->
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun SignedIn(onSignOut: () -> Unit) {
+fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
     val stack = rememberNavBackStack(FeedKey)
+    // A tapped notification lands on its video, over the feed.
+    val open by opening.collectAsStateWithLifecycle()
+    LaunchedEffect(open) {
+        val id = open ?: return@LaunchedEffect
+        opening.value = null
+        stack.add(VideoKey(id))
+    }
     SharedTransitionLayout {
         CompositionLocalProvider(LocalShared provides this) {
             NavDisplay(

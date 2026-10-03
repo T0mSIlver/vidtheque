@@ -126,6 +126,15 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     suspend fun revert(eventId: Long): Profile =
         json.decodeFromString(post("$root/profile/revert", buildJsonObject { put("event_id", eventId) }))
 
+    /** This phone's FCM token, so verdicts at the threshold reach it (§25.6). */
+    suspend fun registerDevice(token: String) {
+        post("$root/devices", buildJsonObject { put("token", token) })
+    }
+
+    suspend fun forgetDevice(token: String) {
+        send(Request.Builder().url("$root/devices").delete(buildJsonObject { put("token", token) }.toString().toRequestBody(JSON)).build())
+    }
+
     /** Fire and forget from the caller's point of view: a lost signal costs one data point. */
     suspend fun signal(kind: String, videoId: String, offsetS: Int? = null) {
         post("$root/signals", buildJsonObject {

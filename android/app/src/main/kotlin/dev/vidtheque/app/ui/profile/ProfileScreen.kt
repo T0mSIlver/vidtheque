@@ -1,8 +1,15 @@
 package dev.vidtheque.app.ui.profile
 
+import android.Manifest
 import android.content.ClipData
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -44,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +72,11 @@ import java.util.Date
 fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
     val model: ProfileViewModel = hiltViewModel()
     val ui by model.ui.collectAsStateWithLifecycle()
+    val pushOn by model.pushOn.collectAsStateWithLifecycle()
+    // Asked when the reader turns notifications on, never at launch.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) model.setPush(true)
+    }
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -75,6 +89,13 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
         onDrop = model::drop,
         onRevert = model::revert,
         onOlder = model::older,
+        push = if (model.pushAvailable) pushOn else null,
+        onPush = { on ->
+            if (!on) model.setPush(false)
+            else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else model.setPush(true)
+        },
         onBuild = {
             // As on the video screen: the Claude app keeps `q`; copy only when nothing opens the link.
             if (!context.openLink(claudeUri(PROFILE_PROMPT))) {
@@ -97,6 +118,8 @@ fun ProfileContent(
     onRevert: (Long) -> Unit,
     onOlder: () -> Unit,
     onBuild: () -> Unit,
+    push: Boolean? = null,
+    onPush: (Boolean) -> Unit = {},
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val profile = ui.profile
@@ -149,6 +172,7 @@ fun ProfileContent(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                 )
             }
+            if (push != null) item { Notifications(push, enabled = !ui.busy, onPush) }
             if (profile.entries.isEmpty()) {
                 item { Text("No interests yet, so every verdict is scored without them.", style = MaterialTheme.typography.bodyLarge) }
             }
@@ -224,3 +248,22 @@ private fun change(event: ProfileEvent): String {
     if (before?.live == false && after?.live == true) parts += "back"
     return parts.joinToString(" · ")
 }
+
+/** This phone, yes or no; which verdicts count is the instance's threshold (companion.md §6). */
+@Composable
+private fun Notifications(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.toggleable(value = on, enabled = enabled, role = Role.Switch, onValueChange = onChange).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Notify this phone", style = MaterialTheme.typography.titleMedium)
+                Text("When a new video is judged worth watching whole", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = on, onCheckedChange = null, enabled = enabled)
+        }
+    }
+}
+

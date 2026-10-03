@@ -7,9 +7,12 @@ import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
 import dev.vidtheque.app.data.Profile
 import dev.vidtheque.app.data.ProfileEvent
+import dev.vidtheque.app.push.Push
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -26,7 +29,13 @@ data class ProfileUi(
 )
 
 @HiltViewModel
-class ProfileViewModel @Inject constructor(private val api: Api) : ViewModel() {
+class ProfileViewModel @Inject constructor(private val api: Api, private val push: Push) : ViewModel() {
+    val pushAvailable: Boolean get() = push.available
+    val pushOn: StateFlow<Boolean> = push.on.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** On after the system granted the permission; off forgets this phone on the instance. */
+    fun setPush(on: Boolean) = exclusive { if (on) push.enable() else push.disable() }
+
     private val _ui = MutableStateFlow(ProfileUi())
     val ui: StateFlow<ProfileUi> = _ui.asStateFlow()
 
@@ -72,6 +81,10 @@ class ProfileViewModel @Inject constructor(private val api: Api) : ViewModel() {
             _ui.update { it.copy(error = e.message) }
         } catch (e: IOException) {
             _ui.update { it.copy(error = "The instance did not answer.") }
+        } catch (e: Exception) {
+            // Firebase's own failures (no Play services, no network to FCM) land here.
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            _ui.update { it.copy(error = "Notifications could not be set up: ${e.message ?: e.javaClass.simpleName}") }
         }
     }
 }

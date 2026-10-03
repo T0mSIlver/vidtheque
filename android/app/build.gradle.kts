@@ -21,6 +21,12 @@ android {
         versionName = "0.1.0"
         buildConfigField("String", "INSTANCE", "\"$instance\"")
         manifestPlaceholders["instanceHost"] = instance.substringAfter("://")
+        // The Firebase project's app identity (not secrets): from the environment in CI
+        // (Actions variables), from -P locally. Empty, the build has no push.
+        for ((field, name) in listOf("FIREBASE_APP_ID" to "appId", "FIREBASE_API_KEY" to "apiKey", "FIREBASE_PROJECT_ID" to "projectId", "FIREBASE_PROJECT_NUMBER" to "projectNumber")) {
+            val value = providers.environmentVariable(field).orElse(providers.gradleProperty("vidtheque.firebase.$name")).getOrElse("")
+            buildConfigField("String", field, "\"$value\"")
+        }
     }
 
     // CI signs with one stable key from Actions secrets, so builds install over each
@@ -87,6 +93,9 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.navigation3)
     implementation(libs.coil.compose)
     implementation(libs.coil.okhttp)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+    implementation(libs.coroutines.play.services)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
