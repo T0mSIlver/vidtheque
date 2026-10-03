@@ -73,6 +73,8 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
         paging = viewModelScope.launch {
             load {
                 val page = api.feed(if (skipped) "skipped" else "top", offset)
+                // Folded while the page was on its way: leave it folded.
+                if (skipped && _ui.value.skipped == null) return@load
                 set(skipped, Band(band.items + page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }))
             }
             val now = if (skipped) _ui.value.skipped else _ui.value.top
