@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
 import dev.vidtheque.app.data.Verdict
+import dev.vidtheque.app.data.VideoRow
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,8 @@ import java.io.IOException
 
 data class VideoUi(
     val verdict: Verdict? = null,
+    /** A video no verdict has scored yet, opened from search (dashboard.md §25.3). */
+    val unjudged: VideoRow? = null,
     val error: String? = null,
     /** The video's thumb or mute as stored: `up`, `down`, `muted` or `none`. */
     val feedback: String = "none",
@@ -53,7 +56,8 @@ class VideoViewModel @AssistedInject constructor(
                 val verdict = api.verdict(videoId)
                 _ui.update { it.copy(verdict = verdict, feedback = if (it.saving) it.feedback else verdict.feedback) }
             } catch (e: ApiException) {
-                _ui.update { it.copy(error = e.message) }
+                val video = api.unjudged(e)
+                _ui.update { if (video != null) it.copy(unjudged = video) else it.copy(error = e.message) }
             } catch (e: IOException) {
                 _ui.update { it.copy(error = "The instance did not answer.") }
             }
@@ -79,7 +83,7 @@ class VideoViewModel @AssistedInject constructor(
 
     /** `open` once per visit, when this page has settled with its verdict on screen. */
     fun shown() {
-        if (opened || _ui.value.verdict == null) return
+        if (opened || (_ui.value.verdict == null && _ui.value.unjudged == null)) return
         opened = true
         quietly("open")
     }
