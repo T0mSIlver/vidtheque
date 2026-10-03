@@ -16,6 +16,8 @@ type Request = {
   path: string;
   url: string;
   fields: URLSearchParams;
+  /** A JSON body, parsed; `undefined` for a form or no body. */
+  json: unknown;
   headers: Headers;
 };
 
@@ -63,7 +65,11 @@ export async function mountDashboard(ui: ReactElement, options: MountOptions = {
     const parsed = new URL(url, "http://dashboard.test");
     const fields = new URLSearchParams(typeof init?.body === "string" ? init.body : "");
     const headers = new Headers(init?.headers);
-    const request = { method, path: parsed.pathname, url, fields, headers };
+    const json =
+      headers.get("content-type") === "application/json" && typeof init?.body === "string"
+        ? JSON.parse(init.body)
+        : undefined;
+    const request = { method, path: parsed.pathname, url, fields, json, headers };
     requests.push(request);
 
     const key = routeKey(routes, method, parsed.pathname);
