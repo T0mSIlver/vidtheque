@@ -1247,7 +1247,7 @@ JOB_STATES = ("all", "active", "failed", "done")
 # `follow_check` is a `jobs.kind` since migration 0006, so it is a filter here
 # the day it is a kind: a job the queue can hold and this view cannot select
 # for is a job an operator triages by reading past it.
-JOB_KINDS = ("all", "index", "reindex", "delete", "follow_check")
+JOB_KINDS = ("all", "index", "reindex", "delete", "follow_check", "verdict")
 JOB_ORDERS = ("newest", "priority", "wall_clock")
 
 # 2 s while anything is `queued|running`, stopped when nothing is (§5.4). Not

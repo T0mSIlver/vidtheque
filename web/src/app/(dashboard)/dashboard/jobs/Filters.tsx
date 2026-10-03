@@ -15,7 +15,7 @@ export const FILTERS = ["state", "kind", "error_code", "order", "degraded", "lim
 
 // The pickers' words (`views._JOB_STATES` and friends): options, not bounds.
 const STATES = ["all", "active", "failed", "done"];
-const KINDS = ["all", "index", "reindex", "delete", "follow_check"];
+const KINDS = ["all", "index", "reindex", "delete", "follow_check", "verdict"];
 const ORDERS = ["newest", "priority", "wall_clock"];
 
 /** Values the API would use anyway, left off a link. */
