@@ -275,9 +275,9 @@ Two surfaces, each answering one question. Nothing appears on both.
 
 **Ask Claude** opens `https://claude.ai/new?q=<prompt>`, with a prompt naming
 vidtheque, the video id, its title and channel, and leaving the question to
-you. Whether the Claude Android app opens that link with the prompt filled in
-is unverified, and is the first check of its issue. If it does not, the
-button copies the prompt and opens the app.
+you. Checked on Tom's phone on 2026-10-03: the Claude Android app opens that
+link with the prompt filled in. The Android app copies the prompt only when no
+app opens the link.
 
 **The Android app** lives in `android/`, a separate deployable like `web/`:
 Kotlin, Jetpack Compose, Material 3, Auth Tab (`androidx.browser`) for
