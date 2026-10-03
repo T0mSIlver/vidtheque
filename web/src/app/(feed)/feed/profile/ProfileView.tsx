@@ -203,7 +203,11 @@ function Paste({ onChanged }: { onChanged: () => void }) {
         type="submit"
         aria-disabled={parsed.length === 0 || write.status === "sending"}
       >
-        {parsed.length === 1 ? "Add 1 interest" : `Add ${parsed.length} interests`}
+        {parsed.length === 0
+          ? "Add interests"
+          : parsed.length === 1
+            ? "Add 1 interest"
+            : `Add ${parsed.length} interests`}
       </button>
       {write.status === "failed" ? (
         <p className={styles.refused} role="status">
@@ -278,34 +282,31 @@ function HistoryRow({
     `entry ${event.entry_id}`;
   return (
     <li className={styles.event}>
-      <span className={styles.eventHead}>
-        <span className={styles.op}>{event.op}</span>
-        <span className={styles.change}>{change(event)}</span>
-        <time className={styles.when} dateTime={iso(event.at)}>
-          {at(event.at)}
-        </time>
-      </span>
-      <span className={styles.entryText}>{text}</span>
-      <span className={styles.evidence}>
-        {event.actor}
-        {event.reason ? ` · ${event.reason}` : ""}
-      </span>
-      <span className={styles.eventFoot}>
-        <button
-          className={styles.small}
-          type="button"
-          aria-label={`Revert: ${event.op} ${text}`}
-          aria-disabled={revert.status === "sending"}
-          onClick={() => run()}
-        >
-          Revert
-        </button>
+      <span className={styles.entryText}>
+        <span className={styles.eventHead}>
+          <span className={styles.op}>{event.op}</span>
+          <span className={styles.change}>{change(event)}</span>
+        </span>
+        {text}
+        <span className={styles.evidence}>
+          {event.actor} · <time dateTime={iso(event.at)}>{at(event.at)}</time>
+          {event.reason ? ` · ${event.reason}` : ""}
+        </span>
         {revert.status === "failed" ? (
           <span className={styles.refused} role="status">
             {refusalOf(revert.error).message}
           </span>
         ) : null}
       </span>
+      <button
+        className={styles.small}
+        type="button"
+        aria-label={`Revert: ${event.op} ${text}`}
+        aria-disabled={revert.status === "sending"}
+        onClick={() => run()}
+      >
+        Revert
+      </button>
     </li>
   );
 }

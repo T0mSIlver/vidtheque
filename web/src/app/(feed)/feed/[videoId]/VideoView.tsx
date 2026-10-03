@@ -155,8 +155,13 @@ function Actions({ verdict }: { verdict: Verdict }) {
           onSend={send}
         />
         <Signal kind="mute" label="Mute" glyph="Mute" state={sent.mute} onSend={send} />
-        <button className={styles.copy} type="button" onClick={copy}>
-          {copied ? "Copied" : "Copy prompt"}
+        <button
+          className={styles.copy}
+          type="button"
+          aria-label="Copy the Ask Claude prompt"
+          onClick={copy}
+        >
+          {copied ? "Copied" : "Copy"}
         </button>
         <a
           className={styles.ask}
