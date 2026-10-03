@@ -40,6 +40,29 @@ data class Skipped(val count: Int, val capped: Boolean)
 data class FeedPage(val items: List<FeedItem>, val pagination: Pagination, val skipped: Skipped)
 
 @Serializable
+data class VideoRow(
+    @SerialName("video_id") val videoId: String,
+    val title: String,
+    val channel: String? = null,
+    @SerialName("duration_s") val durationS: Double = 0.0,
+    @SerialName("published_at") val publishedAt: Long? = null,
+)
+
+@Serializable
+data class Moment(@SerialName("cue_id") val cueId: Long, @SerialName("offset_s") val offsetS: Double, val why: String, val url: String)
+
+@Serializable
+data class Verdict(
+    val video: VideoRow,
+    val score: Int,
+    val reason: String = "",
+    val explored: Boolean = false,
+    val summary: String = "",
+    val moments: List<Moment> = emptyList(),
+    @SerialName("moments_dropped") val momentsDropped: Int = 0,
+)
+
+@Serializable
 data class Refusal(val error: String, val message: String)
 
 /** The server said no, in its `{error, message, next}` envelope; [message] is fit to show. */
@@ -51,6 +74,8 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     private val root get() = "${instance.base}/dashboard/api"
 
     suspend fun feed(band: String, offset: Int): FeedPage = json.decodeFromString(get("$root/feed?band=$band&offset=$offset&limit=20"))
+
+    suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
 
     /** Fire and forget from the caller's point of view: a lost signal costs one data point. */
     suspend fun signal(kind: String, videoId: String, offsetS: Int? = null) {
