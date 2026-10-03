@@ -200,7 +200,8 @@ when the video has none, or when a reindex removed a cue a stored moment cites;
 a re-embed that leaves the transcript alone costs no model call. Verdicts are on
 when the model is configured (§4), and `VIDTHEQUE_VERDICTS=0` turns them off.
 The backfill is `vidtheque-mcp verdicts backfill --limit N`, newest first; run
-again, it continues where the last batch stopped, and `--video ID` reruns one.
+again, it continues where the last batch stopped, and `--video ID` reruns one
+(an id may start with `-`; `--video=ID` is the same).
 The triage agent reads through `video-summary` as `client=triage` with signals
 off.
 
@@ -226,7 +227,12 @@ long summary did. The only server-side bound is the schema's character cap
 past it fails as invalid. The profile goes into the prompt with its entry ids;
 the model names matches by id and strength only. An id that is not a live
 entry, or an entry of weight 0, is dropped, and the stage sets `direction`.
-Verdicts written before 0014 have no matches until rescored.
+Verdicts written before 0014 have no matches until rescored. Inside the mcp
+container, this queues every scored video again:
+
+```bash
+vidtheque-mcp verdicts backfill --limit 1000 $(python -c "import sqlite3; c = sqlite3.connect('/data/vidtheque.db'); print(' '.join('--video=' + r[0] for r in c.execute('SELECT v.public_id FROM verdicts d JOIN videos v ON v.id = d.video_id')))")
+```
 
 ### 3.3 Proving it gets better
 

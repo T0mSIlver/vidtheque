@@ -34,7 +34,7 @@ def main(argv: list[str]) -> int:
         metavar="VIDEO_ID",
         help="queue this video even if it has a verdict; repeatable",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(_join_video_values(argv))
     try:
         settings = Settings.from_env()
         if configured() is None:
@@ -51,6 +51,19 @@ def main(argv: list[str]) -> int:
         print(f"no database at {settings.db_path}", file=sys.stderr)
         return 2
     return asyncio.run(_backfill(settings, args.limit, args.video))
+
+
+def _join_video_values(argv: list[str]) -> list[str]:
+    # A YouTube id can start with "-", which argparse reads as a flag (#143).
+    out: list[str] = []
+    it = iter(argv)
+    for arg in it:
+        if arg == "--video":
+            value = next(it, None)
+            out.append(arg if value is None else f"--video={value}")
+        else:
+            out.append(arg)
+    return out
 
 
 async def _backfill(settings: Settings, limit: int, videos: list[str]) -> int:
