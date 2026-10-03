@@ -496,11 +496,13 @@ URL, the error message, or any job-event message. If a failed job answers
 identically with the flag on and off, the flag is not reaching the process —
 go to §6.1.
 
-Then the *overview*, which phase 4 redacted after this runbook found it open:
+Then *Health* and *Corpus*, the overview's halves, which phase 4 redacted after
+this runbook found the overview open:
 
 ```bash
-curl -s http://127.0.0.1:8100/dashboard/api/overview | grep -ciE 'Qwen/|declared_models|keyframe_bytes|auth_mode'
-# expect 0 — model ids, byte totals and the auth line are the operator's console
+curl -s http://127.0.0.1:8100/dashboard/api/health | grep -ciE 'Qwen/|auth_mode'
+curl -s http://127.0.0.1:8100/dashboard/api/corpus | grep -ciE 'keyframe_bytes|database_bytes'
+# expect 0 and 0 — model ids, byte totals and the auth line are the operator's console
 curl -s http://127.0.0.1:8100/dashboard/api/session | jq '{readonly, write_side, policy}'
 # expect true, false, "public" — the three facts the rail's "read-only demo"
 # sentence used to be the only witness to. The sentence is React's now; these
