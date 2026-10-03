@@ -117,7 +117,7 @@ def _rows(tmp_path: Path, sql: str) -> list[tuple]:
 # --------------------------------------------------------------------- access
 
 
-GETS = (f"{API}/feed", f"{API}/verdicts/kCc8FmEb1nY", f"{API}/profile", f"{API}/costs")
+GETS = (f"{API}/feed", f"{API}/feed/facets", f"{API}/verdicts/kCc8FmEb1nY", f"{API}/profile", f"{API}/costs")
 WRITES = (
     ("POST", f"{API}/signals"),
     ("POST", f"{API}/feedback"),
@@ -207,6 +207,64 @@ def test_feed_refuses_a_bad_parameter(client: TestClient, query: str) -> None:
     refused = client.get(f"{API}/feed?{query}", headers=BEARER)
     assert refused.status_code == 400
     assert refused.json()["error"] == "E_BAD_PARAM"
+
+
+def _ids(client: TestClient, query: str) -> list[str]:
+    return [r["video_id"] for r in client.get(f"{API}/feed?{query}", headers=BEARER).json()["items"]]
+
+
+def test_feed_searches_titles_and_channels_and_filters_a_channel(client: TestClient) -> None:
+    assert _ids(client, "q=brrr") == ["zduSFxRajkE"]
+    assert _ids(client, "q=karpathy") == ["kCc8FmEb1nY"]  # the channel, any ASCII case
+    assert _ids(client, "q=%25") == []  # a literal %, not a wildcard
+    assert _ids(client, "q=gpu+mode&band=skipped") == []
+    assert _ids(client, "channel=gpu%20mode") == ["zduSFxRajkE"]
+    assert _ids(client, "channel=GPU") == []  # a channel is matched whole
+    body = client.get(f"{API}/feed?q=GPT", headers=BEARER).json()
+    assert (body["q"], body["channel"], body["entry"]) == ("GPT", None, None)
+    # "skipped (n)" counts under the same search.
+    assert body["skipped"]["count"] == 0
+    assert client.get(f"{API}/feed?q=visualizing", headers=BEARER).json()["skipped"]["count"] == 1
+
+
+def test_feed_sorts_oldest_first_on_request(client: TestClient) -> None:
+    assert _ids(client, "order=oldest") == ["zduSFxRajkE", "kCc8FmEb1nY"]
+    assert client.get(f"{API}/feed?order=oldest", headers=BEARER).json()["order"] == "oldest"
+    assert client.get(f"{API}/feed?order=rating", headers=BEARER).status_code == 400
+
+
+def _live_entry(tmp_path: Path) -> int:
+    """A live entry that only zduSFxRajkE matched; kCc8FmEb1nY matched only retired ones."""
+    conn = sqlite3.connect(tmp_path / "data" / "vidtheque.db")
+    try:
+        entry = conn.execute(
+            "INSERT INTO profile_entries (text, weight, source) VALUES ('GPU kernels', 0.8, 'owner')"
+        ).lastrowid
+        conn.execute(
+            "UPDATE verdicts SET matches = ? WHERE video_id = (SELECT id FROM videos WHERE source_id = 'zduSFxRajkE')",
+            (json.dumps([{"entry_id": entry, "direction": "up", "strength": 2}]),),
+        )
+        conn.commit()
+        return int(entry)
+    finally:
+        conn.close()
+
+
+def test_feed_filters_by_a_profile_entry_and_other(client: TestClient, tmp_path: Path) -> None:
+    entry = _live_entry(tmp_path)
+    assert _ids(client, f"entry={entry}") == ["zduSFxRajkE"]
+    # Other: no match on a live entry — the retired ones count for nothing.
+    assert _ids(client, "entry=other") == ["kCc8FmEb1nY"]
+    assert client.get(f"{API}/feed?entry=evals", headers=BEARER).status_code == 400
+
+    facets = client.get(f"{API}/feed/facets", headers=BEARER).json()
+    assert facets["entries"] == [{"entry_id": entry, "text": "GPU kernels", "direction": "up", "count": 1}]
+    assert facets["other"] == 1 and facets["capped"] is False
+    assert {c["name"]: c["count"] for c in facets["channels"]} == {"Andrej Karpathy": 1, "GPU MODE": 1}
+    skipped = client.get(f"{API}/feed/facets?band=skipped", headers=BEARER).json()
+    assert skipped["entries"] == [] and skipped["other"] == 2
+    assert client.get(f"{API}/feed/facets?band=all", headers=BEARER).status_code == 400
+    assert client.get(f"{API}/feed/facets").status_code == 401
 
 
 def test_verdict_links_only_the_moments_whose_receipt_holds(client: TestClient) -> None:
