@@ -42,10 +42,17 @@ TRANSCRIPT_CHARS = 40_000
 # About one low verdict in ten is rescored without the negative entries.
 EXPLORE_RATE = 0.1
 
+# The prompt asks for less; the clamps hold whatever comes back (AGENTS.md:
+# never prompt-only limits). Schema lengths only reject garbage.
+SUMMARY_WORDS = 70
+WHY_WORDS = 14
+REASON_WORDS = 20
+MATCHES_MAX = 4
+
 VERDICT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["score", "reason", "summary", "moments"],
+    "required": ["score", "reason", "summary", "moments", "matches"],
     "properties": {
         "score": {"type": "integer", "minimum": 0, "maximum": 3},
         "reason": {"type": "string", "minLength": 1, "maxLength": 300},
@@ -64,28 +71,71 @@ VERDICT_SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "matches": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["entry_id", "strength"],
+                "properties": {
+                    "entry_id": {"type": "integer"},
+                    "strength": {"type": "integer", "minimum": 1, "maximum": 2},
+                },
+            },
+        },
     },
 }
 
-SYSTEM = """You triage videos for one person, against their interest profile.
-Answer with one JSON object and nothing else:
-- score, against this person's profile, not the video's general quality:
+SYSTEM = """You triage videos for one person against their interest profile, and
+write them a digest they read on a phone. Answer with one JSON object and nothing else.
+
+score, for this person, not the video's general quality:
   0 skip: off-profile, or on a topic they want less of.
-  1 the summary is enough: on-topic but ordinary. This is the default; most
-    videos on their topics score 1.
-  2 watch the moments: at least one moment is clearly worth their time, given
-    the profile — something they would regret missing, not merely relevant.
-    Name it in moments; a 2 with no such moment is a 1.
+  1 the summary is enough: on-topic but ordinary. The default; most videos on
+    their topics score 1.
+  2 watch the moments: at least one moment they would regret missing, not
+    merely relevant. Name it in moments; a 2 with no such moment is a 1.
   3 watch it whole: rare; the whole video is that strong for them.
   When torn between two scores, give the lower.
-- reason: one line naming the profile entries it matched or hit, e.g. "evals ↑, launch hype ↓".
-- summary: one paragraph on what the video says.
-- moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the
-  transcript's [cue …] markers, and offset_s must lie inside that cue's start–end.
+
+matches: the profile entries this video hits, by their [id], strongest first,
+  at most 4. strength 2 = the entry is central to the video, 1 = it comes up.
+  Include negative entries the video hits; they count against it. Use only ids
+  from the profile. No entry fits: [].
+
+reason: one plain sentence, at most 15 words, saying why this score for this
+  person. No arrows, no lists of entries, no weights.
+
+summary: at most 60 words. A digest, not a description. Pack it with what the
+  video actually says: names of people, tools, models, papers, companies;
+  numbers (benchmarks, sizes, costs, latencies); the specific claims and
+  techniques. Lead with the part that matters given the profile, in second
+  person where it helps ("the eval harness at 31:00 is the part you'd reuse").
+  Say what is new to this person, or that nothing is.
+
+moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the
+  transcript's [cue …] markers, and offset_s lies inside that cue's start–end.
   Use only cues you were shown; give fewer moments rather than guessing.
+  why: at most 12 words, the concrete thing said there ("Kimi K2 beats GLM on
+  tau-bench by 9 points"), not a label ("interesting discussion of evals").
+
+Writing rules for reason, summary and why:
+- State claims directly. Never "the speaker discusses", "the video explores",
+  "this talk covers", "they talk about", "dives into".
+- No throat-clearing, no hedging ("arguably", "seems to", "potentially"), no
+  closing summary sentence, no verdict on the video's overall value.
+- Concrete nouns over abstractions. If a sentence would fit a different video
+  unchanged, cut it.
+- None of these words: delve, crucial, pivotal, landscape, showcase, highlight,
+  underscore, robust, comprehensive, insightful, valuable, notably, additionally.
+- No em dashes, no "not just X but Y", no groups of three for rhythm.
+- Plain sentences with articles and verbs, not telegraphese.
+
 A negative weight means the person wants less of that.
 Lines starting "already seen in" name videos the person opened or asked about
 that cover the same ground; score what is new here, not what they have seen."""
+
 
 # The triage agent's corpus reads are never the owner's signals (§2.3).
 TRIAGE = CallContext(client="triage", signals=False)
@@ -192,9 +242,10 @@ class VerdictStage:
                 )
 
         moments = [
-            store.Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"]))
+            store.Moment(int(m["cue_id"]), float(m["offset_s"]), clip_words(str(m["why"]), WHY_WORDS))
             for m in answer["moments"]
         ]
+        matches = inputs.matches(answer["matches"])
 
         def write(c: sqlite3.Connection) -> list[store.Moment] | None:
             # The model call is long; the video may have been deleted meanwhile.
@@ -205,9 +256,10 @@ class VerdictStage:
                 c,
                 video_id,
                 score=int(answer["score"]),
-                reason=str(answer["reason"]),
-                summary=str(answer["summary"]),
+                reason=clip_words(str(answer["reason"]), REASON_WORDS),
+                summary=clip_words(str(answer["summary"]), SUMMARY_WORDS),
                 moments=kept,
+                matches=matches,
                 profile_rev=inputs.rev,
                 model=self.label,
                 explored=explored,
@@ -263,7 +315,10 @@ class VerdictStage:
                 TRANSCRIPT_CHARS,
             )
             return Inputs(
-                entries=[(float(e["weight"]), str(e["text"])) for e in profile_store.entries(c)],
+                entries=[
+                    (int(e["id"]), float(e["weight"]), str(e["text"]))
+                    for e in profile_store.entries(c)
+                ],
                 rev=profile_store.revision(c),
                 summary=summary_text,
                 seen=novelty.prompt_lines(novelty.seen_overlap(c, video_id)),
@@ -277,7 +332,7 @@ class VerdictStage:
 class Inputs:
     """Everything one verdict's prompt is built from, read once."""
 
-    entries: list[tuple[float, str]]
+    entries: list[tuple[int, float, str]]
     rev: int
     summary: str
     seen: str
@@ -285,21 +340,49 @@ class Inputs:
 
     @property
     def has_negatives(self) -> bool:
-        return any(weight < 0 for weight, _ in self.entries)
+        return any(weight < 0 for _, weight, _ in self.entries)
+
+    def matches(self, answered: list[dict[str, Any]]) -> list[store.Match]:
+        """The model's matches against the live entries: unknown ids and
+        weight-0 entries dropped, one per entry, direction from the weight's
+        sign, at most `MATCHES_MAX`, strongest first."""
+        weights = {entry_id: weight for entry_id, weight, _ in self.entries}
+        kept: dict[int, store.Match] = {}
+        for m in answered:
+            entry_id = int(m["entry_id"])
+            weight = weights.get(entry_id, 0.0)
+            if weight == 0 or entry_id in kept:
+                continue
+            kept[entry_id] = store.Match(entry_id, "up" if weight > 0 else "down", int(m["strength"]))
+        ordered = sorted(kept.values(), key=lambda m: -m.strength)
+        return ordered[:MATCHES_MAX]
 
     def prompt(self, *, with_negatives: bool) -> str:
-        kept = [(w, t) for w, t in self.entries if with_negatives or w >= 0]
+        kept = [(i, w, t) for i, w, t in self.entries if with_negatives or w >= 0]
         profile = (
-            "\n".join(f"{w:+.1f}  {t}" for w, t in kept)
+            "\n".join(f"[{i}] {w:+.1f}  {t}" for i, w, t in kept)
             or "(empty: score on general interest and say so in the reason)"
         )
         seen = f"Already seen:\n{self.seen}\n\n" if self.seen else ""
         return (
-            f"Interest profile (weight, entry):\n{profile}\n\n"
+            f"Interest profile ([id] weight, entry):\n{profile}\n\n"
             f"Video:\n{self.summary}\n\n"
             f"{seen}"
             f"Transcript:\n{self.transcript or '(no transcript)'}"
         )
+
+
+def clip_words(text: str, max_words: int) -> str:
+    """`text` cut to `max_words`: at the last sentence end that keeps at least
+    half of them, else at a word boundary with an ellipsis."""
+    words = text.split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    head = words[:max_words]
+    for i in range(len(head) - 1, max_words // 2 - 1, -1):
+        if head[i].endswith((".", "!", "?")):
+            return " ".join(head[: i + 1])
+    return " ".join(head).rstrip(",;:") + "…"
 
 
 def middle_lines(lines: list[str], budget: int) -> str:
