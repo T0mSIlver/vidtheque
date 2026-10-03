@@ -76,9 +76,11 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
         onRevert = model::revert,
         onOlder = model::older,
         onBuild = {
-            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Build my profile", PROFILE_PROMPT))
-            val opened = context.openLink(claudeUri(PROFILE_PROMPT))
-            scope.launch { snackbar.showSnackbar(if (opened) "Prompt copied. Paste it if Claude opens empty." else "Prompt copied. $NO_APP") }
+            // As on the video screen: the Claude app keeps `q`; copy only when nothing opens the link.
+            if (!context.openLink(claudeUri(PROFILE_PROMPT))) {
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Build my profile", PROFILE_PROMPT))
+                scope.launch { snackbar.showSnackbar("Prompt copied. $NO_APP") }
+            }
         },
     )
 }
