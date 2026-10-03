@@ -619,3 +619,88 @@
   stroke-linejoin: round;
 }
 
+/* ----------------------------------------------------------- controls */
+
+/* Search, channel, order and the profile entries over the feed (#146, #128).
+   The entries scroll sideways in one line, so they never push the feed down. */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.searchBox,
+.select {
+  composes: t-cell from global;
+  min-height: var(--tap);
+  min-width: 0;
+  padding: 0 var(--s3);
+  color: var(--fg);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  border-radius: 0;
+}
+
+.searchBox::placeholder {
+  color: var(--fg3);
+}
+
+.searchBox:focus-visible,
+.select:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+
+.selects {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s2);
+}
+
+.entries {
+  display: flex;
+  gap: var(--s1);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+  /* Bleed to the column's edges on a phone, so the row reads as scrollable. */
+  margin: 0 calc(-1 * var(--s4));
+  padding: 0 var(--s4);
+}
+
+.entry {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 2.25rem;
+  padding: 0 var(--s3);
+  white-space: nowrap;
+  color: var(--fg2);
+  background: none;
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.entry[data-direction="up"] > span:first-child {
+  color: var(--tone-ok);
+}
+
+.entry[data-direction="down"] > span:first-child {
+  color: var(--tone-bad);
+}
+
+.entry:hover {
+  color: var(--fg);
+}
+
+.entry[aria-pressed="true"] {
+  color: var(--gold);
+  border-color: var(--gold-44);
+  background: var(--plate3);
+}
+
+.entryCount {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}

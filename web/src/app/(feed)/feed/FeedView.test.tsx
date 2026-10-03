@@ -4,14 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
 import { mountDashboard } from "@/test/dashboard/harness";
-import { SKIPPED, TOP } from "@/test/feed/fixtures";
+import { FACETS, SKIPPED, TOP } from "@/test/feed/fixtures";
 import { FeedView } from "./FeedView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
 // The two bands: 2–3 listed, 0–1 behind "skipped (n)" and read only when opened.
 
-function mount(routes = {}) {
+function mount(routes = {}, search = "") {
   return mountDashboard(
     <FeedShell>
       <FeedView />
@@ -19,10 +19,12 @@ function mount(routes = {}) {
     {
       bare: true,
       path: "/feed",
+      search,
       routes: {
         "/dashboard/api/feed": ({ url }) => ({
           body: new URL(url, "http://x").searchParams.get("band") === "skipped" ? SKIPPED : TOP,
         }),
+        "/dashboard/api/feed/facets": { body: FACETS },
         ...routes,
       },
     },
@@ -61,5 +63,50 @@ describe("FeedView", () => {
     await screen.findAllByText("Let's build the GPT Tokenizer");
     expect(view.calls("/dashboard/api/feed").some((r) => r.url.includes("offset=1"))).toBe(true);
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+  });
+
+  it("shows a verdict's matches as chips that say their direction", async () => {
+    await mount();
+    const [row] = await screen.findAllByRole("link", { name: /Let's build GPT/ });
+    expect(
+      within(row).getByLabelText("Strongly matches an interest: Evals for coding agents"),
+    ).toHaveAttribute("data-direction", "up");
+    expect(within(row).getByLabelText("Matches something you avoid: Launch hype")).toHaveAttribute(
+      "data-direction",
+      "down",
+    );
+  });
+
+  it("narrows by search, entry and order through the URL, and reads the feed with them", async () => {
+    const view = await mount();
+    await userEvent.type(screen.getByRole("searchbox", { name: /Search titles/ }), "tokenizer");
+    await vi.waitFor(() =>
+      expect(view.replace).toHaveBeenCalledWith("/feed?q=tokenizer", { scroll: false }),
+    );
+    await vi.waitFor(() =>
+      expect(view.calls("/dashboard/api/feed").some((r) => r.url.includes("q=tokenizer"))).toBe(
+        true,
+      ),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /Launch hype/ }));
+    expect(view.replace).toHaveBeenLastCalledWith("/feed?q=tokenizer&entry=36", { scroll: false });
+    expect(screen.getByRole("button", { name: /Launch hype/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Order" }), "oldest");
+    await vi.waitFor(() =>
+      expect(view.calls("/dashboard/api/feed").some((r) => r.url.includes("order=oldest"))).toBe(
+        true,
+      ),
+    );
+  });
+
+  it("keeps a narrowed feed's filters from the URL and says when nothing matches", async () => {
+    await mount({ "/dashboard/api/feed": { body: { ...TOP, items: [] } } }, "channel=GPU+MODE");
+    expect(await screen.findByText("Nothing here matches.")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Channel" })).toHaveValue("GPU MODE");
   });
 });
