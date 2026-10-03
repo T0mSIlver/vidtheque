@@ -111,6 +111,21 @@ reweighted), and the profile is capped at 40 live entries. The profile
 screen shows the history; **revert** undoes one event or rolls back to a
 revision.
 
+As built (0012): the update runs on the job runner's poll tick, from
+`VIDTHEQUE_NIGHTLY_HOUR` (default 4, the box's local time), once per local day;
+`VIDTHEQUE_NIGHTLY=0` turns it off. "The day's signals" are those since the
+last run that finished, at most a week back and the newest 200; the verdicts
+are those of the videos they name, at most 50. Each op is its own
+`store.apply` call with its own reason, so one refused op costs only itself.
+The night's guards: past 5 applied ops the rest are refused, an entry changes
+once a night, and a weight is clamped to within 0.3 of where it was; a new
+entry counts as moving from 0, so it starts within ±0.3. The store refuses
+dropping an owner entry and a 41st entry. `nightly_runs` holds one row per day:
+the run claims it before the model call and marks it `done` in the
+transaction that applies the ops, so a restart never runs a day twice. A
+failed model call applies nothing and is retried up to 3 times that day, an
+hour apart. A day with no signals is `idle` and calls no model.
+
 ## 3. The verdict
 
 ### 3.1 What it is

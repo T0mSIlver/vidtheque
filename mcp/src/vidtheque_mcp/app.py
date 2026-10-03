@@ -61,6 +61,7 @@ from .public.ask import OpenRouter
 from .public.runs import Runs
 from .server import build_mcp_server
 from .tools import Deps
+from .profile.nightly import build_nightly
 from .verdicts.stage import build_verdicts
 
 logger = logging.getLogger(__name__)
@@ -183,8 +184,21 @@ def assemble(
     # a build with the pipeline off either — a queued check that no runner will
     # ever claim is worse than no check at all, because the dashboard would
     # show it waiting (follows/scheduler.py).
-    if run_pipeline and pipeline_settings.follow_checks:
-        runner.before_claim = lambda: enqueue_due(db, enabled=True)
+    # The nightly profile update (companion.md §2.4) rides the same tick, and
+    # likewise only where a runner ticks and an owner has a profile.
+    nightly, nightly_http = (
+        build_nightly(db) if run_pipeline and not public.enabled else (None, None)
+    )
+    follow_checks = run_pipeline and pipeline_settings.follow_checks
+
+    async def before_claim() -> None:
+        if follow_checks:
+            await enqueue_due(db, enabled=True)
+        if nightly is not None:
+            await nightly.tick()
+
+    if follow_checks or nightly is not None:
+        runner.before_claim = before_claim
     deps = Deps(
         settings=settings,
         db=db,
@@ -264,12 +278,16 @@ def assemble(
             finally:
                 if run_pipeline:
                     await runner.stop()
+                if nightly is not None:
+                    await nightly.aclose()
                 # Before the HTTP clients the runs are still talking through.
                 if ask_runs is not None:
                     await ask_runs.close()
                 await client.aclose()
                 if llm_http is not None:
                     await llm_http.aclose()
+                if nightly_http is not None:
+                    await nightly_http.aclose()
                 if http is not None:
                     await http.aclose()
                 if status_http is not None and status_http is not http:
