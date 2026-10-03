@@ -48,6 +48,8 @@ ORDERS = {
     "oldest": "v.published_at IS NULL, v.published_at ASC, d.video_id ASC",
 }
 QUERY_CHARS = 100
+# A channel is matched whole, so its bound only stops a runaway parameter.
+CHANNEL_CHARS = 1000
 # `entry=other`: verdicts that hit no live entry, scored before 0014 or on retired entries only.
 OTHER = "other"
 _LIVE_MATCH = (
@@ -232,21 +234,21 @@ def _band(request: Request) -> str:
     return band
 
 
-def _text_param(request: Request, name: str) -> str | None:
-    return request.query_params.get(name, "").strip()[:QUERY_CHARS] or None
+def _text_param(request: Request, name: str, chars: int) -> str | None:
+    return request.query_params.get(name, "").strip()[:chars] or None
 
 
 def _filters(request: Request) -> tuple[list[str], list[Any], dict[str, Any]]:
     """The feed's WHERE terms and binds for `q`, `channel` and `entry`, and the filters as echoed."""
     where = ["v.owner_id = ?"]
     binds: list[Any] = [OWNER_ID]
-    q = _text_param(request, "q")
+    q = _text_param(request, "q", QUERY_CHARS)
     if q is not None:
         # A plain substring of the title or the channel name; LIKE folds ASCII case only.
         pattern = "%" + re.sub(r"([\\%_])", r"\\\1", q) + "%"
         where.append("(v.title LIKE ? ESCAPE '\\' OR v.channel_name LIKE ? ESCAPE '\\')")
         binds += [pattern, pattern]
-    channel = _text_param(request, "channel")
+    channel = _text_param(request, "channel", CHANNEL_CHARS)
     if channel is not None:
         where.append("v.channel_lc = lower(?)")
         binds.append(channel)
@@ -346,10 +348,11 @@ async def feed_facets(request: Request) -> Response:
         " JOIN videos v ON v.id = d.video_id WHERE v.owner_id = ? AND d.score BETWEEN ? AND ?"
         " ORDER BY v.published_at IS NULL, v.published_at DESC, d.video_id DESC LIMIT ?) "
     )
-    scan_binds = (OWNER_ID, low, high, FACET_SCAN + 1)
+    scan_binds = (OWNER_ID, low, high, FACET_SCAN)
 
     def read(conn: sqlite3.Connection) -> dict[str, Any]:
-        scanned = conn.execute(scan + "SELECT COUNT(*) FROM d", scan_binds).fetchone()[0]
+        # One past the window tells whether the band holds more.
+        scanned = conn.execute(scan + "SELECT COUNT(*) FROM d", (OWNER_ID, low, high, FACET_SCAN + 1)).fetchone()[0]
         channels = conn.execute(
             scan + "SELECT channel_name, COUNT(*) AS n FROM d WHERE channel_name IS NOT NULL"
             " GROUP BY lower(channel_name) ORDER BY n DESC, lower(channel_name) LIMIT ?",
