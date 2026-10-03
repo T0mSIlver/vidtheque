@@ -3,7 +3,8 @@
 The companion's phone app (`docs/design/companion.md` §6): Feed, Video and
 Profile over the feed endpoints (`docs/design/dashboard.md` §25), signed in
 to one instance through its OAuth server. Kotlin, Jetpack Compose, Material 3
-themed with DESIGN.md's tokens.
+Expressive in Roboto Flex on a gold-seeded dark scheme (DESIGN.md, "The
+Android app").
 
 ## Build
 
@@ -19,7 +20,8 @@ in `gradle.properties`.
 
 Screenshots render on the JVM through Roborazzi, no emulator needed:
 `./gradlew recordRoborazziDebug` writes `app/screenshots/`, and
-`verifyRoborazziDebug` fails when a screen drifts from them.
+`verifyRoborazziDebug` fails when a screen drifts from them. Emulator
+captures for PR bodies go in `screenshots/`.
 
 ## CI and releases
 

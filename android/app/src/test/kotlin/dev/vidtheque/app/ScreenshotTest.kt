@@ -3,13 +3,13 @@ package dev.vidtheque.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.vidtheque.app.ui.SignInScreen
 import dev.vidtheque.app.ui.theme.VidthequeTheme
-import dev.vidtheque.app.ui.theme.Vt
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,7 +28,7 @@ class ScreenshotTest {
     fun signIn() {
         compose.setContent {
             VidthequeTheme {
-                Box(Modifier.fillMaxSize().background(Vt.pitch)) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     SignInScreen(host = "private.vidtheque.dev", error = null, busy = false, onSignIn = {})
                 }
             }

@@ -1051,6 +1051,22 @@ operator is scanning sixty rows at 03:00 over an SSH tunnel.
   panel), and no card ever.
 - `docs/design/dashboard.md` wins on function, data, clamps and copy.
 
+### The Android app — Material 3 Expressive (Tom, 2026-10-03)
+
+The app (`android/`, companion.md §6) is **not** the projection room. Tom
+picked Material 3 Expressive over a port of this system because it should
+feel native next to the phone's other apps. So on Android only, these rules
+give way to Material's: radius (Expressive shapes), motion (the expressive
+motion scheme's springs), the type ladder (Material's type scale in Roboto
+Flex) and the Two-Channel Rule (**no JetBrains Mono anywhere in the app**).
+
+What carries over: dark only; gold `#E7B455` as primary, on a tonal scheme
+seeded from it (`ui/theme/Theme.kt`); the wordmark in Archivo 500 with its
+gold full stop; the Word-and-Colour Rule (a score always prints its word);
+the Lime Rule. A dial (Material's circular progress indicator) shows a value
+the reader acts on, the verdict score and a profile weight, and appears
+nowhere as decoration.
+
 ## Fonts — one canonical location
 
 The two faces are vendored `.woff2`, latin subset, SIL OFL 1.1, with their
@@ -1079,8 +1095,8 @@ Archivo arrived with lab v4 (commit `1251269`).
    `web/src/fonts/`, loaded through `next/font/local`;
    `mcp/tests/test_web_assets.py` fails the suite the day the two differ.
    *Amended 2026-10-03:* the Android app (`android/`) cannot read woff2 and
-   carries TTF decompressions of the same two files in
-   `android/app/src/main/res/font/`; regenerate them from this directory.
+   carries a TTF decompression of the Archivo file, for its wordmark only, in
+   `android/app/src/main/res/font/`; regenerate it from this directory.
 2. **Nothing in `mcp/` routes these files.** The public `/static/` asset route
    left with the welcome page (2026-09-05) and the dashboard's `fonts/` alias
    left with its own pages (2026-09-06), so the directory is a record rather
