@@ -58,6 +58,8 @@ jobs:
       - name: Build or retag
         id: plan
         run: |
+          # A planner that dies must fail the release, never leave `build` unset.
+          set -o pipefail
           if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
             # Not a release: build, and exercise the planner against the last release.
             scripts/release_plan.sh worker "$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
