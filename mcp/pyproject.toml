@@ -18,6 +18,9 @@ dependencies = [
     # note the import name is `httpx2`, not `httpx`.
     "httpx2>=2.9",
     "pydantic>=2.11",
+    # Validates the model's structured output (llm.py). Already in the tree
+    # through `mcp`; named here because llm.py imports it directly.
+    "jsonschema>=4.26",
     # `jinja2` came out on 2026-09-06 with the dashboard's pages. It was here
     # for `autoescape=True` on a surface that renders OCR lines, video titles
     # and yt-dlp error strings — every one of them attacker-controlled — and
