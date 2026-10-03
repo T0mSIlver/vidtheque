@@ -21,7 +21,7 @@ describe("the dashboard chassis", () => {
     await mount();
 
     expect(screen.getByText("the page")).toBeInTheDocument();
-    for (const label of ["Overview", "Ledger", "Search", "Videos", "Jobs"]) {
+    for (const label of ["Health", "Corpus", "Search", "Videos", "Jobs"]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }
     expect(await screen.findByText("0.0.6")).toBeInTheDocument();
@@ -29,10 +29,10 @@ describe("the dashboard chassis", () => {
 
   // The nav works before anything is known about the deployment.
   it("marks where you are", async () => {
-    await mount({}, "/dashboard/ledger");
+    await mount({}, "/dashboard/corpus");
 
-    expect(screen.getByRole("link", { name: "Ledger" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Corpus" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Health" })).not.toHaveAttribute("aria-current");
   });
 
   // A page declares its section; a prefix test would get the next route wrong.
@@ -40,13 +40,13 @@ describe("the dashboard chassis", () => {
     await mount({}, "/dashboard/videos/kCc8FmEb1nY");
 
     expect(screen.getByRole("link", { name: "Videos" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Health" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks nothing on a page that is in no section", async () => {
     await mount({}, "/dashboard/login");
 
-    for (const label of ["Overview", "Ledger", "Search", "Videos", "Jobs"]) {
+    for (const label of ["Health", "Corpus", "Search", "Videos", "Jobs"]) {
       expect(screen.getByRole("link", { name: label }), label).not.toHaveAttribute("aria-current");
     }
   });
@@ -195,14 +195,14 @@ describe("the dashboard chassis", () => {
         { path: "/dashboard/videos", session: SESSION },
       );
 
-      expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument();
+      // The rail's Health link, and the refusal's.
+      expect(screen.getAllByRole("link", { name: "Health" })).toHaveLength(2);
       expect(await screen.findByText("auth=token")).toBeInTheDocument();
       expect(
         screen.getByRole("heading", { name: "Cannot read properties of null" }),
       ).toBeInTheDocument();
       expect(screen.getByText("E_INTERNAL")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Where to go from here" })).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
       expect(screen.getByText("ref 3391458122")).toBeInTheDocument();
     });
   });

@@ -71,6 +71,10 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // The ledger became Corpus (dashboard.md §24); old links and bookmarks land.
+  async redirects() {
+    return [{ source: "/dashboard/ledger", destination: "/dashboard/corpus", permanent: true }];
+  },
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];

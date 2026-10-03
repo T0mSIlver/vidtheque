@@ -45,41 +45,17 @@ const READINESS = {
   checked_at: 1788626080,
 };
 
-const OVERVIEW = {
+const HEALTH = {
   counted_at: 1788626080,
   redacted: false,
   writes_allowed: true,
-  corpus: {
-    videos: 4,
-    queryable_videos: 3,
-    videos_ready: 3,
-    videos_by_index_state: { ready: 3, indexing: 1 },
-    data_status: "indexing",
-    cues: 10,
-    keyframes: 3,
-    ocr_lines: 5,
-    duration_s: 17200,
-    published: { oldest: 1673913600, newest: 1740000000 },
-    last_indexed: 1750000000,
-  },
-  channels: [{ channel: "GPU MODE", videos: 1, seconds: 3600 }],
-  tags: [{ tag: "topic:attention", videos: 3 }],
-  gaps: { transcript_no_ocr: 1, indexing: 1, failed: 0, failed_cap: 5, failed_capped: false },
+  data_status: "indexing",
+  last_indexed: 1750000000,
+  gaps: { transcript_no_ocr: 1, indexing: 1, has_failed: false },
   embed_backlog: { text: 0, frame: 0 },
-  jobs: { active: 2, running: 1, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
-  recent: [
-    {
-      video_id: "kCc8FmEb1nY",
-      title: "Let's build GPT",
-      channel: "Andrej Karpathy",
-      duration_s: 7000,
-      indexed_at: 1750000000,
-      thumb: null,
-    },
-  ],
+  jobs: { active: 2, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
   readiness: READINESS,
   declared_models: [{ label: "transcription", key: "stt.model", value: "large-v3", dim: "" }],
-  storage: { keyframe_bytes: 4306, database_bytes: 4653056 },
 };
 
 const SESSION = {
@@ -99,7 +75,7 @@ const SESSION = {
   accepts_token: true,
 };
 
-const OVERVIEW_PATH = "/dashboard/api/overview";
+const HEALTH_PATH = "/dashboard/api/health";
 const SESSION_PATH = "/dashboard/api/session";
 
 describe("the dashboard client", () => {
@@ -107,21 +83,21 @@ describe("the dashboard client", () => {
   // and nothing here is cacheable because every figure changes under the
   // reader (dashboard.md §3, and Python answers `no-store` already).
   it("reads same-origin, with the cookie, uncached", async () => {
-    const { calls, fetchImpl } = fake({ [OVERVIEW_PATH]: { body: OVERVIEW } });
-    await createDashboardClient({ fetch: fetchImpl }).overview();
+    const { calls, fetchImpl } = fake({ [HEALTH_PATH]: { body: HEALTH } });
+    await createDashboardClient({ fetch: fetchImpl }).health();
 
-    expect(calls[0].path).toBe(OVERVIEW_PATH);
+    expect(calls[0].path).toBe(HEALTH_PATH);
     expect(calls[0].init.credentials).toBe("same-origin");
     expect(calls[0].init.cache).toBe("no-store");
     expect(new Headers(calls[0].init.headers).get("accept")).toBe("application/json");
   });
 
   it("returns the owner payload, typed", async () => {
-    const { fetchImpl } = fake({ [OVERVIEW_PATH]: { body: OVERVIEW } });
-    const data = await createDashboardClient({ fetch: fetchImpl }).overview();
+    const { fetchImpl } = fake({ [HEALTH_PATH]: { body: HEALTH } });
+    const data = await createDashboardClient({ fetch: fetchImpl }).health();
 
-    expect(data.corpus.videos).toBe(4);
-    expect(data.storage?.database_bytes).toBe(4653056);
+    expect(data.jobs.active).toBe(2);
+    expect(data.declared_models?.[0].value).toBe("large-v3");
     expect(data.readiness.worker?.state).toBe("ready");
   });
 
@@ -129,17 +105,15 @@ describe("the dashboard client", () => {
   // A schema that refused it would make the demo instance unreadable.
   it("accepts the projection's nulls", async () => {
     const projection = {
-      ...OVERVIEW,
+      ...HEALTH,
       redacted: true,
       readiness: { ...READINESS, worker: null },
       declared_models: null,
-      storage: null,
     };
-    const { fetchImpl } = fake({ [OVERVIEW_PATH]: { body: projection } });
-    const data = await createDashboardClient({ fetch: fetchImpl }).overview();
+    const { fetchImpl } = fake({ [HEALTH_PATH]: { body: projection } });
+    const data = await createDashboardClient({ fetch: fetchImpl }).health();
 
     expect(data.redacted).toBe(true);
-    expect(data.storage).toBeNull();
     expect(data.declared_models).toBeNull();
     expect(data.readiness.worker).toBeNull();
   });
@@ -158,7 +132,7 @@ describe("the dashboard client", () => {
     it("throws the typed refusal and sends the browser to sign in, with a way back", async () => {
       const navigate = vi.fn();
       const { fetchImpl } = fake({
-        [OVERVIEW_PATH]: {
+        [HEALTH_PATH]: {
           status: 401,
           body: {
             error: "E_AUTH_REQUIRED",
@@ -171,10 +145,10 @@ describe("the dashboard client", () => {
       const client = createDashboardClient({
         fetch: fetchImpl,
         navigate,
-        currentPath: () => "/dashboard/ledger",
+        currentPath: () => "/dashboard/corpus",
       });
 
-      const error = await client.overview().catch((e: unknown) => e);
+      const error = await client.health().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(DashboardError);
       expect((error as DashboardError).status).toBe(401);
       expect((error as DashboardError).code).toBe("E_AUTH_REQUIRED");
@@ -182,7 +156,7 @@ describe("the dashboard client", () => {
 
       // The redirect is a second, ungated request; let it settle.
       await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
-      expect(navigate).toHaveBeenCalledWith("/dashboard/login?next=%2Fdashboard%2Fledger");
+      expect(navigate).toHaveBeenCalledWith("/dashboard/login?next=%2Fdashboard%2Fcorpus");
     });
 
     // A read-only instance with a token gates its reads and registers no login
@@ -191,12 +165,12 @@ describe("the dashboard client", () => {
     it("stays put when the deployment has no sign-in page", async () => {
       const navigate = vi.fn();
       const { fetchImpl } = fake({
-        [OVERVIEW_PATH]: { status: 401, body: { error: "E_AUTH_REQUIRED" } },
+        [HEALTH_PATH]: { status: 401, body: { error: "E_AUTH_REQUIRED" } },
         [SESSION_PATH]: { body: { ...SESSION, write_side: false, login_url: null } },
       });
       const client = createDashboardClient({ fetch: fetchImpl, navigate });
 
-      await expect(client.overview()).rejects.toBeInstanceOf(DashboardError);
+      await expect(client.health()).rejects.toBeInstanceOf(DashboardError);
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(navigate).not.toHaveBeenCalled();
     });
@@ -205,13 +179,13 @@ describe("the dashboard client", () => {
     it("navigates once however many reads are refused", async () => {
       const navigate = vi.fn();
       const { fetchImpl } = fake({
-        [OVERVIEW_PATH]: { status: 401, body: { error: "E_AUTH_REQUIRED" } },
-        "/dashboard/api/ledger": { status: 401, body: { error: "E_AUTH_REQUIRED" } },
+        [HEALTH_PATH]: { status: 401, body: { error: "E_AUTH_REQUIRED" } },
+        "/dashboard/api/corpus": { status: 401, body: { error: "E_AUTH_REQUIRED" } },
         [SESSION_PATH]: { body: SESSION },
       });
       const client = createDashboardClient({ fetch: fetchImpl, navigate });
 
-      await Promise.allSettled([client.overview(), client.ledger()]);
+      await Promise.allSettled([client.health(), client.corpus()]);
       await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
     });
   });
@@ -220,7 +194,7 @@ describe("the dashboard client", () => {
   // instead of inventing a wait (`RetryIn`).
   it("carries Retry-After off a 429", async () => {
     const { fetchImpl } = fake({
-      [OVERVIEW_PATH]: {
+      [HEALTH_PATH]: {
         status: 429,
         body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
         headers: { "retry-after": "37" },
@@ -228,7 +202,7 @@ describe("the dashboard client", () => {
     });
 
     const error = (await createDashboardClient({ fetch: fetchImpl })
-      .overview()
+      .health()
       .catch((e: unknown) => e)) as DashboardError;
     expect(error.status).toBe(429);
     expect(error.code).toBe("E_RATE_LIMIT");
@@ -239,11 +213,11 @@ describe("the dashboard client", () => {
 
   it("is still a typed error when the body is not an envelope", async () => {
     const { fetchImpl } = fake({
-      [OVERVIEW_PATH]: { status: 502, body: "<html>bad gateway</html>" },
+      [HEALTH_PATH]: { status: 502, body: "<html>bad gateway</html>" },
     });
 
     const error = (await createDashboardClient({ fetch: fetchImpl })
-      .overview()
+      .health()
       .catch((e: unknown) => e)) as DashboardError;
     expect(error.status).toBe(502);
     expect(error.code).toBe("E_HTTP");
@@ -294,14 +268,14 @@ describe("the dashboard client", () => {
   // and it must fail here rather than three components deep as `undefined`.
   it("refuses a malformed body loudly", async () => {
     const { fetchImpl } = fake({
-      [OVERVIEW_PATH]: { body: { ...OVERVIEW, corpus: { ...OVERVIEW.corpus, videos: "four" } } },
+      [HEALTH_PATH]: { body: { ...HEALTH, jobs: { ...HEALTH.jobs, active: "two" } } },
     });
 
     const error = await createDashboardClient({ fetch: fetchImpl })
-      .overview()
+      .health()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(DashboardShapeError);
-    expect((error as DashboardShapeError).path).toBe(OVERVIEW_PATH);
+    expect((error as DashboardShapeError).path).toBe(HEALTH_PATH);
   });
 
   // ----------------------------------------------------------- the writes

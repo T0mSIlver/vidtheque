@@ -597,7 +597,7 @@ describe("one follow's page", () => {
       expect(
         within(recover).getByRole("link", { name: "Everything that is indexed" }),
       ).toBeInTheDocument();
-      expect(within(recover).getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(within(recover).getByRole("link", { name: "Health" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "try again" })).not.toBeInTheDocument();
     });
 

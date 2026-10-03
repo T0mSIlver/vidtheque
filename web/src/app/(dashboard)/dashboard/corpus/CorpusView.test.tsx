@@ -2,26 +2,26 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { mountDashboard, type Answer } from "@/test/dashboard/harness";
-import { DEMO_LEDGER, DEMO_SESSION, OWNER_LEDGER, OWNER_SESSION } from "@/test/dashboard/fixtures";
+import { DEMO_CORPUS, DEMO_SESSION, OWNER_CORPUS, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import { firstPaint } from "@/test/dashboard/retry";
-import { LedgerView } from "./LedgerView";
+import { CorpusView } from "./CorpusView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-// The ledger must not disagree with the pages its numbers came from: the
-// counts, the state words with their filters, and what the projection drops.
+// What is in the corpus: the counts, the state words with their filters, the
+// lists, and what the projection drops.
 
-function mount(ledger: Answer, session: unknown = OWNER_SESSION) {
-  return mountDashboard(<LedgerView />, {
-    path: "/dashboard/ledger",
+function mount(corpus: Answer, session: unknown = OWNER_SESSION) {
+  return mountDashboard(<CorpusView />, {
+    path: "/dashboard/corpus",
     session,
-    routes: { "/dashboard/api/ledger": ledger },
+    routes: { "/dashboard/api/corpus": corpus },
   });
 }
 
-describe("the ledger", () => {
+describe("the corpus page", () => {
   it("carries the corpus band, stamped once", async () => {
-    await mount({ body: OWNER_LEDGER });
+    await mount({ body: OWNER_CORPUS });
 
     expect(await screen.findByText("transcript cues")).toBeInTheDocument();
     expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
@@ -30,23 +30,14 @@ describe("the ledger", () => {
       "in 3 embedding chunks",
     );
     expect(screen.getByText("on-screen lines").closest("div")).toHaveTextContent("5");
-    // The span under the video count, printed the way the overview prints it:
-    // one fact, one spelling, whichever of the two pages you are reading.
     expect(screen.getByText("videos").closest("div")).toHaveTextContent(
       "published 2023-01-17–2025-02-19",
     );
-    // One reading, taken inside one request: the head's `counted` stamp and
-    // the readiness panel's health check are the same second, by construction
-    // — and both keep the second, because both are the instant of a reading
-    // and not a date in the corpus. Both wear the `<time>` the template gave
-    // them, so the machine-readable stamp is on the page as well as the
-    // printed one.
-    const stamps = screen.getAllByText("2026-09-05T16:34:40Z");
-    expect(stamps).toHaveLength(2);
-    for (const stamp of stamps) {
-      expect(stamp.tagName).toBe("TIME");
-      expect(stamp).toHaveAttribute("datetime", "2026-09-05T16:34:40Z");
-    }
+    // One reading, stamped once, to the second: it is the instant of a
+    // reading and not a date in the corpus.
+    const stamp = screen.getByText("2026-09-05T16:34:40Z");
+    expect(stamp.tagName).toBe("TIME");
+    expect(stamp).toHaveAttribute("datetime", "2026-09-05T16:34:40Z");
   });
 
   // An empty corpus has no oldest video and no newest one, which is exactly
@@ -56,8 +47,8 @@ describe("the ledger", () => {
   it("leaves the published span out on a corpus that has none", async () => {
     await mount({
       body: {
-        ...OWNER_LEDGER,
-        corpus: { ...OWNER_LEDGER.corpus, published: { oldest: null, newest: null } },
+        ...OWNER_CORPUS,
+        corpus: { ...OWNER_CORPUS.corpus, published: { oldest: null, newest: null } },
       },
     });
 
@@ -69,7 +60,7 @@ describe("the ledger", () => {
   // The five state words existed only as a filter on the videos table until
   // this page; each figure is the link to its own filter.
   it("counts the videos by state, and every count is its own filter", async () => {
-    await mount({ body: OWNER_LEDGER });
+    await mount({ body: OWNER_CORPUS });
 
     const states = (await screen.findByText("Videos by state")).closest("section");
     const figure = (label: string) =>
@@ -94,7 +85,7 @@ describe("the ledger", () => {
   // invent a sixth vocabulary: queued and running both link to `active`, and
   // cancelled — which has no filter of its own — is a figure and not a link.
   it("counts the jobs by state, without inventing a filter for cancelled", async () => {
-    await mount({ body: OWNER_LEDGER });
+    await mount({ body: OWNER_CORPUS });
 
     expect(await screen.findByText("Jobs by state")).toBeInTheDocument();
     const queued = screen.getByText("queued").closest("div");
@@ -106,23 +97,32 @@ describe("the ledger", () => {
     expect(screen.getByText(/job\(s\) failed in the last 24 hours/)).toBeInTheDocument();
   });
 
-  it("reports what is missing, what it is filed under, and what it costs", async () => {
-    await mount({ body: OWNER_LEDGER });
+  it("lists the channels and tags, and what it costs on disk", async () => {
+    await mount({ body: OWNER_CORPUS });
 
-    expect(await screen.findByText("What is missing")).toBeInTheDocument();
-    expect(screen.getByText("no on-screen text").closest("div")).toHaveTextContent(
-      "have a transcript, no OCR",
+    expect(await screen.findByRole("link", { name: "GPU MODE" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos?channel=GPU%20MODE&index_state=all",
     );
-    expect(screen.getByText("channels").closest("div")).toHaveTextContent("4");
+    expect(screen.getByRole("link", { name: /topic:attention/ })).toBeInTheDocument();
     expect(screen.getByText("keyframe JPEGs").closest("div")).toHaveTextContent("4.3 kB");
     expect(screen.getByText("index file").closest("div")).toHaveTextContent("4.7 MB");
-    // The pipeline observation, and the deployment's own state beside it.
-    expect(screen.getByText("unavailable")).toBeInTheDocument();
-    expect(screen.getByText("allowed")).toBeInTheDocument();
+    // Health's, and only Health's (§24).
+    expect(screen.queryByText("Pipeline readiness")).not.toBeInTheDocument();
+    expect(screen.queryByText("What is missing")).not.toBeInTheDocument();
+    expect(screen.queryByText(/has_more|The largest/)).not.toBeInTheDocument();
+  });
+
+  it("says a capped channel list is the largest ones", async () => {
+    await mount({
+      body: { ...OWNER_CORPUS, channels: { ...OWNER_CORPUS.channels, has_more: true } },
+    });
+
+    expect(await screen.findByText(/The largest 3/)).toBeInTheDocument();
   });
 
   it("keeps the corpus and drops the box in the projection", async () => {
-    await mount({ body: DEMO_LEDGER }, DEMO_SESSION);
+    await mount({ body: DEMO_CORPUS }, DEMO_SESSION);
 
     expect(await screen.findByText("transcript cues")).toBeInTheDocument();
     expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
@@ -131,12 +131,10 @@ describe("the ledger", () => {
     expect(screen.getByText("videos").closest("div")).toHaveTextContent(
       "published 2023-01-17–2025-02-19",
     );
-    expect(screen.getByText("What it is filed under")).toBeInTheDocument();
+    expect(screen.getByText("Channels")).toBeInTheDocument();
 
+    expect(screen.queryByText("Storage")).not.toBeInTheDocument();
     expect(screen.queryByText("keyframe JPEGs")).not.toBeInTheDocument();
-    expect(screen.queryByText("index file")).not.toBeInTheDocument();
-    expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
-    expect(screen.queryByText("allowed")).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 
@@ -152,14 +150,14 @@ describe("the ledger", () => {
       });
 
       // The refusal replaces the page: the message is the title, the code is
-      // the state beside it, and the ledger's own head is not over the top of
+      // the state beside it, and the page's own head is not over the top of
       // it claiming a reading that did not happen.
       expect(
         await screen.findByRole("heading", {
           name: "This dashboard needs the owner's password, token or session.",
         }),
       ).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: "The ledger" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Corpus" })).not.toBeInTheDocument();
       expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
       // Python writes the `next:` line as a fragment that used to trail a
       // colon; standing on its own under a heading it takes the capital.
@@ -183,7 +181,7 @@ describe("the ledger", () => {
     // A payload that does not match the contract fails at the boundary rather
     // than three components deep as `undefined`.
     it("says so when the instance answers in a shape it cannot read", async () => {
-      await mount({ body: { ...OWNER_LEDGER, videos_by_state: null } });
+      await mount({ body: { ...OWNER_CORPUS, videos_by_state: null } });
 
       expect(
         await screen.findByRole("heading", { name: /shape this page cannot read/ }),

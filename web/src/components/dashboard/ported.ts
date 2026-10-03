@@ -5,13 +5,13 @@ import { ROOT } from "@/lib/dashboard/client";
 // POSTs) is Python's and is reached by a plain anchor (dashboard.md §2).
 
 export type Section =
-  "corpus" | "ledger" | "search" | "videos" | "jobs" | "index" | "following" | "login";
+  "health" | "corpus" | "search" | "videos" | "jobs" | "index" | "following" | "login";
 
 // A table rather than a prefix test: a detail page declares its section, and
 // the sign-in page is in none of the rail's.
 const SECTIONS: [RegExp, Section][] = [
-  [new RegExp(`^${ROOT}$`), "corpus"],
-  [new RegExp(`^${ROOT}/ledger$`), "ledger"],
+  [new RegExp(`^${ROOT}$`), "health"],
+  [new RegExp(`^${ROOT}/corpus$`), "corpus"],
   [new RegExp(`^${ROOT}/search$`), "search"],
   [new RegExp(`^${ROOT}/videos(?:/[^/]+)?$`), "videos"],
   [new RegExp(`^${ROOT}/jobs(?:/[^/]+)?$`), "jobs"],

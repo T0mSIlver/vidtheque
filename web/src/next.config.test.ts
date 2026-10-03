@@ -108,7 +108,7 @@ describe("the document cache policy", () => {
   it("keeps every dashboard document out of every cache", async () => {
     for (const path of [
       "/dashboard",
-      "/dashboard/ledger",
+      "/dashboard/corpus",
       "/dashboard/search",
       "/dashboard/videos",
       "/dashboard/videos/kCc8FmEb1nY",
