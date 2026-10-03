@@ -17,7 +17,7 @@ Today that is Tom Vaucourt on his own box. `owner_id` is a constant `1`
 is no second audience with different permissions, and there is no user
 management, no roles, no invitations.
 
-Two situations, and they are not the same job:
+Three situations, and they are not the same job:
 
 1. **At the terminal, mid-batch.** Something has been running for twenty
    minutes and the operator wants to know whether it is working, waiting, or
@@ -25,6 +25,11 @@ Two situations, and they are not the same job:
 2. **After the fact, answering a question about the index itself.** Which model
    transcribed this? Why does this video have no on-screen text? What did OCR
    actually read off that frame, and where on the frame did it read it?
+3. **On the phone, between two things.** A notification says a new video is
+   worth a look. The owner has a minute, one thumb and no terminal: read the
+   verdict, jump to the moment on YouTube, or hand the video to Claude
+   (`docs/design/companion.md` §6). Nothing on this screen is about the
+   machine.
 
 A third consumer exists and is not a person: **an MCP client** (Claude and
 friends) talking to `/mcp`. Agents are the right consumer of the corpus and the
@@ -92,6 +97,8 @@ a neighbouring product could not truthfully copy:
     `positioning.md` surface implications).
   - `/dashboard` — the management surface. Five routes: corpus overview,
     videos table, video detail, jobs, job detail.
+  - `/feed` — the phone feed, behind the same sign-in: what should I watch?
+    Three screens (feed, video, profile) and nothing the console shows.
 - **The GPU is leased.** On Tom's box the worker shares a 3090 with a llama.cpp
   LXC through `GPU_ACQUIRE_CMD`/`GPU_RELEASE_CMD` hooks; public defaults leave
   them unset. Jobs therefore wait for reasons that are real and need to be
@@ -227,6 +234,9 @@ and differ in register, not in world.
   proof for someone who arrived from a link: live search, ask-with-citations,
   the same aesthetic carrying into a working product
   (`positioning.md`: the demo is the proof).
+- **`/feed` — `Triage`.** One column at a phone's width, one thumb: the
+  verdict, its moments, a thumb up or down, Ask Claude. Tap targets are 44px,
+  and the actions sit at the foot of the screen.
 - **`/dashboard` — `Operate`.** The minimalist end of the same system: a true,
   informative control surface. Scanability, density and consistency outrank
   expression; it sells nothing and narrates nothing (`positioning.md`: the
