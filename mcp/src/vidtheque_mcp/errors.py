@@ -45,6 +45,10 @@ HTTP_STATUS: dict[str, int] = {
     "E_UNKNOWN_JOB": 404,
     "E_UNKNOWN_FOLLOW": 404,
     "E_UNKNOWN_EDITION": 404,
+    "E_UNKNOWN_ENTRY": 404,
+    # Dashboard-only: the feed's profile revert and video screen (dashboard.md §25).
+    "E_UNKNOWN_EVENT": 404,
+    "E_NO_VERDICT": 404,
     "E_NOT_INDEXED": 409,
     "E_INDEXING": 409,
     "E_FEATURE_DISABLED": 409,
@@ -52,6 +56,7 @@ HTTP_STATUS: dict[str, int] = {
     # malformed: `check_now` on a follow the scheduler will not pick up
     # (dashboard.md §21, 2026-09-15).
     "E_NOT_SCHEDULABLE": 409,
+    "E_PROFILE_GUARD": 409,
     "E_TIMEOUT": 408,
     "E_BUSY": 503,
     "E_RATE_LIMIT": 429,
