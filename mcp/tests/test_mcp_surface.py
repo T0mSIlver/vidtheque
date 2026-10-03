@@ -1,6 +1,6 @@
 """Registration smoke test through the actual MCP app.
 
-Eleven tools with the contract's names and annotations, three resources, and one
+Twelve tools with the contract's names and annotations, three resources, and one
 real `tools/call` round trip over streamable HTTP — the surface a client sees,
 not the Python functions behind it.
 """
@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "job-status",
     "tag-video",
     "follow-channel",
+    "profile",
 }
 
 

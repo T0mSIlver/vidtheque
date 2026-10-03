@@ -1,6 +1,6 @@
 """Tool and resource registration against the MCP server.
 
-Eleven tools, kebab-case, each carrying the annotations from tool-surface §3.9.
+Twelve tools, kebab-case, each carrying the annotations from tool-surface §3.9.
 Every handler returns a ``CallToolResult`` directly so it controls its own
 content blocks (text, and for ``get-frames`` the opt-in ``ImageContent``) and
 its ``structuredContent`` — conformant clients read the latter without spending
@@ -13,17 +13,20 @@ import inspect
 from typing import Annotated, Any, Callable, Mapping
 
 from mcp.server import MCPServer
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp_types import CallToolResult
 from pydantic import Field
 
 from . import follows as follows_tool
 from . import frames as frames_tool
 from . import indexing, library, params, resources, search
+from . import profile as profile_tool
 from . import transcript as transcript_tool
-from .base import Deps
+
+from .base import CALL_CONTEXT, CallContext, Deps, record_tool_signal
 from .descriptions import ANNOTATIONS, DESCRIPTIONS
 
-__all__ = ["Deps", "register"]
+__all__ = ["CALL_CONTEXT", "CallContext", "Deps", "register"]
 
 
 def register(
@@ -356,6 +359,16 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
             check_interval_s=check_interval_s,
         )
 
+    async def profile_tool_fn(
+        add: list[profile_tool.NewEntry] | None = None,
+        drop: list[int] | None = None,
+        reweight: list[profile_tool.Reweight] | None = None,
+        reason: str | None = None,
+    ) -> CallToolResult:
+        return await profile_tool.profile(
+            deps, add=add, drop=drop, reweight=reweight, reason=reason
+        )
+
     registry: list[tuple[str, Any]] = [
         ("search", search_tool),
         ("list-videos", list_videos_tool),
@@ -368,6 +381,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
         ("job-status", job_status_tool),
         ("tag-video", tag_video_tool),
         ("follow-channel", follow_channel_tool),
+        ("profile", profile_tool_fn),
     ]
     for name, fn in registry:
         if name in hidden:
@@ -384,6 +398,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
     if "get-frames" not in hidden:
         _alias_return(mcp)
 
+    _record_signals(mcp, deps)
     _reject_unknown_arguments(
         mcp, {name: _wire_names(fn) for name, fn in registry if name not in hidden}
     )
@@ -421,6 +436,41 @@ def _reject_unknown_arguments(mcp: MCPServer, known: Mapping[str, frozenset[str]
         return await inner(name, arguments, context)
 
     mcp.call_tool = call_tool  # type: ignore[method-assign]
+
+
+def _record_signals(mcp: MCPServer, deps: Deps) -> None:
+    """Log the owner's searches and reads as signals (companion.md §2.3).
+
+    Here rather than in each tool for the same reason as the argument check
+    below: `call_tool` is where the name, the raw arguments and the request's
+    headers meet. Installed first, so an argument the check refuses is never
+    logged; a call that returns an error is not logged either.
+    """
+    inner = mcp.call_tool
+
+    async def call_tool(
+        name: str, arguments: dict[str, Any], context: Any = None
+    ) -> Any:
+        result = await inner(name, arguments, context)
+        if isinstance(result, CallToolResult) and not result.is_error:
+            call = CALL_CONTEXT.get()
+            if call is None:
+                token = get_access_token()
+                call = CallContext.from_headers(
+                    _headers(context), token.client_id if token is not None else None
+                )
+            await record_tool_signal(deps, name, arguments, call)
+        return result
+
+    mcp.call_tool = call_tool  # type: ignore[method-assign]
+
+
+def _headers(context: Any) -> Mapping[str, str] | None:
+    """The HTTP request's headers; None on stdio or an in-process call."""
+    try:
+        return context.headers if context is not None else None
+    except ValueError:  # a Context built outside a request
+        return None
 
 
 def _alias_return(mcp: MCPServer) -> None:

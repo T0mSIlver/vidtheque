@@ -190,6 +190,9 @@ def assemble(
         frame_signer=auth.frame_signer,
         runner=runner,
         search_semaphore=asyncio.Semaphore(settings.max_concurrent_searches),
+        # A public deployment's callers are strangers; their searches are not
+        # the owner's signals (companion.md §2.3).
+        signals=not public.enabled,
     )
 
     # Read-only public mode: the write tools are never handed to `add_tool`, so

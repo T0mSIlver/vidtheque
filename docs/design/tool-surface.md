@@ -63,7 +63,7 @@ in them are made up.
 
 ## 2. The surface at a glance
 
-Eleven tools. Kebab-case, following screenpipe (their original Python server
+Twelve tools. Kebab-case, following screenpipe (their original Python server
 shipped `search-content` in 2024-12 and the name/params are unchanged 20 months
 later).
 
@@ -86,6 +86,11 @@ frame list), page `search` browse mode against a `max_per_video` that clamps at
 client carries. Three honest pages beat seven blind ones, and the absence was
 not stopping anyone reading transcripts — only stopping them reading well.
 
+**The twelfth is `profile`, added 2026-10-03** (§4.12, companion.md §2.2): the
+interest profile is written by whichever agent knows the owner, and one tool
+with three edit operations is the smallest surface that lets it edit rather
+than rewrite.
+
 | # | Tool | One-line purpose | readOnly | idempotent |
 |---|---|---|---|---|
 | 1 | `search` | Cross-video search over transcripts, on-screen text and frame imagery, with timestamped deep links. | ✅ | ✅ |
@@ -99,6 +104,7 @@ not stopping anyone reading transcripts — only stopping them reading well.
 | 8 | `job-status` | Poll an indexing job. | ✅ | ❌ |
 | 9 | `tag-video` | Add/remove namespaced tags on an indexed video. | ❌ | ✅ |
 | 10 | `follow-channel` | Follow/unfollow a channel or playlist, or pause, resume and check one. | ❌ | ✅ |
+| 11 | `profile` | Read the interest profile, or add, drop and reweight its entries. | ❌ | ❌ |
 
 Three resources: `vidtheque://corpus`, `vidtheque://context`, `vidtheque://guide`.
 
@@ -605,6 +611,8 @@ in §4.11 and `public/readonly.py`.
 | `E_UNKNOWN_VIDEO` | 404 | video not in corpus | `index-video` / `list-videos` |
 | `E_UNKNOWN_FRAME` | 404 | bad `frame_id` | valid ordinal range for that video |
 | `E_UNKNOWN_JOB` | 404 | bad `job_id` | "call `job-status` with no id for recent jobs" |
+| `E_UNKNOWN_ENTRY` | 404 | `profile` `drop`/`reweight` names an id that is not a live entry | "call `profile` with no arguments for the current ids" |
+| `E_PROFILE_GUARD` | 409 | `profile` would drop an owner-written entry, or go past 40 live entries | "reweight it instead" / "drop an entry in the same call" |
 | `E_UNKNOWN_FOLLOW` | 404 | `follow-channel` handle (slug, source URL or title fragment) resolves to nothing | "`corpus-summary include_follows=true` to see what is followed" |
 | `E_NOT_INDEXED` | 409 | video row exists, pipeline never ran | `index-video force_reindex=true` |
 | `E_INDEXING` | 409 | video is mid-pipeline; partial data | `job-status job_id=…`, plus what *is* queryable now |
@@ -2620,6 +2628,56 @@ absent from `tools/list` is the demo-queries §9.1.8 bug.
 
 **Errors:** `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED` and `E_INDEXING` in the wording
 `video-summary` uses, and `E_BAD_PARAM` for a bad `format` or a reversed span.
+
+### 4.12 `profile`
+
+Added 2026-10-03. The owner's interest profile (companion.md §2): short
+plain-word entries, each with a weight in [-1, 1], a negative weight meaning
+"less of this".
+
+```
+profile(
+  add:      list[{text: str, weight: float}] | None = None,
+  drop:     list[int] | None = None,          # entry ids
+  reweight: list[{id: int, weight: float}] | None = None,
+  reason:   str | None = None,                # kept on every event this call writes
+)
+```
+
+**Called bare** it returns the live entries, highest weight first, and the
+revision: the latest `profile_events` id, which every verdict records. With
+operations, everything in the call is one batch: each guard is checked before
+anything is written, so a refused call changes nothing. Adding a text that is
+already a live entry (case-insensitive) is skipped with a `note:`, not added
+twice. Entry text is whitespace-collapsed and at most 200 characters.
+
+**Guards, server-side (companion.md §2.4):** an entry the owner wrote
+(`source` `owner` or `app`) is never dropped through this tool, only
+reweighted; the profile holds at most 40 live entries, and a drop in the same
+call makes room. The nightly update's own limits (5 operations, 0.3 per night)
+belong to that job, not to this tool.
+
+**Output:** a header (`Profile: N of 40 entries · revision R`), the entries as
+`id weight text source` rows, and a `next:` line. `structuredContent` carries
+`revision`, `entries`, `applied_events` and `duplicates`. Bounded by the
+40-entry cap and the 200-character text cap, so it needs no pagination.
+
+**Annotations:** `{title: "Read or edit the interest profile", readOnlyHint:
+false, idempotentHint: false, openWorldHint: false}`. Not idempotent: every
+applied operation writes an event and moves the revision. A write tool, so a
+read-only public deployment does not register it (§3.8's derivation).
+
+**Errors:** `E_UNKNOWN_ENTRY`, `E_PROFILE_GUARD`, and `E_BAD_PARAM` for a
+weight outside [-1, 1], empty or over-long text, or an id named twice.
+
+**Signals, logged beside the tools rather than by this one.** `search` (with a
+`q`) is recorded as an `mcp_search` signal carrying the query, and
+`video-summary`, `get-segment-context` and `get-transcript` as `mcp_read`
+carrying the video and the offset asked for (index-schema §1.12). Only calls
+that succeed are recorded. A client turns this off per request with the header
+`X-Vidtheque-Signals: off`; a public deployment records nothing; an in-process
+caller sets `CallContext(signals=False)` (the triage agent's calls are never
+signals).
 
 ---
 
