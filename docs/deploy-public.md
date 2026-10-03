@@ -507,11 +507,11 @@ curl -s http://127.0.0.1:8100/dashboard/api/session | jq '{readonly, write_side,
 # are what it renders from.
 ```
 
-The corpus must still be all there in the same payload: the five ledger counts,
-the channel and tag rollups, the arrivals, the queue line and the gaps. An
-overview that comes back an empty shell means the redaction grew past its four
-fields, which the suite asserts both ways
-(`test_the_overview_projection_keeps_the_corpus_and_drops_the_box`).
+The corpus must still be all there: `/dashboard/api/corpus` keeps the band,
+the channel and tag rollups and the state counts, and `/dashboard/api/health`
+keeps the queue line and the gaps. A payload that comes back an empty shell
+means the redaction grew past its fields, which the suite asserts both ways
+(`test_the_public_projection_drops_the_operators_box_from_both_reads`).
 
 **And run them through the edge as well**, once it is up
 (`http://127.0.0.1:8080/dashboard/api/...`): a redacted payload proves the
