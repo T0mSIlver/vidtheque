@@ -73,7 +73,11 @@ class Notifier:
         reached = 0
         gone: list[str] = []
         for token in tokens:
-            outcome = await self.sender.send(token, data)
+            try:
+                outcome = await self.sender.send(token, data)
+            except Exception as exc:  # noqa: BLE001 - one phone's network error is not every phone's
+                log.warning("push: one send failed (%s)", type(exc).__name__)
+                outcome = Delivery.FAILED
             if outcome is Delivery.SENT:
                 reached += 1
             elif outcome is Delivery.GONE:
