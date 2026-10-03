@@ -1277,7 +1277,9 @@ CREATE TABLE verdicts (
   profile_rev INTEGER NOT NULL,               -- profile_events id that scored it; 0 = empty profile
   model       TEXT    NOT NULL,               -- '<backend>:<model>'
   created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-  notified_at INTEGER                         -- kept across a rerun
+  notified_at INTEGER,                        -- kept across a rerun
+  explored    INTEGER NOT NULL DEFAULT 0      -- 0011: 1 = rescored without the negative
+              CHECK (explored IN (0,1))       --   entries, shown as outside the profile
 ) STRICT;
 CREATE INDEX verdicts_recent ON verdicts(created_at DESC);
 ```
