@@ -6,6 +6,7 @@ The model is a fake that answers what each test hands it; nothing calls a real o
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,15 +25,29 @@ from .test_pipeline_e2e import harness
 
 
 class FakeModel:
-    def __init__(self, answer: Any) -> None:
+    """Answers `answer` every time, or each of `answers` in turn."""
+
+    def __init__(self, answer: Any = None, *, answers: list[Any] | None = None) -> None:
+        self.answers = list(answers) if answers is not None else None
         self.answer = answer
         self.prompts: list[str] = []
 
     async def complete(self, prompt: str, *, system=None, schema=None) -> Any:
         self.prompts.append(prompt)
-        if isinstance(self.answer, Exception):
-            raise self.answer
-        return self.answer
+        answer = self.answers.pop(0) if self.answers is not None else self.answer
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+class FixedRoll:
+    """An RNG whose every roll is `value`."""
+
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+    def random(self) -> float:
+        return self.value
 
 
 def verdict(*moments: dict, score: int = 2) -> dict:
@@ -47,8 +62,13 @@ async def video_id(db, source_id: str) -> int:
     return int((await rows(db, "SELECT id FROM videos WHERE source_id = ?", (source_id,)))[0][0])
 
 
-async def run_verdict(parts: Assembled, vid: int, model: FakeModel) -> sqlite3.Row:
-    parts.runner.handlers["verdict"] = VerdictStage(parts.deps, model, "api:fake")
+async def run_verdict(
+    parts: Assembled, vid: int, model: FakeModel, rng: FixedRoll | None = None
+) -> sqlite3.Row:
+    # Never explores unless the test hands it a roll.
+    parts.runner.handlers["verdict"] = VerdictStage(
+        parts.deps, model, "api:fake", rng=rng or FixedRoll(1.0)
+    )
     job = await parts.db.write(lambda c: store.queue(c, vid))
     assert job is not None
     assert await parts.runner.run_once() is True
@@ -110,6 +130,139 @@ async def test_a_rerun_replaces_the_verdict_and_keeps_notified_at(assembled: Ass
     await run_verdict(assembled, vid, FakeModel(verdict(score=3)))
     row = await db.read(lambda c: store.get(c, vid))
     assert (row["score"], row["notified_at"]) == (3, 123)
+
+
+# ------------------------------------------------------------------ novelty
+
+
+async def _seen(db, vid: int, kind: str, days_ago: int) -> None:
+    at = int(time.time()) - days_ago * 86_400
+    await db.write(
+        lambda c: c.execute(
+            "INSERT INTO signals (at, kind, video_id, client) VALUES (?, ?, ?, 'app')",
+            (at, kind, vid),
+        )
+    )
+
+
+async def _copy_vectors(db, src: int, dst: int) -> None:
+    """Give `dst`'s chunk the vector of `src`'s: the same passage, said twice."""
+
+    def copy(c: sqlite3.Connection) -> None:
+        blob = c.execute("SELECT embedding FROM vec_chunks WHERE video_id = ?", (src,)).fetchone()[0]
+        chunk, start = c.execute(
+            "SELECT chunk_id, start_s FROM vec_chunks WHERE video_id = ?", (dst,)
+        ).fetchone()
+        c.execute("DELETE FROM vec_chunks WHERE chunk_id = ?", (chunk,))
+        c.execute(
+            "INSERT INTO vec_chunks (chunk_id, video_id, start_s, embedding) VALUES (?, ?, ?, ?)",
+            (chunk, dst, start, blob),
+        )
+
+    await db.write(copy)
+
+
+@pytest.mark.parametrize(
+    ("kind", "days_ago", "same_passage", "flagged"),
+    [
+        ("open", 3, True, True),
+        ("mcp_read", 89, True, True),
+        # Outside the 90-day window.
+        ("open", 91, True, False),
+        # A search names no video; a swipe-away is not "seen".
+        ("dismiss", 3, True, False),
+        # Seen, but it says something else.
+        ("open", 3, False, False),
+    ],
+)
+async def test_a_video_overlapping_one_the_owner_saw_is_flagged_in_the_prompt(
+    assembled: Assembled, kind: str, days_ago: int, same_passage: bool, flagged: bool
+) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    seen = await video_id(db, "zduSFxRajkE")
+    if same_passage:
+        await _copy_vectors(db, seen, vid)
+    await _seen(db, seen, kind, days_ago)
+
+    model = FakeModel(verdict())
+    await run_verdict(assembled, vid, model)
+
+    line = 'already seen in "Making LLMs go brrr" (GPU MODE): about 100%'
+    assert (line in model.prompts[0]) is flagged
+
+
+async def test_the_video_itself_is_never_its_own_overlap(assembled: Assembled) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    await _seen(db, vid, "open", 1)
+    model = FakeModel(verdict())
+    await run_verdict(assembled, vid, model)
+    assert "already seen" not in model.prompts[0]
+
+
+# -------------------------------------------------------------- exploration
+
+
+async def _profile_with_a_negative(db) -> None:
+    ops = profile_store.Ops(add=[("Evals", 0.9), ("Launch hype", -0.8)])
+    await db.write(lambda c: profile_store.apply(c, ops, actor="owner"))
+
+
+@pytest.mark.parametrize(
+    ("roll", "first", "second", "stored", "explored"),
+    [
+        # Rolled in, and the rescore reaches 2: shown, flagged.
+        (0.05, 1, 2, 2, 1),
+        (0.05, 0, 3, 3, 1),
+        # Rolled in, but still low without the negatives: the first verdict stands.
+        (0.05, 1, 1, 1, 0),
+        # Rolled out: one model call.
+        (0.5, 1, None, 1, 0),
+        # A 2 is never rescored, whatever the roll.
+        (0.0, 2, None, 2, 0),
+    ],
+)
+async def test_about_one_low_verdict_in_ten_is_rescored_without_the_negative_entries(
+    assembled: Assembled, roll: float, first: int, second: int | None, stored: int, explored: int
+) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    await _profile_with_a_negative(db)
+    answers = [verdict(score=first)] + ([verdict(score=second)] if second is not None else [])
+    model = FakeModel(answers=answers)
+
+    job = await run_verdict(assembled, vid, model, FixedRoll(roll))
+
+    assert job["state"] == "done"
+    row = await db.read(lambda c: store.get(c, vid))
+    assert (row["score"], row["explored"]) == (stored, explored)
+    assert len(model.prompts) == (2 if second is not None else 1)
+    assert "-0.8  Launch hype" in model.prompts[0]
+    if second is not None:
+        assert "Launch hype" not in model.prompts[1]
+        assert "+0.9  Evals" in model.prompts[1]
+
+
+async def test_a_profile_without_negative_entries_never_explores(assembled: Assembled) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    await db.write(
+        lambda c: profile_store.apply(c, profile_store.Ops(add=[("Evals", 0.9)]), actor="owner")
+    )
+    model = FakeModel(answers=[verdict(score=0)])
+    await run_verdict(assembled, vid, model, FixedRoll(0.0))
+    assert len(model.prompts) == 1
+
+
+async def test_a_rerun_without_exploration_clears_the_flag(assembled: Assembled) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    await _profile_with_a_negative(db)
+    await run_verdict(assembled, vid, FakeModel(answers=[verdict(score=1), verdict(score=2)]), FixedRoll(0.0))
+    await run_verdict(assembled, vid, FakeModel(verdict(score=3)))
+    row = await db.read(lambda c: store.get(c, vid))
+    assert (row["score"], row["explored"]) == (3, 0)
 
 
 # ---------------------------------------------------------- failure isolation

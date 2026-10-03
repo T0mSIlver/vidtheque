@@ -3,13 +3,19 @@
 The input is bounded here, whatever an agent might pass elsewhere:
 `video-summary`'s own assembly (title, channel, chapters, speakers, key texts,
 each under that tool's clamps), the transcript middle-truncated to
-`TRANSCRIPT_CHARS`, and the live profile entries. The model answers JSON
-against `VERDICT_SCHEMA`; the moments then go through the receipt check.
+`TRANSCRIPT_CHARS`, the live profile entries, and the seen videos this one
+overlaps (`novelty`). The model answers JSON against `VERDICT_SCHEMA`; the
+moments then go through the receipt check.
+
+Exploration: a verdict scored 0 or 1 by a profile with negative entries is,
+with probability `EXPLORE_RATE`, scored again without them. A rescore of 2 or
+more is stored instead, flagged `explored`; anything lower keeps the first.
 """
 
 from __future__ import annotations
 
 import logging
+import random
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -23,12 +29,15 @@ from ..llm import LLMSettings, LLMUnavailable, Model, build_model
 from ..profile import store as profile_store
 from ..tools.base import CALL_CONTEXT, CallContext, Deps
 from ..tools.library import video_summary
-from . import store
+from . import novelty, store
 
 logger = logging.getLogger(__name__)
 
 # About 10k tokens: a one-hour talk whole, the two ends of anything longer.
 TRANSCRIPT_CHARS = 40_000
+
+# About one low verdict in ten is rescored without the negative entries.
+EXPLORE_RATE = 0.1
 
 VERDICT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -63,7 +72,9 @@ Answer with one JSON object and nothing else:
 - moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the
   transcript's [cue …] markers, and offset_s must lie inside that cue's start–end.
   Use only cues you were shown; give fewer moments rather than guessing.
-A negative weight means the person wants less of that."""
+A negative weight means the person wants less of that.
+Lines starting "already seen in" name videos the person opened or asked about
+that cover the same ground; score what is new here, not what they have seen."""
 
 # The triage agent's corpus reads are never the owner's signals (§2.3).
 TRIAGE = CallContext(client="triage", signals=False)
@@ -111,10 +122,14 @@ def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient
 class VerdictStage:
     """Implements `jobs.runner.Pipeline` for the `verdict` kind."""
 
-    def __init__(self, deps: Deps, model: Model, label: str) -> None:
+    def __init__(
+        self, deps: Deps, model: Model, label: str, rng: random.Random | None = None
+    ) -> None:
         self.deps = deps
         self.model = model
         self.label = label
+        # Injected so tests decide which verdicts explore.
+        self.rng = rng or random.Random()
 
     async def run_item(self, ctx: ItemContext) -> None:
         db = self.deps.db
@@ -131,11 +146,21 @@ class VerdictStage:
                 f"the video is {row['index_state']}, not indexed; no verdict.", "E_NOT_INDEXED"
             )
 
-        prompt, rev = await self._prompt(video_id, str(row["public_id"]))
-        try:
-            answer = await self.model.complete(prompt, system=SYSTEM, schema=VERDICT_SCHEMA)
-        except LLMUnavailable as exc:
-            raise _as_failure(exc) from None
+        inputs = await self._inputs(video_id, str(row["public_id"]))
+        answer = await self._ask(inputs.prompt(with_negatives=True))
+        explored = False
+        if (
+            int(answer["score"]) <= 1
+            and inputs.has_negatives
+            and self.rng.random() < EXPLORE_RATE
+        ):
+            rescored = await self._ask(inputs.prompt(with_negatives=False))
+            if int(rescored["score"]) >= 2:
+                answer, explored = rescored, True
+            await ctx.log(
+                f"explored: rescored {rescored['score']} without the negative entries; "
+                + ("kept, shown as outside the profile" if explored else "first verdict kept")
+            )
 
         moments = [
             store.Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"]))
@@ -154,8 +179,9 @@ class VerdictStage:
                 reason=str(answer["reason"]),
                 summary=str(answer["summary"]),
                 moments=kept,
-                profile_rev=rev,
+                profile_rev=inputs.rev,
                 model=self.label,
+                explored=explored,
             )
             return dropped
 
@@ -169,7 +195,13 @@ class VerdictStage:
                 "warn",
             )
 
-    async def _prompt(self, video_id: int, public_id: str) -> tuple[str, int]:
+    async def _ask(self, prompt: str) -> dict[str, Any]:
+        try:
+            return await self.model.complete(prompt, system=SYSTEM, schema=VERDICT_SCHEMA)
+        except LLMUnavailable as exc:
+            raise _as_failure(exc) from None
+
+    async def _inputs(self, video_id: int, public_id: str) -> "Inputs":
         token = CALL_CONTEXT.set(TRIAGE)
         try:
             summary = await video_summary(
@@ -181,28 +213,56 @@ class VerdictStage:
             raise ItemSkipped("video-summary refused this video; no verdict.", "E_NOT_INDEXED")
         summary_text = "\n".join(b.text for b in summary.content if isinstance(b, TextContent))
 
-        def read(c: sqlite3.Connection) -> tuple[list[sqlite3.Row], int, list[sqlite3.Row]]:
+        def read(c: sqlite3.Connection) -> Inputs:
             cues = c.execute(
                 "SELECT id, start_s, end_s, text FROM cues WHERE video_id = ? ORDER BY seq",
                 (video_id,),
             ).fetchall()
-            return profile_store.entries(c), profile_store.revision(c), cues
+            transcript = middle_lines(
+                [
+                    f"[cue {q['id']} {float(q['start_s']):.1f}–{float(q['end_s']):.1f}] {q['text']}"
+                    for q in cues
+                ],
+                TRANSCRIPT_CHARS,
+            )
+            return Inputs(
+                entries=[(float(e["weight"]), str(e["text"])) for e in profile_store.entries(c)],
+                rev=profile_store.revision(c),
+                summary=summary_text,
+                seen=novelty.prompt_lines(novelty.seen_overlap(c, video_id)),
+                transcript=transcript,
+            )
 
-        entries, rev, cues = await self.deps.db.read(read)
+        return await self.deps.db.read(read)
+
+
+@dataclass(frozen=True)
+class Inputs:
+    """Everything one verdict's prompt is built from, read once."""
+
+    entries: list[tuple[float, str]]
+    rev: int
+    summary: str
+    seen: str
+    transcript: str
+
+    @property
+    def has_negatives(self) -> bool:
+        return any(weight < 0 for weight, _ in self.entries)
+
+    def prompt(self, *, with_negatives: bool) -> str:
+        kept = [(w, t) for w, t in self.entries if with_negatives or w >= 0]
         profile = (
-            "\n".join(f"{float(e['weight']):+.1f}  {e['text']}" for e in entries)
+            "\n".join(f"{w:+.1f}  {t}" for w, t in kept)
             or "(empty: score on general interest and say so in the reason)"
         )
-        transcript = middle_lines(
-            [f"[cue {c['id']} {float(c['start_s']):.1f}–{float(c['end_s']):.1f}] {c['text']}" for c in cues],
-            TRANSCRIPT_CHARS,
-        )
-        prompt = (
+        seen = f"Already seen:\n{self.seen}\n\n" if self.seen else ""
+        return (
             f"Interest profile (weight, entry):\n{profile}\n\n"
-            f"Video:\n{summary_text}\n\n"
-            f"Transcript:\n{transcript or '(no transcript)'}"
+            f"Video:\n{self.summary}\n\n"
+            f"{seen}"
+            f"Transcript:\n{self.transcript or '(no transcript)'}"
         )
-        return prompt, rev
 
 
 def middle_lines(lines: list[str], budget: int) -> str:
