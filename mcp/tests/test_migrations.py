@@ -479,6 +479,79 @@ def test_0009_leaves_a_populated_corpus_untouched(fresh: sqlite3.Connection, tmp
         )
 
     held = snapshot()
-    assert migrations.migrate(fresh) == [9]
+    assert migrations.migrate(fresh)[0] == 9
     assert snapshot() == held
     assert fresh.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_0010_keeps_every_job_and_corpus_row_and_admits_verdict_jobs(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    """The jobs rebuild copies every row as it was; the trigger and FKs still hold."""
+    _migrate_up_to(fresh, 9, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute(
+        "INSERT INTO cues (video_id, seq, start_s, end_s, text) VALUES (?, 0, 0, 3.5, 'hi')", (vid,)
+    )
+    cid = fresh.execute(
+        "INSERT INTO collections (kind, slug, title, source_url) "
+        "VALUES ('channel', 'c', 'C', 'https://www.youtube.com/@c')"
+    ).lastrowid
+    fresh.execute(
+        "INSERT INTO jobs (public_id, kind, state, priority, args_json, n_items, n_done, "
+        "error_code, not_before, started_at, heartbeat_at, finished_at, collection_id) "
+        "VALUES ('job_aaaaaaaaaaaa', 'follow_check', 'done', 10, '{\"x\":1}', 1, 1, "
+        "'E_RATE_LIMIT', 5, 6, 7, 8, ?)",
+        (cid,),
+    )
+    fresh.execute(
+        "INSERT INTO jobs (public_id, kind, state, n_items) VALUES ('job_bbbbbbbbbbbb', 'index', 'running', 2)"
+    )
+    fresh.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, video_id, state) VALUES (2, 0, 'u', ?, 'running')",
+        (vid,),
+    )
+    fresh.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, state) VALUES (2, 1, 'u2', 'queued')"
+    )
+    fresh.execute("INSERT INTO job_events (job_id, item_id, message) VALUES (2, 1, 'claimed')")
+    fresh.execute(
+        "INSERT INTO follow_seen (collection_id, source_id, url, decision, video_id, job_id) "
+        "VALUES (?, 'kCc8FmEb1nY', 'u', 'queued', ?, 2)",
+        (cid, vid),
+    )
+    tables = ("jobs", "job_items", "job_events", "follow_seen", "videos", "cues", "collections")
+
+    def snapshot() -> dict[str, list[tuple]]:
+        return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
+
+    held = snapshot()
+    assert migrations.migrate(fresh) == [10]
+    assert snapshot() == held
+    assert fresh.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    # The rollup trigger came back, and the in-flight guard on job_items is untouched.
+    fresh.execute("UPDATE job_items SET state = 'done' WHERE id = 1")
+    assert fresh.execute("SELECT n_done FROM jobs WHERE id = 2").fetchone()[0] == 1
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute(
+            "INSERT INTO job_items (job_id, seq, source_url, video_id) VALUES (2, 2, 'u', ?)", (vid,)
+        )
+        fresh.execute(
+            "INSERT INTO job_items (job_id, seq, source_url, video_id) VALUES (2, 3, 'u', ?)", (vid,)
+        )
+    fresh.execute("INSERT INTO jobs (public_id, kind) VALUES ('job_cccccccccccc', 'verdict')")
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("INSERT INTO jobs (public_id, kind) VALUES ('job_dddddddddddd', 'nope')")
+    # Deleting a video takes its verdict with it.
+    fresh.execute(
+        "INSERT INTO verdicts (video_id, score, reason, summary, profile_rev, model) "
+        "VALUES (?, 2, 'r', 's', 0, 'm')",
+        (vid,),
+    )
+    fresh.execute("PRAGMA foreign_keys = ON")
+    fresh.execute("DELETE FROM videos WHERE id = ?", (vid,))
+    assert fresh.execute("SELECT COUNT(*) FROM verdicts").fetchone()[0] == 0
