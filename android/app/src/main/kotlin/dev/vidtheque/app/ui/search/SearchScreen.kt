@@ -165,7 +165,7 @@ fun SearchContent(
 private fun HitRow(hit: SearchHit, container: Modifier, onOpen: (SearchHit) -> Unit, onMoment: (SearchHit) -> Unit) {
     Surface(onClick = { onOpen(hit) }, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = container.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val byline = listOfNotNull(hit.channel.ifEmpty { null }, hit.publishedAt?.let { dated(it) }).joinToString(" · ")
+            val byline = listOfNotNull(hit.channel?.ifEmpty { null }, hit.publishedAt?.let { dated(it) }).joinToString(" · ")
             if (byline.isNotEmpty()) Text(byline, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(hit.title.ifEmpty { hit.videoId }, style = MaterialTheme.typography.titleMediumEmphasized)
             val linked = receipt(hit.link) != null

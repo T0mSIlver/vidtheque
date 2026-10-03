@@ -123,7 +123,7 @@ data class Profile(
 data class SearchHit(
     @SerialName("video_id") val videoId: String,
     val title: String = "",
-    val channel: String = "",
+    val channel: String? = null,
     val source: String = "",
     val start: Double = 0.0,
     /** The second that matched, inside the segment; `link` points there. */

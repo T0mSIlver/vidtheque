@@ -187,7 +187,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                     entry<SearchKey> {
                         SearchScreen(
                             onBack = { stack.removeLastOrNull() },
-                            onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel, alone = true)) },
+                            onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty(), alone = true)) },
                             card = sharedCard,
                         )
                     }

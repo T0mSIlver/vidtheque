@@ -38,7 +38,7 @@ class SearchViewModelTest {
     private val test = TestScope(main)
 
     private fun hit(id: String, at: Int) =
-        """{"video_id":"$id","title":"t $id","channel":"c","source":"transcript","start":$at,"match_start":$at,"text":"said","link":"https://youtu.be/$id?t=${at - 2}","published_at":1674000000}"""
+        """{"video_id":"$id","title":"t $id","channel":null,"source":"transcript","start":$at,"match_start":$at,"text":"said","link":"https://youtu.be/$id?t=${at - 2}","published_at":1674000000}"""
 
     @Before
     fun setUp() {
@@ -52,6 +52,8 @@ class SearchViewModelTest {
                         code = 404,
                         body = """{"error":"E_NO_VERDICT","message":"no verdict","next":"later","video":{"video_id":"unjudged","title":"Plain","channel":null,"duration_s":60,"published_at":null}}""",
                     )
+                    request.url.queryParameter("q") == "miss" -> MockResponse(body = """{"results":[],"pagination":{"limit":20,"offset":0,"has_more":false},"data_status":"ok"}""")
+                    request.url.queryParameter("q") == "bare" -> MockResponse(body = """{"results":[],"pagination":{"limit":20,"offset":0,"has_more":false},"data_status":"empty"}""")
                     request.url.queryParameter("offset") == "0" -> MockResponse(
                         body = """{"results":[${hit("a", 10)},${hit("b", 20)}],"pagination":{"limit":2,"offset":0,"has_more":true},"notes":["a note"]}""",
                     )
@@ -98,6 +100,18 @@ class SearchViewModelTest {
         assertTrue(signals[0].contains("\"kind\":\"mcp_search\"") && signals[0].contains("\"text\":\"kv cache\""))
         val searches = sent.filter { it.method == "GET" }.map { it.url.encodedQuery }
         assertEquals(listOf("q=kv+cache&offset=0&max_text_chars=300", "q=kv+cache&offset=2&max_text_chars=300"), searches)
+    }
+
+    @Test
+    fun onlyAnEmptyCorpusSaysNothingIsIndexed() {
+        val miss = SearchViewModel(api())
+        miss.submit("miss")
+        settle { miss.ui.value.empty != null }
+        assertEquals("Nothing matched. Try other words.", miss.ui.value.empty)
+        val bare = SearchViewModel(api())
+        bare.submit("bare")
+        settle { bare.ui.value.empty != null }
+        assertEquals("Nothing is indexed yet.", bare.ui.value.empty)
     }
 
     @Test

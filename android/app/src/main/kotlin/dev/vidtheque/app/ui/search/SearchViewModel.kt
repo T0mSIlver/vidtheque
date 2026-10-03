@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerializationException
 
 data class SearchUi(
     /** The query the hits answer; empty until one is submitted. */
@@ -80,7 +81,8 @@ class SearchViewModel @Inject constructor(private val api: Api) : ViewModel() {
                         loading = false,
                         empty = when {
                             hits.isNotEmpty() -> null
-                            page.dataStatus != null -> "Nothing is indexed yet."
+                            // Set on every empty page; only `empty` means nothing is indexed.
+                            page.dataStatus == "empty" -> "Nothing is indexed yet."
                             else -> "Nothing matched. Try other words."
                         },
                     )
@@ -89,6 +91,8 @@ class SearchViewModel @Inject constructor(private val api: Api) : ViewModel() {
                 _ui.update { it.copy(loading = false, error = e.message) }
             } catch (e: IOException) {
                 _ui.update { it.copy(loading = false, error = "The instance did not answer.") }
+            } catch (e: SerializationException) {
+                _ui.update { it.copy(loading = false, error = "The instance answered in a shape this app cannot read.") }
             }
         }
     }
