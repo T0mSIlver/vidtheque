@@ -22,7 +22,7 @@ export function Readiness({
   drift?: boolean;
   children?: ReactNode;
 }) {
-  // Local minutes like every other clock here (§24.6); the attribute keeps
+  // UTC minutes like every other clock here (§24.6); the attribute keeps
   // the instant.
   const checked = iso(readiness.checked_at);
   const worker = readiness.worker;

@@ -33,7 +33,7 @@ describe("the corpus page", () => {
     expect(screen.getByText("videos").closest("div")).toHaveTextContent(
       "published 2023-01-17–2025-02-19",
     );
-    // One reading, stamped once, in local minutes like every other clock
+    // One reading, stamped once, in UTC minutes like every other clock
     // (§24.6); the attribute keeps the instant.
     const stamp = screen.getByText("2026-09-05 16:34");
     expect(stamp.tagName).toBe("TIME");
