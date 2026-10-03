@@ -111,7 +111,7 @@ reweighted), and the profile is capped at 40 live entries. The profile
 screen shows the history; **revert** undoes one event or rolls back to a
 revision.
 
-As built (0012): the update runs on the job runner's poll tick, from
+As built (0013): the update runs on the job runner's poll tick, from
 `VIDTHEQUE_NIGHTLY_HOUR` (default 4, the box's local time), once per local day;
 `VIDTHEQUE_NIGHTLY=0` turns it off. "The day's signals" are those since the
 last run that finished, at most a week back and the newest 200; the verdicts
