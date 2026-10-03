@@ -27,7 +27,8 @@ captures for PR bodies go in `screenshots/`.
 
 `.github/workflows/android.yml` builds on hosted runners, then installs the
 APK on an emulator and runs the Maestro flows in `maestro/`. A tag
-`android-v0.1.0` attaches `vidtheque-0.1.0.apk` to a GitHub release.
+`android-v0.1.0` runs `android-release.yml`, which attaches
+`vidtheque-0.1.0.apk` to a GitHub release.
 
 Builds sign with the key in the repository secrets `ANDROID_KEYSTORE_B64`,
 `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`, so each one installs over

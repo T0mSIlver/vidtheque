@@ -1,0 +1,51 @@
+name: android-release
+
+# Its own workflow because android.yml filters on paths, and a tag push carries
+# no changed files, so a paths filter would skip every release (build-worker.yml).
+on:
+  push:
+    tags: ["android-v*"]
+
+defaults:
+  run:
+    working-directory: android
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and attach the APK
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "ANDROID_KEYSTORE_B64 is not set: a release must carry the CI key"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/vidtheque.keystore"
+          echo "VIDTHEQUE_KEYSTORE=$RUNNER_TEMP/vidtheque.keystore" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          VIDTHEQUE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VIDTHEQUE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: ./gradlew --console=plain assembleRelease
+
+      - name: Attach the APK to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#android-v}"
+          cp app/build/outputs/apk/release/app-release.apk "vidtheque-$version.apk"
+          gh release create "$GITHUB_REF_NAME" --title "Android $version" --notes "" "vidtheque-$version.apk" \
+            || gh release upload "$GITHUB_REF_NAME" --clobber "vidtheque-$version.apk"
