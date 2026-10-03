@@ -67,7 +67,10 @@
 /* One word per pipeline leg, struck through when it is missing. */
 .coverage {
   display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
+  white-space: nowrap;
 }
 
 .cov {
