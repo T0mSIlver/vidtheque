@@ -42,13 +42,11 @@ TRANSCRIPT_CHARS = 40_000
 # About one low verdict in ten is rescored without the negative entries.
 EXPLORE_RATE = 0.1
 
-# The prompt asks for less; the clamps hold whatever comes back (AGENTS.md:
-# never prompt-only limits). Schema lengths only reject garbage.
-SUMMARY_WORDS = 70
-WHY_WORDS = 14
-REASON_WORDS = 20
 MATCHES_MAX = 4
 
+# The word limits live in the prompt. These character bounds only catch
+# runaway output, far above them (AGENTS.md: never prompt-only limits); an
+# answer past one fails as invalid and is rerun with `backfill --video`.
 VERDICT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -104,21 +102,21 @@ matches: the profile entries this video hits, by their [id], strongest first,
   Include negative entries the video hits; they count against it. Use only ids
   from the profile. No entry fits: [].
 
-reason: one plain sentence, at most 15 words (cut off past 20), saying why this score for this
-  person. No arrows, no lists of entries, no weights.
+reason: one plain sentence, never more than 15 words, saying why this score
+  for this person. No arrows, no lists of entries, no weights.
 
-summary: two or three sentences, 40 to 60 words. Words past 60 are cut off
-  before the person sees them, so pick what matters and drop the rest. A
-  digest, not a description: names of people, tools, models, papers,
-  companies; numbers (benchmarks, sizes, costs, latencies); the specific
-  claims and techniques. Lead with the part that matters given the profile, in
-  second person where it helps ("the eval harness at 31:00 is the part you'd
-  reuse"). Skip what the title already says.
+summary: never more than 60 words, in two or three sentences. Count them;
+  if the draft is longer, drop the least important point rather than
+  compressing every sentence. A digest, not a description: names of people,
+  tools, models, papers, companies; numbers (benchmarks, sizes, costs,
+  latencies); the specific claims and techniques. Lead with the part that
+  matters given the profile, in second person where it helps ("the eval
+  harness at 31:00 is the part you'd reuse"). Skip what the title already says.
 
 moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the
   transcript's [cue …] markers, and offset_s lies inside that cue's start–end.
   Use only cues you were shown; give fewer moments rather than guessing.
-  why: at most 12 words (cut off past 14), the concrete thing said there ("Kimi K2 beats GLM on
+  why: never more than 12 words, the concrete thing said there ("Kimi K2 beats GLM on
   tau-bench by 9 points"), not a label ("interesting discussion of evals").
 
 Writing rules for reason, summary and why:
@@ -243,7 +241,7 @@ class VerdictStage:
                 )
 
         moments = [
-            store.Moment(int(m["cue_id"]), float(m["offset_s"]), clip_words(str(m["why"]), WHY_WORDS))
+            store.Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"]))
             for m in answer["moments"]
         ]
         matches = inputs.matches(answer["matches"])
@@ -257,8 +255,8 @@ class VerdictStage:
                 c,
                 video_id,
                 score=int(answer["score"]),
-                reason=clip_words(str(answer["reason"]), REASON_WORDS),
-                summary=clip_words(str(answer["summary"]), SUMMARY_WORDS),
+                reason=str(answer["reason"]),
+                summary=str(answer["summary"]),
                 moments=kept,
                 matches=matches,
                 profile_rev=inputs.rev,
@@ -371,19 +369,6 @@ class Inputs:
             f"{seen}"
             f"Transcript:\n{self.transcript or '(no transcript)'}"
         )
-
-
-def clip_words(text: str, max_words: int) -> str:
-    """`text` cut to `max_words`: at the last sentence end that keeps at least
-    half of them, else at a word boundary with an ellipsis."""
-    words = text.split()
-    if len(words) <= max_words:
-        return " ".join(words)
-    head = words[:max_words]
-    for i in range(len(head) - 1, max_words // 2 - 1, -1):
-        if head[i].endswith((".", "!", "?")):
-            return " ".join(head[: i + 1])
-    return " ".join(head).rstrip(",;:") + "…"
 
 
 def middle_lines(lines: list[str], budget: int) -> str:
