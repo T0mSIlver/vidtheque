@@ -196,9 +196,9 @@ function Loaded({ data }: { data: Health }) {
               {/* The count is Corpus's (§24): a door, not a second copy of it. */}
               {gaps.has_failed ? (
                 <li>
-                  <span className={ui.warn}>failed</span>
+                  <span aria-hidden="true" />
                   <span>
-                    videos are marked failed;{" "}
+                    <span className={ui.warn}>Some videos are marked failed</span>;{" "}
                     <DashLink href={`${ROOT}/corpus#states`}>Corpus counts them</DashLink>
                   </span>
                 </li>
