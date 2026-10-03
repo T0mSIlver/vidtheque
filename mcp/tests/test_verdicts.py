@@ -244,6 +244,22 @@ async def test_about_one_low_verdict_in_ten_is_rescored_without_the_negative_ent
         assert "+0.9  Evals" in model.prompts[1]
 
 
+@pytest.mark.parametrize(
+    "error", [LLMUnavailable("invalid_output"), LLMUnavailable("upstream_rate_limited")]
+)
+async def test_a_failed_rescore_keeps_the_first_verdict(
+    assembled: Assembled, error: LLMUnavailable
+) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    await _profile_with_a_negative(db)
+    model = FakeModel(answers=[verdict(score=1), error])
+    job = await run_verdict(assembled, vid, model, FixedRoll(0.0))
+    assert job["state"] == "done"
+    row = await db.read(lambda c: store.get(c, vid))
+    assert (row["score"], row["explored"]) == (1, 0)
+
+
 async def test_a_profile_without_negative_entries_never_explores(assembled: Assembled) -> None:
     db = assembled.db
     vid = await video_id(db, "kCc8FmEb1nY")

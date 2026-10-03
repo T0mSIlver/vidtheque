@@ -154,13 +154,20 @@ class VerdictStage:
             and inputs.has_negatives
             and self.rng.random() < EXPLORE_RATE
         ):
-            rescored = await self._ask(inputs.prompt(with_negatives=False))
-            if int(rescored["score"]) >= 2:
-                answer, explored = rescored, True
-            await ctx.log(
-                f"explored: rescored {rescored['score']} without the negative entries; "
-                + ("kept, shown as outside the profile" if explored else "first verdict kept")
-            )
+            try:
+                rescored = await self.model.complete(
+                    inputs.prompt(with_negatives=False), system=SYSTEM, schema=VERDICT_SCHEMA
+                )
+            except LLMUnavailable as exc:
+                # The first verdict is valid; a failed rescore only skips the exploration.
+                await ctx.log(f"exploration skipped: the rescore failed ({exc.reason})", "warn")
+            else:
+                if int(rescored["score"]) >= 2:
+                    answer, explored = rescored, True
+                await ctx.log(
+                    f"explored: rescored {rescored['score']} without the negative entries; "
+                    + ("kept, shown as outside the profile" if explored else "first verdict kept")
+                )
 
         moments = [
             store.Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"]))
