@@ -2405,6 +2405,8 @@ kind the queue can hold and this view cannot select for is a job an operator
 triages by reading past it, so the filter arrives the day the kind does. Nothing
 else on the jobs pages changes: a `follow_check` is an ordinary job row with an
 ordinary war story, and §5.4 renders it with no special case.
+`verdict` joined the list with migration 0010 for the same reason
+(companion.md §3.2); like `follow_check`, it offers no retry.
 
 ### 18.3 `GET|POST /dashboard/following` — the list, and the form
 
