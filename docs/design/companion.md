@@ -246,6 +246,15 @@ consent. v1 builds no auth.
 - The Android app signs in through the same server as a public client with
   PKCE, its client metadata served by the instance as a CIMD document. One
   auth system for the agent and the app.
+
+  As built (2026-10-03, #91): the document is `/auth/android/client.json`
+  and the redirect `/auth/android/callback`, an https App Link, because CIMD
+  only accepts a redirect on the client_id's origin. Android hands that link
+  to the app once `/.well-known/assetlinks.json` names its signing key, so all
+  three answer only when `VIDTHEQUE_ANDROID_CERT_SHA256` lists the key's
+  fingerprints (`auth/android.py`). They sit under `/auth/` because the
+  deploy proxies already send that prefix to Python. The server answers the
+  app's client_id in-process instead of fetching its own public URL.
 - The feed's web pages reuse the existing owner session cookie.
 
 ## 6. The surfaces
@@ -271,8 +280,10 @@ is unverified, and is the first check of its issue. If it does not, the
 button copies the prompt and opens the app.
 
 **The Android app** lives in `android/`, a separate deployable like `web/`:
-Kotlin, Jetpack Compose, Material 3, AppAuth for OAuth, Firebase Cloud
-Messaging for push. It calls the same JSON endpoints as the web feed; it has
+Kotlin, Jetpack Compose, Material 3, Auth Tab (`androidx.browser`) for
+OAuth, Firebase Cloud Messaging for push. *Amended 2026-10-03 (Tom):* Auth Tab
+replaces AppAuth, whose last release is 0.11.1 from December 2021; the PKCE
+exchange is a few dozen lines of the app's own. It calls the same JSON endpoints as the web feed; it has
 no logic the server does not have. Built by hosted GitHub Actions and
 installed from GitHub releases as an APK. Play Store is a later decision.
 
