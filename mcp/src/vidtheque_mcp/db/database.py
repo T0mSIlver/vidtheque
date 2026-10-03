@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from ..config import ConfigError, _bool_env
+from ..profile import signals
 from .connection import ReadPool, Writer, open_write_connection
 from .migrations import migrate
 
@@ -117,6 +118,9 @@ class Database:
             }
             self._assert_dimensions(conn)
             self._recover_crashed_jobs(conn)
+            # Retention also runs on every insert; this covers a box that stopped
+            # recording signals (companion.md §2.3, 180 days).
+            signals.prune(conn)
         finally:
             conn.close()
 

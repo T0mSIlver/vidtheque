@@ -1203,6 +1203,57 @@ path waits on this table, and nothing about a request's *outcome* depends on it 
 the in-memory counter is still the gate. That is why a lost delta is survivable
 and a lost row is not a correctness bug, only a cheaper day.
 
+### 1.12 The interest profile and signals
+
+Added by 0009 (companion.md §2.1, §2.3). Additive: three new tables, no
+existing table changes.
+
+```sql
+CREATE TABLE profile_entries (
+  id         INTEGER PRIMARY KEY,
+  owner_id   INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  text       TEXT    NOT NULL CHECK (length(text) BETWEEN 1 AND 200),
+  weight     REAL    NOT NULL CHECK (weight BETWEEN -1 AND 1),
+  source     TEXT    NOT NULL CHECK (source IN ('owner','agent','nightly','app')),
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  retired_at INTEGER                -- dropped; the row stays for history and revert
+) STRICT;
+
+CREATE TABLE profile_events (
+  id       INTEGER PRIMARY KEY,     -- the latest one is the profile's revision
+  at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  actor    TEXT    NOT NULL CHECK (actor IN ('owner','agent','nightly','app')),
+  op       TEXT    NOT NULL CHECK (op IN ('add','drop','reweight','revert')),
+  entry_id INTEGER NOT NULL REFERENCES profile_entries(id),
+  before   TEXT,                    -- JSON {text, weight, live}; NULL before an add
+  after    TEXT,
+  reason   TEXT
+) STRICT;
+
+CREATE TABLE signals (
+  id       INTEGER PRIMARY KEY,
+  owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  kind     TEXT    NOT NULL CHECK (kind IN ('mcp_search','mcp_read','ask_claude',
+           'thumb_up','thumb_down','mute','open','watch','dismiss')),
+  video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+  offset_s REAL,
+  text     TEXT,                    -- the query, for mcp_search; at most 500 chars
+  client   TEXT                     -- the MCP client id, or NULL
+) STRICT;
+```
+
+`source` is the actor that created the entry; the evidence for it ("4 asks this
+week") is the `reason` on its `add` event. Every write goes through
+`profile/store.py`, which writes the entry and an event carrying its state
+before and after, so a revert is writing `before` back for the fields that
+event changed: undoing one event, or every event after a revision, newest
+first. A revert is itself an event.
+
+Signals are kept 180 days: `record_signal` deletes older rows on each insert
+(an indexed range delete that usually finds nothing), and boot runs the same
+sweep. A deleted video takes its signals with it.
+
 ---
 
 ## 2. FTS5
