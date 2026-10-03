@@ -1,7 +1,13 @@
 package dev.vidtheque.app.data
 
 import dev.vidtheque.app.auth.Instance
+import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Named
+import javax.inject.Singleton
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -9,13 +15,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import javax.inject.Inject
-import javax.inject.Named
-import javax.inject.Singleton
+import okhttp3.Response
 
 // The shapes of dashboard.md §25, read as the server writes them.
 
@@ -149,13 +155,27 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     internal suspend fun post(url: String, body: JsonObject): String =
         send(Request.Builder().url(url).post(body.toString().toRequestBody(JSON)).build())
 
-    private suspend fun send(request: Request): String = withContext(Dispatchers.IO) {
-        http.newCall(request).execute().use { response ->
-            val text = response.body.string()
-            if (response.isSuccessful) return@use text
-            val refusal = runCatching { json.decodeFromString<Refusal>(text) }.getOrNull()
-            throw ApiException(refusal?.error ?: "http_${response.code}", refusal?.message ?: "The server answered HTTP ${response.code}.")
+    private suspend fun send(request: Request): String {
+        val response = call(request)
+        return withContext(Dispatchers.IO) {
+            response.use {
+                val text = it.body.string()
+                if (it.isSuccessful) return@use text
+                val refusal = runCatching { json.decodeFromString<Refusal>(text) }.getOrNull()
+                throw ApiException(refusal?.error ?: "http_${it.code}", refusal?.message ?: "The server answered HTTP ${it.code}.")
+            }
         }
+    }
+
+    // Enqueued rather than executed, so cancelling the coroutine (a timeout, a screen
+    // that left) cancels the request instead of waiting out OkHttp's own timeouts.
+    private suspend fun call(request: Request): Response = suspendCancellableCoroutine { cont ->
+        val call = http.newCall(request)
+        cont.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
+            override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, value, _ -> value.close() }
+        })
     }
 
     private companion object {
