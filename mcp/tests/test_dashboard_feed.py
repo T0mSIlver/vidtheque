@@ -267,6 +267,15 @@ def test_feed_filters_by_a_profile_entry_and_other(client: TestClient, tmp_path:
     assert client.get(f"{API}/feed/facets").status_code == 401
 
 
+def test_facets_count_only_the_newest_window(client: TestClient, monkeypatch) -> None:
+    from vidtheque_mcp.dashboard import feed
+
+    monkeypatch.setattr(feed, "FACET_SCAN", 1)
+    facets = client.get(f"{API}/feed/facets", headers=BEARER).json()
+    assert facets["capped"] is True
+    assert facets["channels"] == [{"name": "Andrej Karpathy", "count": 1}]
+
+
 def test_verdict_links_only_the_moments_whose_receipt_holds(client: TestClient) -> None:
     body = client.get(f"{API}/verdicts/kCc8FmEb1nY", headers=BEARER).json()
     assert body["summary"] == "summary" and body["profile_rev"] == 4
