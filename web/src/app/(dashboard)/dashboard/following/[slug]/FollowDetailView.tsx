@@ -286,7 +286,7 @@ function PassedOver({
       {/* The counts above say what it decided; the rows, whose reasons repeat,
           wait for a click, and stay open on a page past the first (§24.5). */}
       {data.seen.length ? (
-        <Fold label={`the ${count(data.seen.length)} candidates`} open={offset > 0}>
+        <Fold label={`the ${count(data.seen.length)} on this page`} open={offset > 0}>
           <TableCount shown={data.seen.length} hasMore={has_more} />
 
           <div className={table.tablewrap}>
