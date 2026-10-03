@@ -18,7 +18,7 @@ import logging
 import random
 import sqlite3
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx2 as httpx
 from mcp_types import TextContent
@@ -30,6 +30,9 @@ from ..profile import store as profile_store
 from ..tools.base import CALL_CONTEXT, CallContext, Deps
 from ..tools.library import video_summary
 from . import novelty, store
+
+if TYPE_CHECKING:
+    from ..push.notify import Notifier
 
 logger = logging.getLogger(__name__)
 
@@ -122,16 +125,29 @@ def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient
     http = httpx.AsyncClient() if settings.backend == "api" else None
     model = build_model(settings, http)  # type: ignore[arg-type]
     assert model is not None
-    return VerdictStage(deps, model, model_label(settings)), http
+    # Push rides on the verdict (companion.md §6): no key, no notifier.
+    from ..push.notify import PushSettings, build_notifier
+
+    notifier = None
+    if PushSettings.from_env().credentials:
+        http = http or httpx.AsyncClient()
+        notifier = build_notifier(deps.db, http)
+    return VerdictStage(deps, model, model_label(settings), push=notifier), http
 
 
 class VerdictStage:
     """Implements `jobs.runner.Pipeline` for the `verdict` kind."""
 
     def __init__(
-        self, deps: Deps, model: Model, label: str, rng: random.Random | None = None
+        self,
+        deps: Deps,
+        model: Model,
+        label: str,
+        rng: random.Random | None = None,
+        push: "Notifier | None" = None,
     ) -> None:
         self.deps = deps
+        self.push = push
         self.model = model
         self.label = label
         # Injected so tests decide which verdicts explore.
@@ -207,6 +223,14 @@ class VerdictStage:
                 + ", ".join(f"cue {m.cue_id} @ {m.offset_s:g}s" for m in dropped),
                 "warn",
             )
+        if self.push is not None:
+            try:
+                reached = await self.push.after_verdict(video_id)
+            except Exception as exc:  # noqa: BLE001 - a push never fails the verdict it carries
+                await ctx.log(f"push failed: {type(exc).__name__}: {exc}", "warn")
+            else:
+                if reached:
+                    await ctx.log(f"pushed to {reached} phone(s)")
 
     async def _ask(self, prompt: str) -> dict[str, Any]:
         try:
