@@ -102,6 +102,19 @@ async def test_a_weight_outside_the_range_is_refused(assembled: Assembled, weigh
     assert await live_state(assembled.deps) == {}
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["Evals and benchmarks for coding agents", "RL for agents, for search too"],
+)
+async def test_an_entry_longer_than_a_short_topic_is_refused(assembled: Assembled, text: str) -> None:
+    result = await profile(assembled.deps, add=[NewEntry(text=text, weight=0.5)])
+    assert structured(result)["code"] == "E_BAD_PARAM"
+    assert "split a compound topic" in "\n".join(b.text for b in result.content if isinstance(b, TextContent))
+    assert await live_state(assembled.deps) == {}
+    ok = await profile(assembled.deps, add=[NewEntry(text="Coding agent evals", weight=0.5)])
+    assert not ok.is_error
+
+
 # ------------------------------------------------------------------ the guards
 
 

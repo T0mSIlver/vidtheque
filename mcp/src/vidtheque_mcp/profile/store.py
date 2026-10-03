@@ -21,7 +21,10 @@ ACTORS = ("owner", "agent", "nightly", "app")
 OWNER_ACTORS = frozenset({"owner", "app"})
 
 MAX_LIVE = 40
-MAX_TEXT_CHARS = 200
+# An entry is a short topic, so a verdict can name it in a one-line chip
+# (companion.md §2.1); a compound topic is two entries.
+MAX_TEXT_CHARS = 32
+MAX_TEXT_WORDS = 5
 MAX_REASON_CHARS = 300
 
 
@@ -293,11 +296,13 @@ def _text(raw: str) -> str:
     text = " ".join(raw.split())
     if not text:
         raise ProfileRefused("E_BAD_PARAM", "an entry's text is empty.", "say the interest in a few words.")
-    if len(text) > MAX_TEXT_CHARS:
+    words = len(text.split())
+    if len(text) > MAX_TEXT_CHARS or words > MAX_TEXT_WORDS:
         raise ProfileRefused(
             "E_BAD_PARAM",
-            f"an entry is {len(text)} characters; the limit is {MAX_TEXT_CHARS}.",
-            "one interest per entry, in a short phrase.",
+            f"{text!r} is {len(text)} characters and {words} words; an entry is at most"
+            f" {MAX_TEXT_CHARS} characters and {MAX_TEXT_WORDS} words.",
+            "write a short topic, 2-4 words; split a compound topic into separate entries.",
         )
     return text
 

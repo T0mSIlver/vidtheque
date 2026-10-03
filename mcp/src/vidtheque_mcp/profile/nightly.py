@@ -61,7 +61,7 @@ OPS_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "op": {"enum": ["add", "drop", "reweight"]},
                     "id": {"type": "integer"},
-                    "text": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "text": {"type": "string", "minLength": 1, "maxLength": store.MAX_TEXT_CHARS},
                     "weight": {"type": "number", "minimum": -1, "maximum": 1},
                     "reason": {"type": "string", "minLength": 1, "maxLength": 300},
                 },
@@ -84,7 +84,9 @@ dropped, only reweighted; the profile holds at most {store.MAX_LIVE} entries.
 Searches say what the person is working on; thumbs, mutes and asks are explicit
 (a mute means "less like this"); "took back" undoes a thumb or mute an earlier
 update read. An open is a mild interest and a dismiss a mild disinterest. Prefer reweighting
-an entry to adding a near-duplicate."""
+an entry to adding a near-duplicate. An entry's text is a short topic, 2-4 words
+(at most {store.MAX_TEXT_CHARS} characters and {store.MAX_TEXT_WORDS} words); split a compound topic
+into separate entries."""
 
 
 @dataclass(frozen=True)

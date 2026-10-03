@@ -44,11 +44,17 @@ your agent runs.
 A list of short entries in plain words, each with a weight and the evidence
 for it. Readable, editable, revertible. Not an embedding you cannot inspect.
 
+*Amended 2026-10-03 (Tom):* an entry is a short topic, 2–4 words: at most 32
+characters and 5 words, refused past that on every add (the profile tool, the
+feed's profile ops, the nightly update) with a hint to split a compound topic
+into separate entries. A verdict names the entries it matched as one-line
+chips, so a long entry made a long chip. Entries written before the cap stay.
+
 ```
 id  weight  text                                        source
-7   +0.9    Eval harnesses for coding agents             nightly (4 asks this week)
-3   +0.6    Local inference on consumer GPUs             owner
-12  -0.8    Model launch hype with no benchmarks         owner
+7   +0.9    Coding agent evals                           nightly (4 asks this week)
+3   +0.6    Local inference                              owner
+12  -0.8    Launch hype                                  owner
 ```
 
 Tables (one new migration; `index-schema.md` gets the entries):
