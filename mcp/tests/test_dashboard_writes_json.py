@@ -715,6 +715,8 @@ def test_the_next_in_the_payload_is_fenced_like_the_redirect(tmp_path: Path) -> 
         "/dashboard.evil",
         "/dashboard/%2e%2e/admin",
         "/dashboard\\..\\admin",
+        "/feed/../admin",
+        "/feedback",
     ):
         with owner_client(tmp_path) as client:
             signed = post(
@@ -733,6 +735,13 @@ def test_the_next_in_the_payload_is_fenced_like_the_redirect(tmp_path: Path) -> 
             )
             assert redirected.status_code == 303
             assert redirected.headers["location"] == ROOT, away
+
+
+def test_a_sign_in_returns_to_the_feed(tmp_path: Path) -> None:
+    """The phone's feed shares the console's sign-in (companion.md §5)."""
+    with owner_client(tmp_path) as client:
+        signed = post(client, f"{ROOT}/login", data={"password": PASSWORD, "next": "/feed/abc"})
+        assert signed.json()["next"] == "/feed/abc"
 
 
 def test_a_refused_sign_in_is_typed_and_names_no_secret(tmp_path: Path) -> None:
