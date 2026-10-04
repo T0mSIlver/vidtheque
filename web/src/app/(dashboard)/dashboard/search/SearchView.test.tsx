@@ -464,6 +464,22 @@ describe("the owner's search page", () => {
     );
   });
 
+  // The old free-text box let any case through; the select keeps the URL's own
+  // spelling selected, so a resubmit never drops the filter it ran with.
+  it("keeps a channel the URL spells in another case selected", async () => {
+    const { push } = await mount({ body: OWNER_SEARCH }, { search: "q=cache&channel=gpu+mode" });
+    await screen.findByRole("option", { name: "Andrej Karpathy" });
+
+    const channel = screen.getByLabelText("Channel") as HTMLSelectElement;
+    expect(channel).toHaveValue("gpu mode");
+    expect([...channel.options].map((option) => option.value)).not.toContain("GPU MODE");
+
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(push).toHaveBeenLastCalledWith("/dashboard/search?q=cache&channel=gpu+mode", {
+      scroll: false,
+    });
+  });
+
   // The band is one form for the life of the page: a resubmit keeps the node,
   // the caret stays in the query box, and the page does not scroll.
   it("keeps the band and the caret through a resubmit", async () => {

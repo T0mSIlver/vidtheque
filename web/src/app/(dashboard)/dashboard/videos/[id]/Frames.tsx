@@ -200,8 +200,17 @@ function useStrip(first: Page, videoId: string) {
   const reading = useRef(false);
   useEffect(() => () => request.current?.abort(), []);
 
+  // A timeline jump re-seeds the strip: a read made for the old seed is moot.
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      reading.current = false;
+    },
+    [first],
+  );
+
   const read = useCallback(
-    (offset: number, back: boolean) => {
+    (offset: number, back: boolean, seed: Page) => {
       request.current?.abort();
       const controller = new AbortController();
       request.current = controller;
@@ -219,52 +228,54 @@ function useStrip(first: Page, videoId: string) {
           reading.current = false;
           const page = data.frames;
           setState((last) =>
-            back
-              ? {
-                  ...last,
-                  frames: [
-                    ...page.frames.filter((frame) => frame.ord < last.start),
-                    ...last.frames,
-                  ],
-                  start: page.offset,
-                  capped: last.capped || page.ocr_lines_capped,
-                  busy: false,
-                }
-              : {
-                  ...last,
-                  // Only frames past the strip's end: a page that overlaps it,
-                  // or answers for another offset, adds nothing twice.
-                  frames: [
-                    ...last.frames,
-                    ...page.frames.filter((frame) => frame.ord >= last.next),
-                  ],
-                  next: Math.max(last.next, page.offset + page.frames.length),
-                  hasMore: page.has_more && page.offset + page.frames.length > last.next,
-                  capped: last.capped || page.ocr_lines_capped,
-                  busy: false,
-                },
+            last.seed !== seed
+              ? last
+              : back
+                ? {
+                    ...last,
+                    frames: [
+                      ...page.frames.filter((frame) => frame.ord < last.start),
+                      ...last.frames,
+                    ],
+                    start: page.offset,
+                    capped: last.capped || page.ocr_lines_capped,
+                    busy: false,
+                  }
+                : {
+                    ...last,
+                    // Only frames past the strip's end: a page that overlaps it,
+                    // or answers for another offset, adds nothing twice.
+                    frames: [
+                      ...last.frames,
+                      ...page.frames.filter((frame) => frame.ord >= last.next),
+                    ],
+                    next: Math.max(last.next, page.offset + page.frames.length),
+                    hasMore: page.has_more && page.offset + page.frames.length > last.next,
+                    capped: last.capped || page.ocr_lines_capped,
+                    busy: false,
+                  },
           );
         },
         (error: unknown) => {
           if (controller.signal.aborted) return;
           reading.current = false;
-          setState((last) => ({ ...last, busy: false, error }));
+          setState((last) => (last.seed !== seed ? last : { ...last, busy: false, error }));
         },
       );
     },
     [first.limit, videoId],
   );
 
-  const { busy, hasMore, next, start, error } = state;
+  const { busy, hasMore, next, start, error, seed } = state;
   const more = useCallback(() => {
-    if (!reading.current && hasMore && error === undefined) read(next, false);
-  }, [hasMore, next, error, read]);
+    if (!reading.current && hasMore && error === undefined) read(next, false, seed);
+  }, [hasMore, next, error, read, seed]);
   // The reader asked for this one: it replaces a read the scroll started.
   const back = useCallback(
-    () => read(Math.max(start - first.limit, 0), true),
-    [start, first.limit, read],
+    () => read(Math.max(start - first.limit, 0), true, seed),
+    [start, first.limit, read, seed],
   );
-  const retry = useCallback(() => read(next, false), [next, read]);
+  const retry = useCallback(() => read(next, false, seed), [next, read, seed]);
 
   return {
     frames: state.frames,
