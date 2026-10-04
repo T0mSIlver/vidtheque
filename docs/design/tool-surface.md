@@ -2337,20 +2337,19 @@ tool carry `idempotentHint: true`.
 
 ```
 Follow a YouTube channel or playlist: new uploads that match your rule are
-indexed on their own, on a schedule. One tool, five verbs —
-action="follow|unfollow|pause|resume|check_now".
+indexed on their own, on a schedule. One tool, six verbs —
+action="follow|trial|unfollow|pause|resume|check_now".
 
-USE WHEN: the user wants to keep up with a source rather than paste its videos
-one at a time, or asks to stop, pause, resume or re-check something they
-already follow.
+USE WHEN: the user wants a source's new uploads without pasting each one, or
+asks to stop, pause, resume or re-check something they already follow.
 
 DO NOT USE: for one video or a one-off playlist (index-video); to see what is
 already followed (corpus-summary include_follows=true).
 
-Nothing is fetched here — the first check runs on the next tick. Bound what it
-takes with tabs, min_duration, max_per_check and title_include; mode="review"
-holds candidates instead of queueing them. Unfollowing keeps every video it
-brought in.
+Nothing is fetched here — the first check runs on the next tick. Bound it with
+tabs, min_duration, max_per_check and title_include; mode="review" holds
+candidates instead of queueing them. action="trial" lapses after 14 days unless
+a video it brought in is liked. Unfollowing keeps its videos.
 ```
 
 *The clause ", and the name is read off the URL" was cut from the draft of this
@@ -2365,7 +2364,7 @@ table below, where a caller who cares is already looking.*
 | name | type | default | constraint | notes |
 |---|---|---|---|---|
 | `url` | string | — | **required for every action** | For `follow`, the channel or playlist URL. For the other four it is the *handle*: a slug, the stored source URL, or part of the title, resolved by `follows.store.find`. One parameter, because a second one for "which follow" would be a second name for the same thing. |
-| `action` | enum `follow\|unfollow\|pause\|resume\|check_now` | `follow` | | The verb. Everything below applies to `follow` only. |
+| `action` | enum `follow\|trial\|unfollow\|pause\|resume\|check_now` | `follow` | | The verb. Everything below applies to `follow` and `trial` only. |
 | `title` | string | — | ≤ 60 chars, middle-truncated | The display name. Absent, it is read off the URL (`@handle`, else the playlist id, else the last path segment) — no request is made to find the real one. |
 | `tabs` | string | `videos` | subset of `videos,streams,shorts` | Each tab watched is one more listing request per check. |
 | `min_duration` / `max_duration` | string \| number | — | §3.2 offset axis (`480`, `8:00`, `1:30:00`) | Length rule. `min > max` is a typed error, not a follow that can never match. |
@@ -2381,6 +2380,12 @@ table below, where a caller who cares is already looking.*
 bound is 50, not 10, so one follow can hold a conference's speaker list
 (following.md §4, aie-paris-2026.md §5). The 80-character per-term limit is
 unchanged.
+
+*Amended 2026-10-04 (#170, companion.md §6.2):* a sixth verb, `trial`, takes
+`follow`'s arguments and makes a follow that ends 14 days out unless a video it
+brought in got a thumbs up or a full watch (following.md §10.7). `follow` on a
+trial makes it lasting. The description now reads "six verbs" and fits the
+120-word budget by a shorter USE WHEN line.
 
 Clamps are server-side, in `follows/params.py`, and that module is the single
 validator: the dashboard's form calls it too rather than re-implementing a bound
