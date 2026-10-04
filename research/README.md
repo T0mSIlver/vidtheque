@@ -35,6 +35,7 @@ This index is the one navigational file — when you add a doc, add its line.
 - `demo-queries-2026-08-13.md` — the announcement ask set: four rounds of candidates receipt-checked against the live 310-talk corpus
 - `website-test-2026-08-09.md` — real-browser QA of the public demo
 - `ytdlp-usage-audit-2026-08-10.md` — yt-dlp usage audit + effective rate limits
+- `youtube-watch-history-2026-10-04.md` — can the Data Portability API give the owner's watch history? Scope, verification, format; try one consent by hand first
 
 ## Positioning & design
 
