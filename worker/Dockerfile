@@ -12,6 +12,12 @@ RUN uv pip install --no-deps ./worker \
 
 USER vidtheque:vidtheque
 
+# The user has no home directory, so libraries that cache under ~ (pyannote's VAD
+# through torch hub, matplotlib) need their caches pointed at writable paths.
+ENV TORCH_HOME=/hf-cache/torch \
+    XDG_CACHE_HOME=/hf-cache/cache \
+    MPLCONFIGDIR=/tmp/matplotlib
+
 EXPOSE 8081
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
