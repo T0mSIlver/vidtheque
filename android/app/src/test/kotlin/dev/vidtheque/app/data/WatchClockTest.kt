@@ -93,6 +93,17 @@ class WatchClockTest {
     }
 
     @Test
+    fun aPickFromOutsideSendsItsOwnWatchAndNoSignal() {
+        clock.handOffOutside(4, 600)
+        now += 120_000
+        clock.returned()
+        settle { store.read() == null }
+        val sent = bodies()
+        assertEquals(1, sent.size)
+        assertTrue(sent[0].contains("/outside/watched") && sent[0].contains("\"id\":4") && sent[0].contains("\"offset_s\":600") && sent[0].contains("\"watched_s\":120.0"))
+    }
+
+    @Test
     fun aStartWithNoHandOffSendsNothing() {
         clock.returned()
         settle { false }
