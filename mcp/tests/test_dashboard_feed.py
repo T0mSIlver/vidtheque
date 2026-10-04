@@ -120,6 +120,7 @@ def _rows(tmp_path: Path, sql: str) -> list[tuple]:
 GETS = (
     f"{API}/feed",
     f"{API}/feed/facets",
+    f"{API}/week",
     f"{API}/verdicts/kCc8FmEb1nY",
     f"{API}/profile",
     f"{API}/costs",
@@ -134,6 +135,7 @@ WRITES = (
     ("POST", f"{API}/profile/revert"),
     ("POST", f"{API}/devices"),
     ("DELETE", f"{API}/devices"),
+    ("POST", f"{API}/budget"),
 )
 
 
@@ -646,3 +648,79 @@ def test_feed_rows_show_the_weeks_tier_beside_the_verdicts_score(client: TestCli
     assert (body["tier"], body["week"], body["week_rank"]) == (3, karpathy["week"], 1)
     skipped = client.get(f"{API}/feed?band=skipped", headers=BEARER).json()["items"]
     assert all(i["tier"] == i["score"] and i["week_rank"] is None for i in skipped)
+
+
+# --------------------------------------------------------------------- week
+
+
+def _this_week(tmp_path: Path, videos: list[tuple[str, int, float, float | None]]) -> None:
+    """(source_id, score, duration_s, moment seconds or None) published this week, an hour apart."""
+    from vidtheque_mcp.verdicts import week
+
+    start, _ = week.bounds(week.week_of(time.time()))
+    conn = open_write_connection(tmp_path / "data" / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for i, (source_id, score, duration, spans) in enumerate(videos):
+            vid = conn.execute(
+                "INSERT INTO videos (source_id, url, title, duration_s, published_at, index_state)"
+                " VALUES (?, ?, ?, ?, ?, 'ready')",
+                (source_id, f"https://youtu.be/{source_id}", f"talk {source_id}", duration, start + 3600 * (i + 1)),
+            ).lastrowid
+            cue = conn.execute(
+                "INSERT INTO cues (video_id, seq, start_s, end_s, text) VALUES (?, 0, 0, ?, 'x')", (vid, duration)
+            ).lastrowid
+            moments = [] if spans is None else [
+                {"cue_id": cue, "offset_s": 0.0, "end_cue_id": cue, "end_s": spans, "why": "w"}
+            ]
+            conn.execute(
+                "INSERT INTO verdicts (video_id, score, reason, summary, moments, profile_rev, model)"
+                " VALUES (?, ?, 'r', 's', ?, 0, 'm')",
+                (vid, score, json.dumps(moments)),
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+
+def test_the_week_fits_the_ranked_videos_under_the_budget(client: TestClient, tmp_path: Path) -> None:
+    _this_week(
+        tmp_path,
+        [
+            ("weekwhole01", 3, 3000.0, 600.0),  # the week's top: asks the whole 50 min
+            ("weeklong001", 2, 7200.0, 1200.0),  # asks 20 min: past what is left
+            ("weekshort01", 2, 1800.0, 300.0),  # asks 5 min: still fits
+            ("weekskip001", 1, 600.0, None),  # not a candidate
+        ],
+    )
+    assert client.post(f"{API}/budget", json={"week_budget_min": 60}, headers=JSON_BEARER).json() == {
+        "week_budget_min": 60
+    }
+    body = client.get(f"{API}/week", headers=BEARER).json()
+    assert body["budget_min"] == 60 and body["next"] is None
+    assert [(i["video_id"], i["tier"], i["asks_s"]) for i in body["items"]] == [
+        ("weekwhole01", 3, 3000.0),
+        ("weekshort01", 2, 300.0),
+    ]
+    assert body["asks_s"] == 3300.0
+    assert body["rest"] == {"count": 1, "asks_s": 1200.0}
+    assert len(body["days"]) == 7 and body["days"][0]["day"] == body["week"]
+    assert sum(d["asks_s"] for d in body["days"]) == 3300.0
+    assert sum(d["candidates"] for d in body["days"]) == 3
+    # The week before has its own list, and a way back to this one.
+    before = client.get(f"{API}/week?week={body['previous']}", headers=BEARER).json()
+    assert before["next"] == body["week"] and before["budget_min"] == 60
+
+
+@pytest.mark.parametrize("query", ["week=2026-10-06", "week=next", "week=2026-02-30", "week=2999-01-07"])
+def test_week_refuses_a_day_that_starts_no_past_week(client: TestClient, query: str) -> None:
+    # 2026-10-06 is a Tuesday; 2999-01-07 a Monday not yet begun.
+    assert client.get(f"{API}/week?{query}", headers=BEARER).json()["error"] == "E_BAD_PARAM"
+
+
+@pytest.mark.parametrize("body", [{"week_budget_min": 10_081}, {"week_budget_min": -1}, {"week_budget_min": "60"},
+                                  {"week_budget_min": True}, {"week_budget_min": 60, "daily": 9}])
+def test_budget_refuses_anything_but_whole_minutes_in_a_week(client: TestClient, body: dict) -> None:
+    refused = client.post(f"{API}/budget", json=body, headers=JSON_BEARER)
+    assert refused.status_code == 400
+    assert client.get(f"{API}/week", headers=BEARER).json()["budget_min"] == 210

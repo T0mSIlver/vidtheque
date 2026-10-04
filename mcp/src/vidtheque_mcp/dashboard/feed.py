@@ -18,7 +18,7 @@ import math
 import re
 import sqlite3
 import time
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable
 
 from starlette.requests import Request
@@ -356,6 +356,120 @@ async def feed(request: Request) -> Response:
             },
         }
     )
+
+
+# --------------------------------------------------------------------- week
+
+_WEEK = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def _week_param(request: Request, now: float) -> str:
+    current = verdicts_week.week_of(now)
+    raw = request.query_params.get("week")
+    if raw is None:
+        return current
+    week = raw.strip()
+    try:
+        valid = _WEEK.fullmatch(week) is not None and date.fromisoformat(week).weekday() == 0
+    except ValueError:
+        valid = False
+    if not valid:
+        raise _Refused("E_BAD_PARAM", f"week={raw!r} is not a week.", "pass the Monday that starts it, as YYYY-MM-DD.")
+    if week > current:
+        raise _Refused("E_BAD_PARAM", f"week={week} has not started.", f"the current week is {current}.")
+    return week
+
+
+def _ranked_json(conn: sqlite3.Connection, items: list[verdicts_week.Ranked]) -> list[dict[str, Any]]:
+    matches = verdicts_store.matches_json(conn, [{"matches": json.dumps(r.candidate.matches)} for r in items])  # type: ignore[list-item]
+    out = []
+    for r, row_matches in zip(items, matches):
+        c = r.candidate
+        out.append(
+            {
+                "video_id": c.public_id,
+                "title": c.title[:TITLE_CHARS],
+                "channel": c.channel,
+                "duration_s": c.duration_s,
+                "published_at": c.published_at,
+                "score": c.score,
+                **_place(c.score, r),
+                "reason": c.reason,
+                "explored": c.explored,
+                "matches": row_matches,
+                "moments_s": verdicts_store.moments_s(c.moments),
+                "asks_s": verdicts_week.asks_s(r),
+                "judged_at": c.judged_at,
+            }
+        )
+    return out
+
+
+async def week_feed(request: Request) -> Response:
+    """`GET /dashboard/api/week` — the week's ranked verdicts fitted to the owner's
+    weekly budget, with what each day asks (companion.md §6)."""
+    now = time.time()
+    try:
+        week = _week_param(request, now)
+    except _Refused as refused:
+        return _from(refused)
+    current = verdicts_week.week_of(now)
+
+    def read(conn: sqlite3.Connection) -> dict[str, Any]:
+        budget = verdicts_week.budget_min(conn)
+        ranked = verdicts_week.view(conn, week)
+        fitted, rest = verdicts_week.fit(ranked, budget * 60)
+        per_day = {d: {"day": d, "asks_s": 0.0, "fitted": 0, "candidates": 0} for d in verdicts_week.days(week)}
+        for r in ranked:
+            day = per_day.get(_local_day(r.candidate.published_at))
+            if day is not None:
+                day["candidates"] += 1
+        for r in fitted:
+            day = per_day.get(_local_day(r.candidate.published_at))
+            if day is not None:
+                day["asks_s"] += verdicts_week.asks_s(r)
+                day["fitted"] += 1
+        return {
+            "week": week,
+            "previous": verdicts_week.shift(week, -1),
+            "next": verdicts_week.shift(week, 1) if week < current else None,
+            "budget_min": budget,
+            "asks_s": sum(verdicts_week.asks_s(r) for r in fitted),
+            "items": _ranked_json(conn, fitted),
+            "days": list(per_day.values()),
+            "rest": {
+                "count": len(rest),
+                "asks_s": sum(verdicts_week.asks_s(r) for r in rest),
+            },
+            "capped": len(ranked) >= verdicts_week.CANDIDATES_MAX,
+        }
+
+    return _json(await request.app.state.assembled.db.read(read))
+
+
+def _local_day(ts: int) -> str:
+    return datetime.fromtimestamp(ts).date().isoformat()
+
+
+async def budget(request: Request) -> Response:
+    """`POST /dashboard/api/budget` — the minutes a week the feed fits."""
+    refusal = await require_write(request)
+    if refusal is not None:
+        return refusal
+    try:
+        body = await _body(request)
+        _only(body, ("week_budget_min",))
+        minutes = body.get("week_budget_min")
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= verdicts_week.BUDGET_MAX_MIN:
+            raise _Refused(
+                "E_BAD_PARAM",
+                "week_budget_min must be a whole number of minutes.",
+                f"pass 0 to {verdicts_week.BUDGET_MAX_MIN}.",
+            )
+    except _Refused as refused:
+        return _from(refused)
+    await request.app.state.assembled.db.write(lambda c: verdicts_week.set_budget_min(c, minutes))
+    return _json({"week_budget_min": minutes})
 
 
 async def feed_facets(request: Request) -> Response:

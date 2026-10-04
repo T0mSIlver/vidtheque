@@ -209,6 +209,8 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             # with the write side: a read-only projection has no feed.
             Route(f"{ROOT}/api/feed", guarded(feed.feed), methods=["GET"]),
             Route(f"{ROOT}/api/feed/facets", guarded(feed.feed_facets), methods=["GET"]),
+            Route(f"{ROOT}/api/week", guarded(feed.week_feed), methods=["GET"]),
+            Route(f"{ROOT}/api/budget", feed.budget, methods=["POST"]),
             Route(
                 f"{ROOT}/api/verdicts/{{video_id}}",
                 guarded(feed.verdict),

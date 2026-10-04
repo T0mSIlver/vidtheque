@@ -96,6 +96,7 @@ class Candidate:
     moments: list[store.Moment]
     matches: list[dict[str, Any]]
     judged_at: int
+    explored: bool = False
 
     @property
     def pull(self) -> int:
@@ -120,7 +121,7 @@ def candidates(conn: sqlite3.Connection, week: str) -> list[Candidate]:
     start, end = bounds(week)
     rows = conn.execute(
         "SELECT v.id, v.public_id, v.title, v.channel_name, v.duration_s, v.published_at,"
-        " d.score, d.reason, d.summary, d.moments, d.matches, d.created_at FROM verdicts d"
+        " d.score, d.reason, d.summary, d.moments, d.matches, d.created_at, d.explored FROM verdicts d"
         " JOIN videos v ON v.id = d.video_id WHERE v.owner_id = ? AND d.score >= 2"
         " AND v.published_at >= ? AND v.published_at < ?"
         " ORDER BY d.score DESC, v.published_at DESC, v.id DESC LIMIT ?",
@@ -140,6 +141,7 @@ def candidates(conn: sqlite3.Connection, week: str) -> list[Candidate]:
             moments=store.moments_of(r),
             matches=json.loads(r["matches"]),
             judged_at=int(r["created_at"]),
+            explored=bool(r["explored"]),
         )
         for r in rows
     ]
@@ -315,3 +317,51 @@ class WeekRanker:
         order, top = settle(answer, cands)
         await self.db.write(lambda c: save(c, week, order, top, fp, self.label))
         await log(f"ranked week {week}: {len(order)} video(s), {len(top)} on top", "info")
+
+
+# ------------------------------------------------------------------ budget
+
+BUDGET_MAX_MIN = 7 * 24 * 60
+
+
+def asks_s(ranked: Ranked) -> float:
+    """The seconds a candidate asks for: the whole video for a 3, else its
+    moments; the whole video when the moments have no spans or there are none."""
+    c = ranked.candidate
+    if ranked.top:
+        return c.duration_s
+    spans = store.moments_s(c.moments)
+    return spans if spans else c.duration_s
+
+
+def fit(ranked: Sequence[Ranked], budget_s: float) -> tuple[list[Ranked], list[Ranked]]:
+    """(fitted, rest): in rank order, each candidate that still fits the budget.
+    One too long is passed over, and a shorter one after it may still fit."""
+    fitted: list[Ranked] = []
+    rest: list[Ranked] = []
+    used = 0.0
+    for r in ranked:
+        cost = asks_s(r)
+        if used + cost <= budget_s:
+            fitted.append(r)
+            used += cost
+        else:
+            rest.append(r)
+    return fitted, rest
+
+
+def budget_min(conn: sqlite3.Connection) -> int:
+    return int(conn.execute("SELECT week_budget_min FROM owners WHERE id = ?", (OWNER_ID,)).fetchone()[0])
+
+
+def set_budget_min(conn: sqlite3.Connection, minutes: int) -> None:
+    conn.execute("UPDATE owners SET week_budget_min = ? WHERE id = ?", (minutes, OWNER_ID))
+
+
+def shift(week: str, weeks: int) -> str:
+    return (date.fromisoformat(week) + timedelta(days=7 * weeks)).isoformat()
+
+
+def days(week: str) -> list[str]:
+    monday = date.fromisoformat(week)
+    return [(monday + timedelta(days=i)).isoformat() for i in range(7)]

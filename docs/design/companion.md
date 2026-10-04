@@ -525,6 +525,14 @@ Two surfaces, each answering one question. Nothing appears on both.
   what is in it?* It keeps indexing, jobs, following, the library and the
   ledger, and loses everything the feed now answers. §7.
 
+**The time budget** (*added 2026-10-04, #156*): the owner sets minutes per
+week, 210 by default; the feed shows it as minutes a day, since uploads come
+in bursts and a day's budget would starve one day and waste the next. The feed
+fits the week's highest-ranked verdicts (§3.4) under it: a 3 asks for the whole
+video, a 2 for its moments, and one that would pass the budget is left for a
+shorter one ranked after it. The feed shows the total asked against the
+budget, and what each day of the week asks.
+
 **Ask Claude** opens `https://claude.ai/new?q=<prompt>`, with a prompt naming
 vidtheque, the video id, its title and channel, and leaving the question to
 you. *Amended 2026-10-04 (#159):* the prompt also asks Claude to save to
@@ -574,7 +582,8 @@ channel, outside the group.
 existing credential order (bearer or session) and write guard, so no new
 prefix and no new guard: `feed`, `feed/facets`, `verdicts/{video_id}`, `signals` (POST),
 `feedback` (POST, 0016), `watched` and `shares` (POST, 0018), `valued-time` (GET),
-`profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
+`profile` (GET, POST ops, POST revert), `devices` (POST, DELETE),
+`week` and `budget` (POST) (#156).
 `dashboard.md` gets their contract.
 
 ### 6.1 The weekly brief
