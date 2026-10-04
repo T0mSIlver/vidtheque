@@ -42,6 +42,9 @@ function mount() {
 describe("BriefView", () => {
   it("rates the week, then saves what was missing with it", async () => {
     const view = await mount();
+    expect(
+      await screen.findByText(/Against YouTube: 43% hit rate · 17% regret · 2 misses/),
+    ).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "4" }));
     await userEvent.type(screen.getByLabelText("What was missing (optional)"), "GPU talks");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));

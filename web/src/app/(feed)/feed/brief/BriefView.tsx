@@ -81,6 +81,8 @@ export function BriefView({ week }: { week: string | null }) {
         )}
       </section>
 
+      {b.ledger ? <Ledger ledger={b.ledger} /> : null}
+
       <Checkin week={b.week} stored={b.checkin} />
 
       <details className={styles.more}>
@@ -157,6 +159,19 @@ export function BriefView({ week }: { week: string | null }) {
         </ul>
       </details>
     </div>
+  );
+}
+
+/** The week against YouTube (§3.3), in one line. */
+function Ledger({ ledger }: { ledger: NonNullable<Brief["ledger"]> }) {
+  const week = ledger.weeks[0];
+  if (!week) return null;
+  const percent = (rate: number | null) => (rate === null ? "–" : `${Math.round(rate * 100)}%`);
+  return (
+    <p className={styles.quiet}>
+      Against YouTube: {percent(week.hits.rate)} hit rate · {percent(week.regret.rate)} regret ·{" "}
+      {week.misses.count} {week.misses.count === 1 ? "miss" : "misses"}
+    </p>
   );
 }
 

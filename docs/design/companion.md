@@ -530,7 +530,7 @@ about one phone screen: long parts open on a tap.
   watched it?", yes or no each.
 - **Check-in**: "Was last week's feed worth the time? 1–5", plus an optional
   "what was missing" line.
-- **The ledger**'s weekly numbers (#157), once it lands.
+- **The ledger** for that week (§3.3): hit rate, regret and misses, in one line.
 
 **Why skipped, with a fix.** Every skipped row, in the feed and in the audit,
 names the "less of this" entry that sank it (its strongest `down` match).

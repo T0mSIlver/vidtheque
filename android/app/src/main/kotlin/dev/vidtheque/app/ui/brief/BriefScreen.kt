@@ -60,6 +60,7 @@ import dev.vidtheque.app.data.Receipt
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.duration
 import dev.vidtheque.app.ui.openLink
+import dev.vidtheque.app.ui.profile.percent
 import dev.vidtheque.app.ui.scoreWord
 
 @Composable
@@ -136,6 +137,16 @@ fun BriefContent(
             ui.error?.let { item { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) } }
             if (brief.picks.isEmpty()) item { Text("Nothing scored worth your time this week.", style = MaterialTheme.typography.bodyLarge) }
             items(brief.picks, key = { "pick-${it.videoId}" }) { pick -> PickCard(pick, onOpen, onLink) }
+            brief.ledger?.weeks?.firstOrNull()?.let { week ->
+                item(key = "ledger") {
+                    Text(
+                        "Against YouTube: ${percent(week.hits.rate)} hit rate · ${percent(week.regret.rate)} regret · ${week.misses.count} " + if (week.misses.count == 1) "miss" else "misses",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
+            }
             item(key = "checkin") { CheckinCard(brief, ui, onCheckin) }
             briefFolds(brief, skips, ui.busy, onLink, onRevert, onPause, onAudit, onEase)
         }

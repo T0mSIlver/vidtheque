@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from ..profile import ledger
 from ..text import deeplink
 from ..verdicts import store as verdicts_store
 
@@ -304,9 +305,18 @@ def assemble(conn: sqlite3.Connection, row: sqlite3.Row, now: int, owner_id: int
         "profile_changes": profile_changes(conn, int(row["since_at"]), int(row["until_at"]), owner_id),
         "audit": [a for a in (_audit(conn, vid, owner_id) for vid in body.get("audit", [])) if a is not None],
         "checkin": dict(checkin) if checkin else None,
-        # The valued-time ledger (#157) fills this slot once it lands.
-        "ledger": None,
+        "ledger": _ledger(conn, row, now, owner_id),
     }
+
+
+def _ledger(conn: sqlite3.Connection, row: sqlite3.Row, now: int, owner_id: int) -> dict[str, Any] | None:
+    """The brief's week in the valued-time ledger (#157), in `GET valued-time`'s shape.
+
+    None for a week older than the ledger reads.
+    """
+    read = ledger.weeks(conn, datetime.fromtimestamp(now).astimezone(), owner_id=owner_id)
+    week = next((w for w in read["weeks"] if w["start"] == int(row["since_at"])), None)
+    return {"regret_target": read["regret_target"], "weeks": [week]} if week else None
 
 
 def _verdict_row(conn: sqlite3.Connection, public_id: str, owner_id: int) -> sqlite3.Row | None:

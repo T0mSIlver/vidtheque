@@ -141,5 +141,6 @@ private val BRIEF = Brief(
         ChannelCard("hype-daily", "Hype Daily", "active", 6, 0.0, 0.0, suggestPause = true),
     ),
     profileChanges = listOf(Change(3, "reweight", 3, EntryState("Local inference on consumer GPUs", 0.3, true), EntryState("Local inference on consumer GPUs", 0.6, true), "4 asks this week")),
+    ledger = ValuedTime(0.1, listOf(Week(1_790_546_400, true, Hits(3, 7, 0.429), Regret(1, 6, 0.167), Misses(2, 1, 1)))),
     audit = listOf(Audited("eMlx5fFNoYc", "Visualizing transformers", "3Blue1Brown", "Launch coverage, no benchmarks.", HYPE)),
 )

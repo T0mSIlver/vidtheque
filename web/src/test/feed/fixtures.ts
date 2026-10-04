@@ -227,5 +227,16 @@ export const BRIEF = {
   ],
   audit: [{ ...SKIPPED.items[0], sunk_by: HYPE, answer: null }],
   checkin: null,
-  ledger: null,
+  ledger: {
+    regret_target: 0.1,
+    weeks: [
+      {
+        start: 1790546400,
+        current: true,
+        hits: { kept: 3, offered: 7, rate: 0.429, capped: false },
+        regret: { down: 1, watched: 6, rate: 0.167, capped: false },
+        misses: { count: 2, pending: 1, shared: 1, capped: false },
+      },
+    ],
+  },
 };

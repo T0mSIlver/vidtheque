@@ -259,6 +259,8 @@ data class Brief(
     @SerialName("profile_changes") val profileChanges: List<Change> = emptyList(),
     val audit: List<Audited> = emptyList(),
     val checkin: Checkin? = null,
+    /** This week of the valued-time ledger (§25.12); null past the weeks it reads. */
+    val ledger: ValuedTime? = null,
 )
 
 /** "Ease the entry that sank it to [to]?" — applied only when the reader says so. */
