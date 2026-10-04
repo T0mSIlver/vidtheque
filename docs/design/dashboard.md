@@ -3934,7 +3934,8 @@ disagreement side cites a cue that was given to the model for that entry.
 `channels`, `profile_changes`, the audit `answer`s and `checkin` are read when
 asked: the channel report covers the last 30 days, at most 100 follows,
 flagged ones first; `profile_changes` are the week's `nightly` events, at
-most 20, newest first, `reverted` once a later revert touched the entry; the
+most 20, newest first, `reverted` once a revert undid that event, by
+its id or by rolling back past it; the
 page reverts one through `POST profile/revert` (§25.5) and pauses a channel
 through `POST /dashboard/following/{slug}/state` (§21). `ledger` is the brief's
 week of the valued-time ledger in §25.12's shape, one week long, or `null` once
