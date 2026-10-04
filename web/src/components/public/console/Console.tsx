@@ -11,11 +11,18 @@ import { ConsoleForm, type MachineState } from "./ConsoleForm";
 import { fetchSearch, streamAsk, wasDropped } from "./requests";
 import { SearchResults, type SearchActions } from "./SearchResults";
 import { holds, initialState, reducer, type ConsoleState } from "./state";
-import { parseSnapshot, sameSnapshot, serializeSnapshot, type Mode, type Snapshot } from "./url";
+import {
+  joinQuery,
+  parseSnapshot,
+  sameSnapshot,
+  serializeSnapshot,
+  type Mode,
+  type Snapshot,
+} from "./url";
 import styles from "./console.module.css";
 
 export interface ConsoleProps {
-  /** The route the console's URL belongs to. */
+  /** The route the console's URL belongs to, with the page's filter if it has one. */
   path: string;
   askEnabled: boolean;
   boot: Boot;
@@ -66,7 +73,7 @@ export function Console(props: ConsoleProps) {
     flight.current.controller = null;
   }
 
-  const href = (snapshot: Snapshot) => path + serializeSnapshot(snapshot, askEnabled);
+  const href = (snapshot: Snapshot) => joinQuery(path, serializeSnapshot(snapshot, askEnabled));
 
   function commit(snapshot: Snapshot) {
     dispatch({ type: "commit", snapshot });

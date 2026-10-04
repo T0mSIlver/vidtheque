@@ -55,3 +55,8 @@ export function serializeSnapshot(snapshot: Snapshot, askEnabled: boolean): stri
 export function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
   return a.mode === b.mode && a.q === b.q && (a.mode === "ask" || a.type === b.type);
 }
+
+/** A snapshot's query after a path that may carry the page's own filter (`/demo?edition=paris`). */
+export function joinQuery(path: string, query: string): string {
+  return path.includes("?") && query ? `${path}&${query.slice(1)}` : path + query;
+}

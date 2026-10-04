@@ -1,0 +1,187 @@
+/* The public sample feed: one card per verdict, the quote set off by a gold rule. */
+.list {
+  display: grid;
+  gap: var(--s4);
+  list-style: none;
+}
+
+.card {
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+  padding: var(--s5) var(--s5) var(--s6);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2) var(--s4);
+}
+
+.score {
+  composes: t-label-sm from global;
+  color: var(--fg2);
+}
+
+/* 3 is the one in gold, as on the private feed. */
+.score[data-score="3"] {
+  color: var(--gold);
+}
+
+.meta {
+  composes: t-label-sm from global;
+  color: var(--fg3);
+}
+
+.title {
+  composes: t-lede from global;
+  color: var(--fg-max);
+  text-wrap: balance;
+}
+
+.title a:hover,
+.title a:focus-visible {
+  color: var(--gold);
+}
+
+.reason {
+  composes: t-body from global;
+  color: var(--fg);
+  max-width: var(--prose);
+}
+
+.summary {
+  composes: t-body from global;
+  color: var(--fg2);
+  max-width: var(--prose);
+}
+
+.matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  list-style: none;
+}
+
+.chip {
+  composes: t-tag from global;
+  display: inline-flex;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--seam2);
+  color: var(--fg2);
+}
+
+.chip[data-direction="up"] span[aria-hidden] {
+  color: var(--tone-ok);
+}
+
+.chip[data-direction="down"] span[aria-hidden] {
+  color: var(--tone-bad);
+}
+
+.moments {
+  display: grid;
+  gap: var(--s4);
+  list-style: none;
+  margin-top: var(--s2);
+}
+
+.moments li {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: var(--s3);
+}
+
+.at {
+  composes: t-machine from global;
+  color: var(--gold);
+  text-decoration: underline;
+  text-decoration-color: var(--gold-44);
+  text-underline-offset: 3px;
+}
+
+.why {
+  composes: t-body from global;
+  color: var(--fg);
+}
+
+.quote {
+  margin-top: var(--s2);
+  padding-left: var(--s3);
+  border-left: 2px solid var(--gold-44);
+  color: var(--fg2);
+}
+
+.quoteText {
+  composes: t-body from global;
+  font-style: italic;
+}
+
+.quoteWho {
+  composes: t-label-sm from global;
+  margin-top: 4px;
+  color: var(--fg3);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+  .card {
+    padding: var(--s4);
+  }
+
+  .moments li {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+}
+
+.feed {
+  display: grid;
+  gap: var(--s5);
+}
+
+.profile {
+  display: grid;
+  gap: var(--s3);
+}
+
+.profileHead {
+  composes: t-label from global;
+  color: var(--fg2);
+}
+
+.empty {
+  composes: t-body from global;
+  color: var(--fg2);
+}
+
+.more {
+  composes: t-label-sm from global;
+  justify-self: start;
+  padding: 8px 12px;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+}
+
+.more:hover,
+.more:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.pages {
+  display: flex;
+  gap: var(--s3);
+}

@@ -2,7 +2,7 @@
 // read spends that visitor's rate-limit bucket, forwarded by their address.
 import { cache } from "react";
 import { headers } from "next/headers";
-import { api, ApiError, type ContentType, type Video } from "@/lib/api";
+import { api, ApiError, type ContentType, type FeedResponse } from "@/lib/api";
 import type { MetaOutcome } from "@/lib/api/meta";
 import { RETRY_FALLBACK, SEARCH_PAGE, type SearchOutcome } from "@/lib/api/outcome";
 
@@ -46,18 +46,6 @@ export const readMeta = cache(async (): Promise<MetaOutcome> => {
   }
 });
 
-const CORPUS_PREVIEW = 6;
-
-/** The cold page's listing; a failure is silence, not a state. */
-export async function readCorpus(): Promise<Video[]> {
-  try {
-    const page = await api().videos({ limit: CORPUS_PREVIEW }, { clientIp: await visitorIp() });
-    return page.videos.slice(0, CORPUS_PREVIEW);
-  } catch {
-    return [];
-  }
-}
-
 /** The configured edge header first, else the first X-Forwarded-For hop. */
 export async function visitorIp(): Promise<string | undefined> {
   const h = await headers();
@@ -66,4 +54,25 @@ export async function visitorIp(): Promise<string | undefined> {
   if (direct) return direct;
   const forwarded = h.get("x-forwarded-for");
   return forwarded?.split(",")[0]?.trim() || undefined;
+}
+
+export type FeedOutcome =
+  | { kind: "ok"; feed: FeedResponse }
+  | { kind: "rate_limited"; retryAfter: number }
+  | { kind: "unreachable" };
+
+/** The sample feed (demo-site.md §8.2); a refusal reads as unreachable, the page has no fix for it. */
+export async function readFeed(params: {
+  tags?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<FeedOutcome> {
+  try {
+    return { kind: "ok", feed: await api().feed(params, { clientIp: await visitorIp() }) };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 429) {
+      return { kind: "rate_limited", retryAfter: err.retryAfter ?? RETRY_FALLBACK };
+    }
+    return { kind: "unreachable" };
+  }
 }
