@@ -63,6 +63,7 @@ from .server import build_mcp_server
 from .tools import Deps
 from .profile.nightly import build_nightly
 from .brief.weekly import Weekly, build_weekly
+from .discover.scout import build_scout
 from .push.notify import PushSettings, build_notifier
 from .verdicts.stage import build_verdicts
 
@@ -208,6 +209,8 @@ def assemble(
     weekly, weekly_http = (
         _weekly_brief(db) if run_pipeline and not public.enabled else (None, [])
     )
+    # The scout (companion.md §6.2) rides it too, after the nightly update's hour.
+    scout, scout_http = build_scout(db) if run_pipeline and not public.enabled else (None, None)
     follow_checks = run_pipeline and pipeline_settings.follow_checks
 
     async def before_claim() -> None:
@@ -217,8 +220,10 @@ def assemble(
             await nightly.tick()
         if weekly is not None:
             await weekly.tick()
+        if scout is not None:
+            await scout.tick()
 
-    if follow_checks or nightly is not None or weekly is not None:
+    if follow_checks or nightly is not None or weekly is not None or scout is not None:
         runner.before_claim = before_claim
     deps = Deps(
         settings=settings,
@@ -303,6 +308,8 @@ def assemble(
                     await nightly.aclose()
                 if weekly is not None:
                     await weekly.aclose()
+                if scout is not None:
+                    await scout.aclose()
                 # Before the HTTP clients the runs are still talking through.
                 if ask_runs is not None:
                     await ask_runs.close()
@@ -313,6 +320,8 @@ def assemble(
                     await nightly_http.aclose()
                 for weekly_client in weekly_http:
                     await weekly_client.aclose()
+                if scout_http is not None:
+                    await scout_http.aclose()
                 if http is not None:
                     await http.aclose()
                 if status_http is not None and status_http is not http:
