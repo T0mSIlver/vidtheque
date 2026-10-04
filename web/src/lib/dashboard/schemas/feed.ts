@@ -68,7 +68,7 @@ export type Feed = z.infer<typeof Feed>;
 export const WeekItem = FeedItem.extend({ asks_s: seconds() });
 export type WeekItem = z.infer<typeof WeekItem>;
 
-/** The week fitted to the owner's minutes (dashboard.md §25.10). */
+/** The week fitted to the owner's minutes (dashboard.md §25.13). */
 export const Week = z.object({
   week: z.string(),
   previous: z.string(),
