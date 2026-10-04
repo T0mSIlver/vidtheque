@@ -61,7 +61,7 @@ export function BriefView({ week }: { week: string | null }) {
                   <Score score={pick.score} />
                 </span>
                 {pick.moments.length ? (
-                  <ul className={styles.moments}>
+                  <ul className={styles.pickMoments}>
                     {pick.moments.map((m) => (
                       <li key={m.cue_id}>
                         <a

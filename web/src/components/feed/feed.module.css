@@ -391,6 +391,8 @@
 .timecode {
   composes: t-machine from global;
   min-width: 3.5rem;
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--gold);
 }
 
@@ -877,7 +879,8 @@
   padding: var(--s3) 0;
 }
 
-.moments {
+/* A pick's moment links on the brief, side by side; not the video page's `.moments`. */
+.pickMoments {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
