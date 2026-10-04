@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 
 from mcp_types import TextContent
-
 from vidtheque_mcp.app import Assembled
 from vidtheque_mcp.follows import store as follows_store
 from vidtheque_mcp.follows import trials
@@ -59,7 +58,9 @@ async def _expired_trial_with(deps, liked: str | None) -> int:
     def write(c) -> int:
         collection_id = int(c.execute("SELECT collection_id FROM follows").fetchone()[0])
         c.execute("UPDATE follows SET trial_until = ?", (began + trials.TRIAL_S,))
-        video = c.execute("SELECT id, duration_s FROM videos WHERE duration_s > 0 LIMIT 1").fetchone()
+        video = c.execute(
+            "SELECT id, duration_s FROM videos WHERE duration_s > 0 LIMIT 1"
+        ).fetchone()
         c.execute(
             "INSERT INTO collection_videos (collection_id, video_id) VALUES (?, ?)",
             (collection_id, video["id"]),
@@ -99,12 +100,16 @@ async def test_an_unliked_trial_ends_and_keeps_its_videos(assembled: Assembled) 
     settled = await _settle(deps)
     assert [(s.collection_id, s.kept) for s in settled] == [(collection_id, False)]
     assert await deps.db.read(lambda c: follows_store.get(c, collection_id)) is None
-    assert await deps.db.read(lambda c: c.execute("SELECT COUNT(*) FROM videos").fetchone()[0]) == n_videos
+    assert (
+        await deps.db.read(lambda c: c.execute("SELECT COUNT(*) FROM videos").fetchone()[0])
+        == n_videos
+    )
 
 
 async def test_a_thumb_or_a_full_watch_keeps_a_trial(assembled: Assembled) -> None:
     for evidence, kept in (("up", True), ("full", True), ("half", False), ("before", False)):
         deps = assembled.deps
+
         def clear(c) -> None:
             for table in ("collections WHERE kind = 'channel'", "feedback", "signals"):
                 c.execute(f"DELETE FROM {table}")

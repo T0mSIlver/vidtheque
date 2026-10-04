@@ -48,7 +48,9 @@ def make_lasting(conn: sqlite3.Connection, collection_id: int) -> None:
     )
 
 
-def liked_since(conn: sqlite3.Connection, collection_id: int, since: int, owner_id: int = 1) -> bool:
+def liked_since(
+    conn: sqlite3.Connection, collection_id: int, since: int, owner_id: int = 1
+) -> bool:
     """Did a video this follow brought in get a thumbs up or a full watch since `since`?"""
     if conn.execute(
         "SELECT 1 FROM collection_videos cv JOIN feedback f ON f.video_id = cv.video_id"
@@ -102,7 +104,9 @@ def settle(conn: sqlite3.Connection, now: int | None = None, owner_id: int = 1) 
         else:
             store.delete(conn, collection_id)
         logger.info(
-            "trial follow %s %s", row["title"], "kept: a video it brought in was liked" if kept else "ended"
+            "trial follow %s %s",
+            row["title"],
+            "kept: a video it brought in was liked" if kept else "ended",
         )
         done.append(Settled(collection_id, str(row["title"]), kept))
     return done
