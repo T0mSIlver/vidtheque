@@ -108,9 +108,19 @@ async def test_only_moments_inside_a_cue_of_this_video_are_stored(assembled: Ass
     inside = (float(cue["start_s"]) + float(cue["end_s"])) / 2
     model = FakeModel(
         verdict(
-            {"cue_id": cue["id"], "offset_s": inside, "why": "kept"},
-            {"cue_id": cue["id"], "offset_s": float(cue["end_s"]) + 0.5, "why": "outside the cue"},
-            {"cue_id": foreign["id"], "offset_s": float(foreign["start_s"]), "why": "other video"},
+            {"cue_id": cue["id"], "offset_s": inside, "end_cue_id": cue["id"], "why": "kept"},
+            {
+                "cue_id": cue["id"],
+                "offset_s": float(cue["end_s"]) + 0.5,
+                "end_cue_id": cue["id"],
+                "why": "outside the cue",
+            },
+            {
+                "cue_id": foreign["id"],
+                "offset_s": float(foreign["start_s"]),
+                "end_cue_id": foreign["id"],
+                "why": "other video",
+            },
         )
     )
 
@@ -118,7 +128,9 @@ async def test_only_moments_inside_a_cue_of_this_video_are_stored(assembled: Ass
 
     assert job["state"] == "done"
     stored = store.moments_of(await db.read(lambda c: store.get(c, vid)))
-    assert stored == [store.Moment(int(cue["id"]), inside, "kept")]
+    assert stored == [
+        store.Moment(int(cue["id"]), inside, "kept", int(cue["id"]), float(cue["end_s"]))
+    ]
     row = await db.read(lambda c: store.get(c, vid))
     assert (row["score"], row["profile_rev"], row["model"]) == (2, rev, "api:fake")
     events = [
@@ -133,10 +145,60 @@ async def test_only_moments_inside_a_cue_of_this_video_are_stored(assembled: Ass
     assert await rows(db, "SELECT * FROM signals") == []
 
 
+async def test_a_moment_ends_at_its_end_cue_and_the_end_is_receipt_checked(
+    assembled: Assembled,
+) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    other = await video_id(db, "zduSFxRajkE")
+    cues = await rows(
+        db, "SELECT id, start_s, end_s FROM cues WHERE video_id = ? ORDER BY seq", (vid,)
+    )
+    assert len(cues) >= 3
+    first, _, third = cues[0], cues[1], cues[2]
+    foreign = (await rows(db, "SELECT id FROM cues WHERE video_id = ?", (other,)))[0]
+
+    def moment(cue: sqlite3.Row, end: int, why: str) -> dict:
+        return {"cue_id": cue["id"], "offset_s": float(cue["start_s"]), "end_cue_id": end, "why": why}
+
+    await run_verdict(
+        assembled,
+        vid,
+        FakeModel(
+            verdict(
+                moment(first, third["id"], "spans three cues"),
+                moment(third, first["id"], "ends before it starts"),
+                moment(third, foreign["id"], "ends in another video"),
+            )
+        ),
+    )
+    row = await db.read(lambda c: store.get(c, vid))
+    [kept] = store.moments_of(row)
+    assert (kept.why, kept.end_cue_id, kept.end_s) == (
+        "spans three cues",
+        int(third["id"]),
+        float(third["end_s"]),
+    )
+    # A reindex that removes the end cue breaks the receipt like a removed start.
+    await db.write(lambda c: c.execute("DELETE FROM cues WHERE id = ?", (third["id"],)))
+    assert await db.read(lambda c: store.needs_verdict(c, vid)) is True
+
+
+def test_moment_seconds_count_overlaps_once_and_are_unknown_without_ends() -> None:
+    m = store.Moment
+    spans = [m(1, 10.0, "a", 2, 70.0), m(3, 60.0, "b", 4, 100.0), m(5, 200.0, "c", 5, 230.0)]
+    assert store.moments_s(spans) == 120.0
+    assert store.moments_s([]) == 0.0
+    # Written before spans: the minutes are unknown, never guessed.
+    assert store.moments_s([*spans, m(6, 300.0, "old")]) is None
+
+
 async def test_a_verdict_with_no_surviving_moment_is_still_stored(assembled: Assembled) -> None:
     vid = await video_id(assembled.db, "kCc8FmEb1nY")
     await run_verdict(
-        assembled, vid, FakeModel(verdict({"cue_id": 999999, "offset_s": 1.0, "why": "made up"}))
+        assembled,
+        vid,
+        FakeModel(verdict({"cue_id": 999999, "offset_s": 1.0, "end_cue_id": 999999, "why": "made up"})),
     )
     row = await assembled.db.read(lambda c: store.get(c, vid))
     assert row is not None and store.moments_of(row) == []
@@ -457,7 +519,16 @@ async def test_ready_queues_again_only_when_the_stored_receipts_broke(assembled:
     await run_verdict(
         assembled,
         vid,
-        FakeModel(verdict({"cue_id": cue["id"], "offset_s": float(cue["start_s"]), "why": "w"})),
+        FakeModel(
+            verdict(
+                {
+                    "cue_id": cue["id"],
+                    "offset_s": float(cue["start_s"]),
+                    "end_cue_id": cue["id"],
+                    "why": "w",
+                }
+            )
+        ),
     )
     assert await db.write(lambda c: store.queue_after_ready(c, vid)) is None
     # A reindex rewrote the transcript: the stored moment's cue is gone.
@@ -486,6 +557,25 @@ async def test_backfill_is_bounded_and_resumable(assembled: Assembled) -> None:
     )
     again, _ = await db.write(lambda c: store.backfill(c, 10, [vid]))
     assert len(again) == 1
+
+
+async def test_rescore_queues_the_newest_judged_videos_only(assembled: Assembled) -> None:
+    db = assembled.db
+    judged = [await video_id(db, s) for s in ("kCc8FmEb1nY", "zduSFxRajkE")]
+    for age, vid in enumerate(judged):
+        await db.write(
+            lambda c, vid=vid, age=age: (
+                store.save(c, vid, score=2, reason="r", summary="s", moments=[], profile_rev=0, model="m"),
+                c.execute("UPDATE videos SET published_at = ? WHERE id = ?", (1_000 - age, vid)),
+            )
+        )
+    jobs, waiting = await db.write(lambda c: store.backfill(c, 1, rescore=True))
+    assert waiting == 0
+    [args] = await rows(db, "SELECT args_json FROM jobs WHERE public_id = ?", (jobs[0],))
+    assert json.loads(args[0])["video_id"] == judged[0]
+    jobs, _ = await db.write(lambda c: store.backfill(c, 10, rescore=True))
+    # The one already waiting is not queued twice; videos without a verdict are not picked.
+    assert len(jobs) == 1
 
 
 # ------------------------------------------------------------ input bounds
@@ -542,7 +632,7 @@ def test_backfill_takes_a_video_id_that_starts_with_a_dash(monkeypatch, tmp_path
     db_path.touch()
     seen: list[list[str]] = []
 
-    async def fake_backfill(settings, limit, videos):
+    async def fake_backfill(settings, limit, videos, rescore=False):
         seen.append(videos)
         return 0
 

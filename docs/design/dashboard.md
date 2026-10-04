@@ -3633,7 +3633,7 @@ behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any othe
                          "direction": "up", "strength": 2},
                         {"entry_id": 36, "text": "Vendor launches with no evaluation",
                          "direction": "down", "strength": 1}],
-            "judged_at": 1790000000}],
+            "moments_s": 372.0, "judged_at": 1790000000}],
  "pagination": {"limit": 20, "offset": 0, "has_more": true, "next_offset": 20},
  "skipped": {"count": 12, "capped": false}}
 ```
@@ -3644,6 +3644,11 @@ with `has_more: true`: the band's tail past the ceiling is not paged.
 `capped: true` means there are more. `explored: true` marks a verdict that
 reached 2 only once rescored without the negative entries (companion.md
 §3.2), which the feed shows as outside your profile.
+*Amended 2026-10-04 (#156):* `moments_s` is the seconds the verdict's moments
+cover, overlaps counted once, for "6 of 42 min" beside `duration_s`; `0` with
+no moment, `null` when a moment was written before spans and has no end. It
+reads the moments as stored; the video screen's figure counts only those
+whose receipt still holds.
 
 *Amended 2026-10-04 (#146, #128):* four optional parameters narrow and sort
 the band, and the payload echoes them (`null` when absent):
@@ -3690,8 +3695,10 @@ written before migration 0014 has `[]`.
 The video screen: `video` (the row fields above), `score`, `reason`,
 `explored`, `matches` (as in the feed), `feedback` (the video's thumb or
 mute: `up`, `down`, `muted` or `none`, §25.4), `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
-that scored it), `model` and `judged_at`. A moment is
-`{cue_id, offset_s, why, url}`, `url` being `https://youtu.be/<id>?t=<s>` with
+that scored it), `model`, `judged_at` and `moments_s` (as in the feed, over
+the moments shown). A moment is
+`{cue_id, offset_s, end_cue_id, end_s, why, url}` (#156: `end_cue_id` and
+`end_s` are `null` on a moment written before spans), `url` being `https://youtu.be/<id>?t=<s>` with
 the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is
 left out and counted in `moments_dropped` until the rerun replaces the verdict.
 `404 E_UNKNOWN_VIDEO` for a video not in the corpus, `404 E_NO_VERDICT` for

@@ -23,9 +23,14 @@ BACKFILL_MAX = 1000
 
 @dataclass(frozen=True)
 class Moment:
+    """A span from `offset_s`, inside cue `cue_id`, to `end_s`, the end of cue
+    `end_cue_id`. Verdicts written before spans have no end (§3.1)."""
+
     cue_id: int
     offset_s: float
     why: str
+    end_cue_id: int | None = None
+    end_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -42,16 +47,58 @@ def check_receipts(
     conn: sqlite3.Connection, video_id: int, moments: Sequence[Moment]
 ) -> tuple[list[Moment], list[Moment]]:
     """(kept, dropped). A moment is kept only when its cue is this video's and
-    its offset lies inside that cue. Nothing is moved to a nearby cue (§3.1)."""
+    its offset lies inside that cue, and, when it has an end, the end cue is
+    this video's, not before the first, and holds `end_s`. Nothing is moved to
+    a nearby cue (§3.1)."""
     kept: list[Moment] = []
     dropped: list[Moment] = []
     for moment in moments:
-        row = conn.execute(
-            "SELECT 1 FROM cues WHERE id = ? AND video_id = ? AND ? BETWEEN start_s AND end_s",
+        start = conn.execute(
+            "SELECT seq FROM cues WHERE id = ? AND video_id = ? AND ? BETWEEN start_s AND end_s",
             (moment.cue_id, video_id, moment.offset_s),
         ).fetchone()
-        (kept if row is not None else dropped).append(moment)
+        ok = start is not None
+        if ok and moment.end_cue_id is not None:
+            end = conn.execute(
+                "SELECT 1 FROM cues WHERE id = ? AND video_id = ? AND seq >= ?"
+                " AND ? BETWEEN start_s AND end_s AND ? >= ?",
+                (moment.end_cue_id, video_id, start["seq"], moment.end_s, moment.end_s, moment.offset_s),
+            ).fetchone()
+            ok = end is not None
+        (kept if ok else dropped).append(moment)
     return kept, dropped
+
+
+def spanned(
+    conn: sqlite3.Connection, video_id: int, answered: Sequence[tuple[int, float, int, str]]
+) -> list[Moment]:
+    """The model's `(cue_id, offset_s, end_cue_id, why)` as moments, each ending
+    at its end cue's end. An end cue that is not this video's keeps no `end_s`
+    and fails `check_receipts`."""
+    out: list[Moment] = []
+    for cue_id, offset_s, end_cue_id, why in answered:
+        row = conn.execute(
+            "SELECT end_s FROM cues WHERE id = ? AND video_id = ?", (end_cue_id, video_id)
+        ).fetchone()
+        end_s = float(row[0]) if row is not None else -1.0
+        out.append(Moment(cue_id, offset_s, why, end_cue_id, end_s))
+    return out
+
+
+def moments_s(moments: Sequence[Moment]) -> float | None:
+    """The seconds the moments cover, overlaps counted once; None when any
+    moment has no end (a verdict written before spans)."""
+    if any(m.end_s is None for m in moments):
+        return None
+    total = 0.0
+    reach = -1.0
+    for m in sorted(moments, key=lambda m: m.offset_s):
+        end = float(m.end_s)  # type: ignore[arg-type]
+        start = max(m.offset_s, reach)
+        if end > start:
+            total += end - start
+            reach = end
+    return total
 
 
 def save(
@@ -95,7 +142,16 @@ def get(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row | None:
 
 
 def moments_of(row: sqlite3.Row) -> list[Moment]:
-    return [Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"])) for m in json.loads(row["moments"])]
+    return [
+        Moment(
+            int(m["cue_id"]),
+            float(m["offset_s"]),
+            str(m["why"]),
+            int(m["end_cue_id"]) if m.get("end_cue_id") is not None else None,
+            float(m["end_s"]) if m.get("end_s") is not None else None,
+        )
+        for m in json.loads(row["moments"])
+    ]
 
 
 def matches_json(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[list[dict[str, Any]]]:
@@ -176,14 +232,16 @@ def queue_after_ready(conn: sqlite3.Connection, video_id: int) -> str | None:
 
 
 def backfill(
-    conn: sqlite3.Connection, limit: int, video_ids: Sequence[int] = ()
+    conn: sqlite3.Connection, limit: int, video_ids: Sequence[int] = (), *, rescore: bool = False
 ) -> tuple[list[str], int]:
     """Queue verdicts for indexed videos that have none, newest first.
 
     Returns (job ids, videos still without a verdict or a queued one). Rerun
     to continue: a video with a verdict or a waiting job is never picked
     twice. With `video_ids`, those videos are queued even when they already
-    have a verdict — the explicit rerun.
+    have a verdict — the explicit rerun. With `rescore`, the newest videos
+    that have a verdict are queued instead, to rewrite them under the current
+    prompt; it does not continue, a second run queues the same videos again.
     """
     limit = max(1, min(int(limit), BACKFILL_MAX))
     marks = ",".join("?" for _ in QUERYABLE_INDEX_STATES)
@@ -197,11 +255,12 @@ def backfill(
             )
         ]
     else:
+        judged = "EXISTS" if rescore else "NOT EXISTS"
         candidates = [
             int(r[0])
             for r in conn.execute(
                 f"SELECT id FROM videos v WHERE index_state IN ({marks})"
-                " AND NOT EXISTS (SELECT 1 FROM verdicts WHERE video_id = v.id)"
+                f" AND {judged} (SELECT 1 FROM verdicts WHERE video_id = v.id)"
                 " ORDER BY published_at DESC, id DESC",
                 QUERYABLE_INDEX_STATES,
             )
@@ -212,6 +271,8 @@ def backfill(
         if is_queued(conn, video_id):
             continue
         if len(queued) >= limit:
+            if rescore:
+                break  # the rest of the judged corpus is not waiting for anything
             waiting += 1
             continue
         job = queue(conn, video_id)

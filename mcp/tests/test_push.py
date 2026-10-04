@@ -38,7 +38,7 @@ async def judge(parts: Assembled, vid: int, score: int, sender: FakeSender, *, p
         lambda c: c.execute("UPDATE videos SET published_at = ? WHERE id = ?", (int(now - published_days_ago * 86_400), vid))
     )
     cue = (await rows(parts.db, "SELECT id, start_s FROM cues WHERE video_id = ? ORDER BY seq", (vid,)))[0]
-    model = FakeModel(verdict({"cue_id": cue["id"], "offset_s": float(cue["start_s"]), "why": "his eval setup"}, score=score))
+    model = FakeModel(verdict({"cue_id": cue["id"], "offset_s": float(cue["start_s"]), "end_cue_id": cue["id"], "why": "his eval setup"}, score=score))
     parts.runner.handlers["verdict"] = VerdictStage(
         parts.deps, model, "api:fake", rng=FixedRoll(1.0), push=Notifier(parts.db, sender, min_score=3)
     )

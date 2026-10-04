@@ -47,11 +47,11 @@ def _seed_verdicts(data: Path) -> None:
                 (source_id, f"https://youtu.be/{source_id}"),
             ).lastrowid
         cue = conn.execute(
-            "SELECT id, start_s FROM cues WHERE video_id = ? ORDER BY seq LIMIT 1",
+            "SELECT id, start_s, end_s FROM cues WHERE video_id = ? ORDER BY seq LIMIT 1",
             (ids["kCc8FmEb1nY"],),
         ).fetchone()
         moments = [
-            {"cue_id": cue[0], "offset_s": cue[1], "why": "the setup"},
+            {"cue_id": cue[0], "offset_s": cue[1], "end_cue_id": cue[0], "end_s": cue[2], "why": "the setup"},
             # A cue a reindex took away: shown as dropped, never as a link.
             {"cue_id": 999_999, "offset_s": 10.0, "why": "gone"},
         ]
@@ -282,7 +282,17 @@ def test_verdict_links_only_the_moments_whose_receipt_holds(client: TestClient) 
     [moment] = body["moments"]
     assert moment["url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
     assert isinstance(moment["cue_id"], int)
+    assert moment["end_cue_id"] == moment["cue_id"] and moment["end_s"] > moment["offset_s"]
     assert body["moments_dropped"] == 1
+    # The minutes count the kept moment only, the one a reindex took counts nothing.
+    assert body["moments_s"] == pytest.approx(moment["end_s"] - moment["offset_s"])
+
+
+def test_feed_rows_carry_the_moment_seconds(client: TestClient) -> None:
+    items = {i["video_id"]: i for i in client.get(f"{API}/feed", headers=BEARER).json()["items"]}
+    # The fixture's other moment has no end, as a verdict written before spans would.
+    assert items["kCc8FmEb1nY"]["moments_s"] is None
+    assert items["zduSFxRajkE"]["moments_s"] == 0.0
 
 
 def test_feed_and_verdict_name_the_matched_entries(client: TestClient) -> None:

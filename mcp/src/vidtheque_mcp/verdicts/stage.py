@@ -61,10 +61,11 @@ VERDICT_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["cue_id", "offset_s", "why"],
+                "required": ["cue_id", "offset_s", "end_cue_id", "why"],
                 "properties": {
                     "cue_id": {"type": "integer"},
                     "offset_s": {"type": "number", "minimum": 0},
+                    "end_cue_id": {"type": "integer"},
                     "why": {"type": "string", "minLength": 1, "maxLength": 300},
                 },
             },
@@ -114,9 +115,13 @@ summary: never more than 60 words: two sentences of at most 30 words each.
   matters given the profile, in second person where it helps ("the eval
   harness at 31:00 is the part you'd reuse"). Skip what the title already says.
 
-moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the
-  transcript's [cue …] markers, and offset_s lies inside that cue's start–end.
-  Use only cues you were shown; give fewer moments rather than guessing.
+moments: up to three, each {cue_id, offset_s, end_cue_id, why}. cue_id is a
+  number from the transcript's [cue …] markers, and offset_s lies inside that
+  cue's start–end. end_cue_id is the last cue the moment covers: the moment
+  runs from offset_s to that cue's end. Stop where the part worth watching
+  stops; the person sees the total ("6 of 42 min"), and a moment that runs on
+  costs them time. end_cue_id may equal cue_id, never an earlier cue. Use only
+  cues you were shown; give fewer moments rather than guessing.
   why: never more than 12 words, the concrete thing said there ("Kimi K2 beats GLM on
   tau-bench by 9 points"), not a label ("interesting discussion of evals").
 
@@ -245,8 +250,8 @@ class VerdictStage:
                     + ("kept, shown as outside the profile" if explored else "first verdict kept")
                 )
 
-        moments = [
-            store.Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"]))
+        answered = [
+            (int(m["cue_id"]), float(m["offset_s"]), int(m["end_cue_id"]), str(m["why"]))
             for m in answer["moments"]
         ]
         matches = inputs.matches(answer["matches"])
@@ -255,6 +260,7 @@ class VerdictStage:
             # The model call is long; the video may have been deleted meanwhile.
             if c.execute("SELECT 1 FROM videos WHERE id = ?", (video_id,)).fetchone() is None:
                 return None
+            moments = store.spanned(c, video_id, answered)
             kept, dropped = store.check_receipts(c, video_id, moments)
             store.save(
                 c,
@@ -276,7 +282,7 @@ class VerdictStage:
         if dropped:
             await ctx.log(
                 f"dropped {len(dropped)} moment(s) that failed the receipt check: "
-                + ", ".join(f"cue {m.cue_id} @ {m.offset_s:g}s" for m in dropped),
+                + ", ".join(f"cue {m.cue_id}–{m.end_cue_id} @ {m.offset_s:g}s" for m in dropped),
                 "warn",
             )
         if self.push is not None:

@@ -34,6 +34,11 @@ def main(argv: list[str]) -> int:
         metavar="VIDEO_ID",
         help="queue this video even if it has a verdict; repeatable",
     )
+    backfill.add_argument(
+        "--rescore",
+        action="store_true",
+        help="queue the newest videos that already have a verdict, to rewrite them",
+    )
     args = parser.parse_args(_join_video_values(argv))
     try:
         settings = Settings.from_env()
@@ -50,7 +55,10 @@ def main(argv: list[str]) -> int:
     if not settings.db_path.exists():
         print(f"no database at {settings.db_path}", file=sys.stderr)
         return 2
-    return asyncio.run(_backfill(settings, args.limit, args.video))
+    if args.rescore and args.video:
+        print("--rescore and --video do not combine; --video already reruns.", file=sys.stderr)
+        return 2
+    return asyncio.run(_backfill(settings, args.limit, args.video, args.rescore))
 
 
 def _join_video_values(argv: list[str]) -> list[str]:
@@ -66,7 +74,7 @@ def _join_video_values(argv: list[str]) -> list[str]:
     return out
 
 
-async def _backfill(settings: Settings, limit: int, videos: list[str]) -> int:
+async def _backfill(settings: Settings, limit: int, videos: list[str], rescore: bool = False) -> int:
     db = Database(path=settings.db_path)
     await db.open()
     try:
@@ -78,7 +86,7 @@ async def _backfill(settings: Settings, limit: int, videos: list[str]) -> int:
                 print("not in the corpus: " + ", ".join(missing), file=sys.stderr)
                 return 1
             ids = list(found.values())
-        jobs, waiting = await db.write(lambda c: store.backfill(c, limit, ids))
+        jobs, waiting = await db.write(lambda c: store.backfill(c, limit, ids, rescore=rescore))
     finally:
         await db.close()
     print(f"queued {len(jobs)} verdict job(s); {waiting} more video(s) to queue.")
