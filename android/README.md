@@ -29,8 +29,12 @@ captures for PR bodies go in `screenshots/`.
 
 `.github/workflows/android.yml` builds on hosted runners, then installs the
 APK on an emulator and runs the Maestro flows in `maestro/`. A tag
-`android-v0.1.0` runs `android-release.yml`, which attaches
-`vidtheque-0.1.0.apk` to a GitHub release.
+`android-v0.2.0` runs `android-release.yml`, which builds with versionName
+`0.2.0` and versionCode 2000 (three digits a part, so each release installs
+over the last), leaves the instance field empty, and attaches
+`vidtheque-0.2.0.apk` to a GitHub release whose body is `release-notes.md`
+with the version and the signing certificate's SHA-256 filled in. Local
+builds are versionCode 1, versionName `dev`.
 
 Builds sign with the key in the repository secrets `ANDROID_KEYSTORE_B64`,
 `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`, so each one installs over
