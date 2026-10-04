@@ -91,8 +91,10 @@ export interface Paragraph {
  *  caption line, not a sentence, so a paragraph closes only at a sentence end.
  *  A transcript with no sentence end at all (auto captions) has no such place,
  *  and closes at a pause or a reading length instead. */
-export function paragraphsOf(cues: Cue[]): Paragraph[] {
-  const punctuated = cues.some((cue) => endsSentence(cue.text));
+export function paragraphsOf(
+  cues: Cue[],
+  punctuated = cues.some((cue) => endsSentence(cue.text)),
+): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   let open: Paragraph | null = null;
   let chars = 0;
@@ -225,6 +227,11 @@ export function Transcript({
 
   const { cues, first, busy, error, hasMore } = state;
 
+  // Decided once, from the first batch: a later batch must not reflow
+  // paragraphs already read.
+  const [punctuated, setPunctuated] = useState<boolean | null>(null);
+  if (punctuated === null && cues.length) setPunctuated(cues.some((cue) => endsSentence(cue.text)));
+
   // The empty page, not the empty transcript: `?cue_offset=` can land past the
   // end of one that exists.
   if (total === 0 || (!busy && !error && cues.length === 0)) {
@@ -277,7 +284,7 @@ export function Transcript({
         </nav>
       ) : null}
       <div className={styles.cues} ref={top}>
-        {paragraphsOf(cues).map((paragraph) => (
+        {paragraphsOf(cues, punctuated ?? undefined).map((paragraph) => (
           <Para key={paragraph.cues[0].start_s} paragraph={paragraph} videoId={videoId} />
         ))}
         {busy ? <p className={styles.cueload}>loading</p> : null}
