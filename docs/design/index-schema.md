@@ -1522,7 +1522,7 @@ ALTER TABLE owners ADD COLUMN week_budget_min INTEGER NOT NULL DEFAULT 210
 ```
 
 The minutes a week the feed fits, 210 (30 a day) by default, set through
-`POST /dashboard/api/budget` (dashboard.md §25.10).
+`POST /dashboard/api/budget` (dashboard.md §25.13).
 
 ## 2. FTS5
 
