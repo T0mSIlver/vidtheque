@@ -3735,6 +3735,9 @@ state records its event as a signal; `none` records none. Answers
 `{"video_id", "state"}`; `404 E_UNKNOWN_VIDEO` stores nothing, and any other
 `state` is `400 E_BAD_PARAM`.
 
+*Amended 2026-10-04 (0018, #157):* a `watch` answers its `signal_id`, which
+the app keeps until it comes back from YouTube (§25.10).
+
 ### 25.5 `GET|POST /dashboard/api/profile`, `POST /dashboard/api/profile/revert`
 
 `GET` answers `revision`, `max_entries` (40), `entries`
@@ -3829,3 +3832,51 @@ a video with no verdict from `E_NO_VERDICT`'s `video` (§25.3).
 
 A query submitted from the page sends one `mcp_search` signal (§25.4).
 Paging, a reload or a shared `?q=` link sends none.
+
+### 25.10 `POST /dashboard/api/watched` (2026-10-04, #157)
+
+`{"signal_id", "watched_s"}`: how long the owner was away in YouTube after a
+`watch` hand-off, set on that signal (companion.md §2.3). The server stores
+the least of `watched_s`, what is left of the video after the signal's
+`offset_s` (when the duration is known), and the time since the signal plus
+60 s of clock slack. It is set once: a second call changes nothing and answers
+the stored value with `already: true`, so a retry is harmless. Answers
+`{"signal_id", "watched_s", "already"}`. `404 E_UNKNOWN_SIGNAL` for a signal
+that is not this owner's `watch`; `watched_s` outside 0–172,800 or a
+non-integer `signal_id` is `400 E_BAD_PARAM`.
+
+The app sends it from the activity's `onStart` after a hand-off, with the time
+measured on the phone; the pending hand-off is kept in preferences, so a
+process YouTube pushed out of memory still reports on its next start.
+
+### 25.11 `POST /dashboard/api/shares` (2026-10-04, #157)
+
+`{"url"}`, a YouTube video link (`youtu.be/ID`, `youtube.com/watch?v=ID`,
+`/shorts/ID`; `400 E_BAD_PARAM` for anything else, a channel or playlist
+included). It queues the video through `index_video`, as the console's Add
+videos does, logs one `shares` row (index-schema §1.19) and answers
+`{"video_id", "job_id", "indexed", "miss", "why"}`: `job_id` null when the
+video was already indexed or already queued, `miss` true, false or null while
+the video waits for its verdict, `why` the reason in a few words ("scored 1",
+"channel not followed", "no verdict yet"). An indexing refusal other than
+"already queued" is answered as is and logs no share.
+
+### 25.12 `GET /dashboard/api/valued-time` (2026-10-04, #157)
+
+The weekly ledger (companion.md §3.3), for the app's profile screen and the
+console's Corpus page. Code: `profile/ledger.py`. Eight weeks, this one first,
+each starting Monday 00:00 on the box's clock:
+
+```json
+{"regret_target": 0.1,
+ "weeks": [{"start": 1791756000, "current": true,
+            "hits": {"kept": 2, "offered": 9, "rate": 0.222, "capped": false},
+            "regret": {"down": 0, "watched": 3, "rate": 0.0, "capped": false},
+            "misses": {"count": 1, "pending": 1, "shared": 3, "capped": false}}]}
+```
+
+`rate` is null when its denominator is 0. Every figure is computed on read,
+so a thumb given this week to last week's video moves last week's hit rate.
+Each cohort reads at most 500 videos a week and says `capped` past that. No
+parameters. The time budget (#156) adds its minutes asked against budget to
+each week.

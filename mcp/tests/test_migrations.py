@@ -671,9 +671,11 @@ def test_0016_adds_feedback_and_leaves_the_signals_as_they_were(
         " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
     ).lastrowid
     fresh.execute("INSERT INTO signals (kind, video_id) VALUES ('thumb_up', ?)", (vid,))
-    held = [tuple(r) for r in fresh.execute("SELECT * FROM signals")]
-    assert migrations.migrate(fresh)[0] == 16
-    assert [tuple(r) for r in fresh.execute("SELECT * FROM signals")] == held
+    # The columns 0016 saw; 0018 adds one after them.
+    columns = "SELECT id, owner_id, at, kind, video_id, offset_s, text, client FROM signals"
+    held = [tuple(r) for r in fresh.execute(columns)]
+    assert migrations.migrate(fresh)[0] >= 16
+    assert [tuple(r) for r in fresh.execute(columns)] == held
     # Earlier taps stay events only: nothing is backfilled into a state.
     assert fresh.execute("SELECT COUNT(*) FROM feedback").fetchone()[0] == 0
     fresh.execute("INSERT INTO feedback (video_id, state) VALUES (?, 'up')", (vid,))
@@ -681,3 +683,23 @@ def test_0016_adds_feedback_and_leaves_the_signals_as_they_were(
         fresh.execute("INSERT INTO feedback (video_id, state) VALUES (?, 'down')", (vid,))
     with pytest.raises(sqlite3.IntegrityError):
         fresh.execute("UPDATE feedback SET state = 'thumb_up'")
+
+
+def test_0018_adds_watch_time_and_shares_and_keeps_every_signal(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 17, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute("INSERT INTO signals (kind, video_id, offset_s) VALUES ('watch', ?, 12)", (vid,))
+    held = [tuple(r) for r in fresh.execute("SELECT * FROM signals")]
+    assert migrations.migrate(fresh)[0] >= 18
+    # Earlier watches keep their row, with no time measured.
+    assert [tuple(r) for r in fresh.execute("SELECT * FROM signals")] == [held[0] + (None,)]
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("UPDATE signals SET watched_s = -1")
+    fresh.execute("INSERT INTO shares (source_id) VALUES ('aaaaaaaaaaa')")
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("INSERT INTO shares (source_id) VALUES ('')")
