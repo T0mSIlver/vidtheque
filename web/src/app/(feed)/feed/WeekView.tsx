@@ -80,8 +80,7 @@ function Loaded({ week, onBudget }: { week: Week; onBudget: () => void }) {
         </p>
         {week.capped ? (
           <p className={styles.quiet}>
-            This week holds more verdicts than the 40 it compares; the newest of the rest are under
-            Show all.
+            This week holds more verdicts than the 40 it compares; the rest are under Show all.
           </p>
         ) : null}
         {week.rest.count > 0 ? (
