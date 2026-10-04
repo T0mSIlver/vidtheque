@@ -57,7 +57,11 @@ class WatchClock @Inject constructor(
     /** Call once the link was handed to an app: it sends `watch` and starts the clock. */
     fun handOff(videoId: String, offsetS: Int) {
         val started = clock.nowMs()
-        synchronized(this) { store.write(HandOff(started)) }
+        val unsent = synchronized(this) {
+            store.read().also { store.write(HandOff(started)) }
+        }?.takeIf { it.signalId != 0L && it.awayS != null }
+        // A return the network lost last time goes out now rather than being overwritten.
+        unsent?.let { scope.launch { runCatching { api.watched(it.signalId, it.awayS!!) } } }
         scope.launch {
             val id = runCatching { api.watch(videoId, offsetS) }.getOrNull() ?: return@launch
             synchronized(this@WatchClock) {

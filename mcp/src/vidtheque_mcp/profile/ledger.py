@@ -160,13 +160,23 @@ def kept(moments: list[float], duration: float, spans: list[tuple[float, float]]
     if not spans:
         return False
     if not moments:
-        return duration > 0 and sum(b - a for a, b in spans) >= duration / 2
+        return duration > 0 and _covered(spans) >= duration / 2
     seen = 0
     for m in moments:
         until = min(m + MOMENT_WATCH_S, duration) if duration > m else m
         if any(a <= m + MOMENT_LEAD_S and b >= until for a, b in spans):
             seen += 1
     return seen >= math.ceil(len(moments) / 2)
+
+
+def _covered(spans: list[tuple[float, float]]) -> float:
+    """Seconds of video inside at least one stretch: two watches of the same minute are one minute."""
+    total, reach = 0.0, float("-inf")
+    for a, b in sorted(spans):
+        if b > reach:
+            total += b - max(a, reach)
+            reach = b
+    return total
 
 
 def _hits(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> dict[str, Any]:
