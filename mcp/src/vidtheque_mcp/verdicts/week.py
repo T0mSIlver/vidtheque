@@ -36,9 +36,10 @@ WEEK_TOP = 5
 # The prompt and the ranking both stay bounded whatever a week holds.
 CANDIDATES_MAX = 40
 SUMMARY_CHARS = 600
-# Weeks touched by a verdict written this recently are checked for a rerank.
+# Weeks touched by a verdict written this recently are checked for a rerank,
+# and at most a year of them is ranked in one pass; the rest wait for the next.
 RECENT_S = 8 * 86_400
-WEEKS_PER_PASS = 12
+WEEKS_PER_PASS = 52
 
 # SQLite's week key, the same as `week_of`: forward to Sunday, back to Monday.
 WEEK_SQL = "date({col}, 'unixepoch', 'localtime', 'weekday 0', '-6 days')"
@@ -192,23 +193,27 @@ def tiers(conn: sqlite3.Connection, video_ids: Sequence[int]) -> dict[int, Ranke
 
 
 def pending(conn: sqlite3.Connection, now: float) -> list[str]:
-    """Recent weeks whose candidates moved since they were last ranked, newest first."""
+    """Recent weeks whose candidates moved since they were last ranked, newest
+    first, at most `WEEKS_PER_PASS`. The cap applies after the check, so weeks
+    already ranked never crowd out the ones that still need it."""
     weeks = [
         str(r[0])
         for r in conn.execute(
             f"SELECT DISTINCT {WEEK_SQL.format(col='v.published_at')} AS w FROM verdicts d"
             " JOIN videos v ON v.id = d.video_id WHERE v.owner_id = ?"
-            " AND v.published_at IS NOT NULL AND d.created_at >= ? ORDER BY w DESC LIMIT ?",
-            (OWNER_ID, int(now) - RECENT_S, WEEKS_PER_PASS),
+            " AND v.published_at IS NOT NULL AND d.created_at >= ? ORDER BY w DESC",
+            (OWNER_ID, int(now) - RECENT_S),
         )
     ]
-    out = []
+    out: list[str] = []
     for week in weeks:
         run = conn.execute(
             "SELECT candidates, outcome FROM week_rank_runs WHERE week = ?", (week,)
         ).fetchone()
         if run is None or run["outcome"] != "ok" or run["candidates"] != fingerprint(candidates(conn, week)):
             out.append(week)
+            if len(out) >= WEEKS_PER_PASS:
+                break
     return out
 
 

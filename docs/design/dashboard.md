@@ -3654,7 +3654,8 @@ whose receipt still holds.
 `score`: 3 for the week's top five at most, 2 for its other 2+ verdicts, the
 score itself for 0–1 (companion.md §3.4). `week` is the Monday of the video's
 publication week, local, as YYYY-MM-DD, and `week_rank` its place in that week,
-1 the best; both are `null` for a 0–1 verdict or an undated video. `score`
+1 the best; both are `null` for a 0–1 verdict or an undated video, and
+`week_rank` alone for a 2+ verdict past its week's 40 candidates, which shows 2. `score`
 stays the verdict's own, which the reason explains.
 
 *Amended 2026-10-04 (#146, #128):* four optional parameters narrow and sort

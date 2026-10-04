@@ -291,7 +291,8 @@ week's verdicts with each other.
   candidate needs no call; it keeps its score.
 - **When:** at the end of a verdict job, once no other verdict job waits, for
   each week touched by a verdict of the last 8 days whose candidates changed
-  since its last ranking or whose last ranking failed, at most 12 weeks a pass.
+  since its last ranking or whose last ranking failed, at most 52 weeks a pass,
+newest first; weeks left over wait for the next pass.
   A backfill so ranks each week once, at the end. A failed ranking never fails
   the verdict; the week keeps its last ranking and is tried again next time.
 - **What the feed shows** (`tier`): 3 for the week's top, 2 for the other
