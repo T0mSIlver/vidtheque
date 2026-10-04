@@ -7,6 +7,7 @@ import styles from "@/components/public/page/page.module.css";
 // deployment's version, then recommendations, the agent, and the app.
 
 const ENV = `${REPO}/blob/main/deploy/.env.example`;
+const GUIDE = `${REPO}/blob/main/docs/self-host.md`;
 
 function quickstart(version: string | null): string {
   const tag = version ?? "<version>";
@@ -42,15 +43,10 @@ export default async function DocsPage() {
           1. Pick a machine at home
         </h2>
         <p className={styles.p}>
-          A NAS, a mini PC or a Raspberry Pi 5 runs it. A home connection matters more than the
-          hardware: YouTube blocks many datacenter addresses, so a rented server may fail to fetch
-          videos where a home machine works.
-        </p>
-        <p className={styles.p}>
-          Without a GPU, set{" "}
-          <span className={styles.inline}>VIDTHEQUE_STT_POLICY=captions_only</span> and leave the
-          worker out: vidtheque reads YouTube&apos;s captions instead of transcribing, and search
-          falls back to keywords.
+          Any always-on amd64 machine with Docker and about 2 GB of free RAM: a mini PC, an old
+          laptop, or an x86 NAS that runs containers. Run it at home rather than on a rented server:
+          YouTube asks datacenter addresses to sign in much more often, and vidtheque does not sign
+          in.
         </p>
       </section>
 
@@ -58,6 +54,15 @@ export default async function DocsPage() {
         <h2 className={styles.h2} id="run">
           2. Start it
         </h2>
+        <p className={styles.p}>
+          <b>No GPU:</b> <a href={GUIDE}>the captions-only guide</a> reads YouTube&apos;s captions
+          instead of transcribing and keeps no video. Search is keyword-only and there are no
+          slides, and the feed, the app and your agent all work.
+        </p>
+        <p className={styles.p}>
+          <b>With an NVIDIA GPU:</b> the full stack transcribes, reads the slides and searches by
+          meaning.
+        </p>
         <pre className={styles.code}>{quickstart(version)}</pre>
         <p className={styles.p}>
           Every setting is documented in <a href={ENV}>.env.example</a>. Updates are one command,{" "}
