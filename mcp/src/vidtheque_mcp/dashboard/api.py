@@ -264,7 +264,7 @@ async def readiness(request: Request) -> Response:
 
     Health's `readiness` block without Health's database reads, for the search
     page to ask while a search is slow: an unloaded embedding model is the usual
-    reason, and this is the one place that knows (§29.1).
+    reason, and this is the one place that knows (§28.5).
     """
     observed = await pipeline_readiness(request, redact=redacted(request))
     return _json({"readiness": _readiness(observed)})

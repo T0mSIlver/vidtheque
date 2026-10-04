@@ -35,7 +35,7 @@ export function Head({
 }) {
   const { video } = data;
   const failed = data.stages.filter((stage) => stage.state === "failed");
-  // Quiet when fine: a ready video whose data is whole says nothing (§29.3).
+  // Quiet when fine: a ready video whose data is whole says nothing (§28.7).
   const fine =
     video.index_state === "ready" && (!data.data_status || FINE_DATA.has(data.data_status));
   return (

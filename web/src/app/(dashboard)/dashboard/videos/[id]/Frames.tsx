@@ -19,7 +19,7 @@ type Page = VideoDetail["frames"];
 /**
  * The kept keyframes as one strip that scrolls sideways, each with its
  * detection boxes. Pages after the one the URL asked for are read as the strip
- * nears its end and appended (§29.3); a deduplicated frame is not drawn, and
+ * nears its end and appended (§28.7); a deduplicated frame is not drawn, and
  * selecting one selects the frame it duplicates.
  */
 export function Frames({
