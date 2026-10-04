@@ -167,11 +167,15 @@ def configured() -> LLMSettings | None:
     return settings if is_configured(settings) else None
 
 
-def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient | None]:
+def build_verdicts(
+    deps: Deps, *, sample: bool = False
+) -> tuple["VerdictStage | None", httpx.AsyncClient | None]:
     """The stage and the HTTP client it owns, or (None, None) when verdicts are off.
 
     Off unless the companion model is configured, and off when
-    `VIDTHEQUE_VERDICTS=0` even then.
+    `VIDTHEQUE_VERDICTS=0` even then. `sample` is the public box's feed
+    (demo-site.md §8): no push, no week ranking, no exploration, one model
+    call per video.
     """
     settings = configured()
     if settings is None:
@@ -180,6 +184,9 @@ def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient
     http = httpx.AsyncClient() if settings.backend == "api" else None
     model = build_model(settings, http, deps.db)  # type: ignore[arg-type]
     assert model is not None
+    label = model_label(settings)
+    if sample:
+        return VerdictStage(deps, model, label, explore_rate=0.0), http
     # Push rides on the verdict (companion.md §6): no key, no notifier.
     from ..push.notify import PushSettings, build_notifier
 
@@ -187,7 +194,6 @@ def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient
     if PushSettings.from_env().credentials:
         http = http or httpx.AsyncClient()
         notifier = build_notifier(deps.db, http)
-    label = model_label(settings)
     ranker = week.WeekRanker(deps.db, model, label)
     return VerdictStage(deps, model, label, push=notifier, ranker=ranker), http
 
@@ -203,6 +209,7 @@ class VerdictStage:
         rng: random.Random | None = None,
         push: "Notifier | None" = None,
         ranker: "week.WeekRanker | None" = None,
+        explore_rate: float = EXPLORE_RATE,
     ) -> None:
         self.deps = deps
         self.push = push
@@ -211,6 +218,7 @@ class VerdictStage:
         self.label = label
         # Injected so tests decide which verdicts explore.
         self.rng = rng or random.Random()
+        self.explore_rate = explore_rate
 
     async def run_item(self, ctx: ItemContext) -> None:
         db = self.deps.db
@@ -233,7 +241,7 @@ class VerdictStage:
         if (
             int(answer["score"]) <= 1
             and inputs.has_negatives
-            and self.rng.random() < EXPLORE_RATE
+            and self.rng.random() < self.explore_rate
         ):
             try:
                 rescored = await self.model.complete(
