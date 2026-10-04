@@ -784,7 +784,7 @@
   gap: var(--s2);
 }
 
-.more > summary {
+.moreSummary {
   composes: t-label from global;
   min-height: var(--tap);
   display: flex;
