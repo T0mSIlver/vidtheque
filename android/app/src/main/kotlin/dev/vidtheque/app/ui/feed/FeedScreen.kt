@@ -112,8 +112,6 @@ fun FeedScreen(
     card: Lift = { _, _ -> Modifier },
     list: LazyListState = rememberLazyListState(),
     actions: @Composable () -> Unit = {},
-    /** Off where no view model can be had (a JVM screenshot). */
-    skipFix: Boolean = true,
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
@@ -161,12 +159,7 @@ fun FeedScreen(
                 if (ui.skippedCount > 0 && ui.top.nextOffset == null) {
                     item(key = "skipped") { SkippedToggle(ui, onToggleSkipped) }
                     ui.skipped?.let { band ->
-                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item ->
-                            Column {
-                                Row(item, still, card) { onOpen(item) }
-                                if (skipFix) SkipFix(item.videoId, item.matches)
-                            }
-                        }
+                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item -> Row(item, still, card) { onOpen(item) } }
                         if (band.nextOffset != null) item { TextButton(onClick = onMoreSkipped, enabled = !band.loading) { Text("More skipped") } }
                     }
                 }
@@ -336,6 +329,8 @@ private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
             }
         }
         Reason(item, Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp), lines = 2)
+        // A skipped verdict says what sank it and takes an "I'd watch this" (companion.md §6.1).
+        if (item.score <= 1) SkipFix(item.videoId, item.matches)
     }
 }
 
