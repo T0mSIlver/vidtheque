@@ -245,7 +245,8 @@ def assemble(
     # the indexing pipeline queues one after each video it marks ready. A
     # public deployment has no owner to triage for, so it judges only against
     # the published sample profile, and only when asked to (demo-site.md §8).
-    sample = public.enabled and SampleFeedSettings.from_env().enabled
+    sample_settings = SampleFeedSettings.from_env()
+    sample = public.enabled and sample_settings.enabled
     if public.enabled and not sample:
         verdicts, llm_http = None, None
     else:
@@ -307,7 +308,9 @@ def assemble(
             logger.warning("vector legs disabled: %s", db.vectors.reason)
         if verdicts is not None and sample and run_pipeline:
             synced = await db.write(sample_feed.sync_profile)
-            queued = await db.write(sample_feed.queue_stale)
+            queued = await db.write(
+                lambda c: sample_feed.queue_stale(c, sample_settings.videos)
+            )
             logger.info("sample feed: %d profile change(s), %d verdict(s) queued", synced, queued)
         async with mcp.session_manager.run():
             if run_pipeline:

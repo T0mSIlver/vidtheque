@@ -127,3 +127,45 @@ def test_an_empty_feed_says_there_is_no_profile(public_client: TestClient) -> No
         "has_more": False,
         "next_offset": None,
     }
+
+
+def test_only_the_newest_videos_are_judged(tmp_path: Path) -> None:
+    with make_client(tmp_path, PUBLIC):
+        pass
+    conn = _db(tmp_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        sample.sync_profile(conn)
+        assert sample.queue_stale(conn, videos=1) == 1
+        newest = conn.execute(
+            "SELECT id FROM videos ORDER BY published_at DESC, id DESC LIMIT 1"
+        ).fetchone()[0]
+        queued = conn.execute(
+            "SELECT json_extract(args_json, '$.video_id') FROM jobs WHERE kind = 'verdict'"
+        ).fetchall()
+        assert [r[0] for r in queued] == [newest]
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+
+def test_the_cheap_input_is_title_chapters_and_a_quarter_of_the_transcript(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from vidtheque_mcp.verdicts.stage import CHEAP_TRANSCRIPT_CHARS, VerdictStage
+
+    with make_client(tmp_path, PUBLIC) as client:
+        deps = client.app.state.assembled.deps
+        stage = VerdictStage(deps, model=None, label="t", cheap=True)  # type: ignore[arg-type]
+        video_id = asyncio.run(
+            deps.db.read(
+                lambda c: c.execute(
+                    "SELECT id FROM videos WHERE public_id = 'kCc8FmEb1nY'"
+                ).fetchone()[0]
+            )
+        )
+        inputs = asyncio.run(stage._inputs(video_id, "kCc8FmEb1nY"))
+    assert inputs.summary.startswith("Title: Let's build GPT: from scratch\nChannel: Andrej Karpathy")
+    assert len(inputs.transcript) <= CHEAP_TRANSCRIPT_CHARS + 40
