@@ -155,7 +155,9 @@ async def test_output_past_the_cap_is_cut_off(
     tmp_path: Path, fake_log: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(llm, "OUTPUT_CAP_BYTES", 1000)
-    binary = _fake_bin(tmp_path, "while True: sys.stdout.write('x' * 4096)\n")
+    # A fixed write past the cap, then a failing exit: the bytes reach the
+    # reader whichever comes first, so the cap decides, not the exit (#167).
+    binary = _fake_bin(tmp_path, "sys.stdout.write('x' * 4096)\nsys.stdout.flush()\nsys.exit(3)\n")
     with pytest.raises(LLMUnavailable) as exc:
         await CLIModel("claude-code", None, 10, binary=binary).complete("t")
     assert exc.value.reason == "invalid_output"
