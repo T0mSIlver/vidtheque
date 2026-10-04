@@ -1,5 +1,7 @@
 // The feed's words and the prompts it hands to Claude (companion.md §2.2, §3.1, §6).
 
+import { clock } from "@/lib/format";
+
 /** What each score asks of you; the score always prints its word. */
 export const SCORE_WORDS: Record<number, string> = {
   0: "skip",
@@ -106,4 +108,12 @@ export function signed(weight: number): string {
   const fixed = Math.abs(weight).toFixed(1);
   if (fixed === "0.0") return "0.0";
   return `${weight < 0 ? "−" : "+"}${fixed}`;
+}
+
+/** What a moment repeats, and what its link skips (companion.md §3.2). `where`
+ *  is the video you saw it in, or, on a collection, the moment above it. */
+export function repeatNote(where: string, whole: boolean, skippedS: number): string {
+  if (whole) return `You saw all of it in ${where}`;
+  if (skippedS > 0) return `Skips ${clock(skippedS)} you saw in ${where}`;
+  return `You saw part of it in ${where}`;
 }

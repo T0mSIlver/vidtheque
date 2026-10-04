@@ -1,15 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { FeedFailure, Matches, Outside, Score } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
 import { Title } from "@/components/dashboard/kit/ui";
 import { z } from "zod";
-import { dashboard, DashboardError, echoOf } from "@/lib/dashboard/client";
+import { dashboard, DashboardError, echoOf, FEED } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
-import { FeedVideo, type FeedbackState, type Moment, type Verdict } from "@/lib/dashboard/schemas";
+import {
+  FeedVideo,
+  type FeedbackState,
+  type Moment,
+  type Overlap,
+  type Verdict,
+} from "@/lib/dashboard/schemas";
 import { asked, clock, day } from "@/lib/format";
-import { claudeUrl, videoPrompt } from "@/lib/feed/words";
+import { claudeUrl, repeatNote, videoPrompt } from "@/lib/feed/words";
 
 // One verdict: the summary, the moments as receipts, and what you thought of
 // it. Every tap here is a signal the nightly update reads (companion.md §2.3).
@@ -116,6 +123,15 @@ function Loaded({ verdict }: { verdict: Verdict }) {
           </h2>
           <Moments videoId={id} moments={verdict.moments} dropped={verdict.moments_dropped} />
         </section>
+
+        {verdict.overlaps.length > 0 ? (
+          <section aria-labelledby="seen">
+            <h2 className={styles.label} id="seen">
+              Seen before
+            </h2>
+            <Overlaps overlaps={verdict.overlaps} />
+          </section>
+        ) : null}
       </article>
 
       {/* Keyed on the stored state, so a fresher verdict (another device, another tab)
@@ -137,28 +153,40 @@ function Moments({
   return (
     <>
       <ol className={styles.moments}>
-        {moments.map((moment) => (
-          <li key={moment.cue_id}>
-            <a
-              className={styles.moment}
-              href={moment.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() =>
-                void dashboard.signal("watch", videoId, moment.offset_s).catch(() => {})
-              }
-            >
-              <span className={styles.timecode}>
-                {clock(moment.offset_s)}
-                {moment.end_s != null ? `–${clock(moment.end_s)}` : ""}
-              </span>
-              <span className={styles.why}>{moment.why}</span>
-              <span className={styles.arrow} aria-hidden="true">
-                ↗
-              </span>
-            </a>
-          </li>
-        ))}
+        {moments.map((moment) => {
+          const start = moment.start_s ?? moment.offset_s;
+          return (
+            <li key={moment.cue_id}>
+              <a
+                className={styles.moment}
+                href={moment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => void dashboard.signal("watch", videoId, start).catch(() => {})}
+              >
+                <span className={styles.timecode}>
+                  {clock(start)}
+                  {moment.end_s != null ? `–${clock(moment.end_s)}` : ""}
+                </span>
+                <span className={styles.momentText}>
+                  <span className={styles.why}>{moment.why}</span>
+                  {moment.repeat ? (
+                    <span className={styles.repeat}>
+                      {repeatNote(
+                        `“${moment.repeat.title}”`,
+                        moment.repeat.whole,
+                        start - moment.offset_s,
+                      )}
+                    </span>
+                  ) : null}
+                </span>
+                <span className={styles.arrow} aria-hidden="true">
+                  ↗
+                </span>
+              </a>
+            </li>
+          );
+        })}
       </ol>
       {moments.length === 0 && dropped === 0 ? (
         <p className={styles.quiet}>This verdict names no moment; the summary is all it has.</p>
@@ -170,6 +198,36 @@ function Moments({
         </p>
       ) : null}
     </>
+  );
+}
+
+/** The stretches this video says again from videos you saw (companion.md §3.2). */
+function Overlaps({ overlaps }: { overlaps: Overlap[] }) {
+  return (
+    <ul className={styles.moments}>
+      {overlaps.map((overlap) => (
+        <li key={`${overlap.video.video_id}:${overlap.start_s}`}>
+          <Link
+            className={styles.moment}
+            href={`${FEED}/${encodeURIComponent(overlap.video.video_id)}`}
+          >
+            <span className={styles.timecode}>
+              {clock(overlap.start_s)}–{clock(overlap.end_s)}
+            </span>
+            <span className={styles.momentText}>
+              <span className={styles.why}>{overlap.video.title || overlap.video.video_id}</span>
+              <span className={styles.repeat}>
+                {overlap.video.channel ? `${overlap.video.channel} · ` : ""}said there from{" "}
+                {clock(overlap.seen_s)}
+              </span>
+            </span>
+            <span className={styles.arrow} aria-hidden="true">
+              ›
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

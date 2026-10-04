@@ -104,15 +104,37 @@ export const FeedFacets = z.object({
 });
 export type FeedFacets = z.infer<typeof FeedFacets>;
 
+/** The video a repeated stretch was first said in (§25.3). */
+export const SeenVideo = z.object({
+  video_id: z.string(),
+  title: z.string(),
+  channel: z.string().nullable(),
+});
+export type SeenVideo = z.infer<typeof SeenVideo>;
+
 export const Moment = z.object({
   cue_id: count(),
   offset_s: seconds(),
   /** Where the moment ends: its last cue's end; null before spans. */
   end_s: seconds().nullable().optional().default(null),
   why: z.string(),
+  /** Where `url` starts: past a repeat that covers the moment's start (#171). */
+  start_s: seconds().optional(),
   url: httpUrl(),
+  /** The first repeat the moment touches; `whole` when it repeats all through. */
+  repeat: SeenVideo.extend({ whole: z.boolean() }).nullable().optional().default(null),
 });
 export type Moment = z.infer<typeof Moment>;
+
+/** A stretch of this video that says what a video you saw said (§25.3). */
+export const Overlap = z.object({
+  video: SeenVideo,
+  start_s: seconds(),
+  end_s: seconds(),
+  seen_s: seconds(),
+  url: httpUrl(),
+});
+export type Overlap = z.infer<typeof Overlap>;
 
 /** A video's one thumb-or-mute state; `none` once taken back (§25.4). */
 export const FeedbackState = z.enum(["none", "up", "down", "muted"]);
@@ -130,6 +152,7 @@ export const Verdict = z.object({
   feedback: FeedbackState.optional().default("none"),
   summary: z.string(),
   moments: z.array(Moment),
+  overlaps: z.array(Overlap).optional().default([]),
   moments_dropped: count(),
   moments_s: seconds().nullable().optional().default(null),
   profile_rev: count(),
@@ -226,3 +249,40 @@ export interface ProfileOps {
   reweight?: { id: number; weight: number }[];
   reason?: string;
 }
+
+/** Each wanted entry's moments: how many, and their minutes (§25.14). */
+export const Collections = z.object({
+  collections: z.array(
+    z.object({
+      entry_id: count(),
+      text: z.string(),
+      moments: count(),
+      moments_s: seconds(),
+      videos: count(),
+      has_more: z.boolean(),
+    }),
+  ),
+});
+export type Collections = z.infer<typeof Collections>;
+
+/** One entry's moments, best first; `repeat.item` is an earlier one's index. */
+export const CollectionMoment = z.object({
+  video: FeedVideo,
+  why: z.string(),
+  offset_s: seconds(),
+  end_s: seconds(),
+  start_s: seconds(),
+  url: httpUrl(),
+  repeat: z
+    .object({ item: count(), video_id: z.string(), title: z.string(), whole: z.boolean() })
+    .nullable(),
+});
+export type CollectionMoment = z.infer<typeof CollectionMoment>;
+
+export const Collection = z.object({
+  entry: z.object({ entry_id: count(), text: z.string() }),
+  moments: z.array(CollectionMoment),
+  moments_s: seconds(),
+  has_more: z.boolean(),
+});
+export type Collection = z.infer<typeof Collection>;

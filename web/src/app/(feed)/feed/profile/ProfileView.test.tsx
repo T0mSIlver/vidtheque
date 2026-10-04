@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
 import { mountDashboard } from "@/test/dashboard/harness";
-import { PROFILE } from "@/test/feed/fixtures";
+import { COLLECTIONS, PROFILE } from "@/test/feed/fixtures";
 import { ProfileView } from "./ProfileView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
@@ -22,6 +22,7 @@ function mount() {
       path: "/feed/profile",
       routes: {
         "/dashboard/api/profile": { body: PROFILE },
+        "/dashboard/api/collections": { body: COLLECTIONS },
         "POST /dashboard/api/profile": {
           body: { ...PROFILE, applied: { events: [4], duplicates: [] } },
         },
@@ -38,6 +39,12 @@ describe("ProfileView", () => {
     expect(screen.getByText("−0.8")).toHaveAttribute("data-negative", "true");
     expect(screen.getByText("+0.3 → +0.6")).toBeInTheDocument();
     expect(screen.getByText(/2 of 40/)).toBeInTheDocument();
+  });
+
+  it("opens a wanted entry's moments from its count and minutes", async () => {
+    await mount();
+    const link = await screen.findByRole("link", { name: /4 moments, 19 min/ });
+    expect(link).toHaveAttribute("href", "/feed/profile/3");
   });
 
   it("adds pasted lines as one batch and reads the profile again", async () => {
