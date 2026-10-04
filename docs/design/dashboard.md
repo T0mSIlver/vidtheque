@@ -4130,5 +4130,6 @@ rules; this section holds what each page shows. Payloads are unchanged.
 allowed past it, for a table that needs the room) and `AllClear` (the one
 line a section shows when nothing needs acting on). A `Notice` with tone
 `bad` or `warn` is the page's alert, at the top; a neutral one is an empty
-state. `Fold` is the details disclosure. `PageHead` has no rule under it.
+state. `Fold` is the details disclosure. `PageHead` has no rule under it,
+and its `note` is a sans sentence under the title: the page's state in words.
 Panel headings, table heads and figure labels are sans and sentence case.
