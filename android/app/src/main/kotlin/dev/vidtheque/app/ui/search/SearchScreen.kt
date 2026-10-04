@@ -78,8 +78,8 @@ fun SearchScreen(onBack: () -> Unit, onOpen: (SearchHit) -> Unit, card: Lift = {
         onOpen = onOpen,
         onMoment = { hit ->
             val link = receipt(hit.link) ?: return@SearchContent
-            model.watched(hit)
-            if (!context.openLink(link)) scope.launch { snackbar.showSnackbar(NO_APP) }
+            if (context.openLink(link)) model.watched(hit)
+            else scope.launch { snackbar.showSnackbar(NO_APP) }
         },
     )
 }

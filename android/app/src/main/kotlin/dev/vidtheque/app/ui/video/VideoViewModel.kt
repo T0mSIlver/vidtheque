@@ -10,6 +10,7 @@ import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
 import dev.vidtheque.app.data.Verdict
 import dev.vidtheque.app.data.VideoRow
+import dev.vidtheque.app.data.WatchClock
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,7 @@ data class VideoUi(
 @HiltViewModel(assistedFactory = VideoViewModel.Factory::class)
 class VideoViewModel @AssistedInject constructor(
     private val api: Api,
+    private val watchClock: WatchClock,
     @Assisted private val videoId: String,
 ) : ViewModel() {
     @AssistedFactory
@@ -88,7 +90,8 @@ class VideoViewModel @AssistedInject constructor(
         quietly("open")
     }
 
-    fun watched(offsetS: Double) = quietly("watch", offsetS.toInt())
+    /** Call once YouTube took the link: the time until the app is back is the watch's length. */
+    fun watched(offsetS: Double) = watchClock.handOff(videoId, offsetS.toInt())
 
     fun askedClaude() = quietly("ask_claude")
 

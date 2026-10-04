@@ -256,6 +256,27 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
         })
     }
 
+    /** A `watch` hand-off; its id closes it once the app is back (§25.10). */
+    suspend fun watch(videoId: String, offsetS: Int): Long? = json.decodeFromString<Recorded>(
+        post("$root/signals", buildJsonObject {
+            put("kind", "watch")
+            put("video_id", videoId)
+            put("offset_s", offsetS)
+        }),
+    ).signalId
+
+    suspend fun watched(signalId: Long, seconds: Double) {
+        post("$root/watched", buildJsonObject {
+            put("signal_id", signalId)
+            put("watched_s", seconds)
+        })
+    }
+
+    /** A YouTube link shared to the app: indexed, and counted as a miss if the feed did not offer it (§25.11). */
+    suspend fun share(url: String): Shared = json.decodeFromString(post("$root/shares", buildJsonObject { put("url", url) }))
+
+    suspend fun valuedTime(): ValuedTime = json.decodeFromString(get("$root/valued-time"))
+
     /** Fire and forget from the caller's point of view: a lost signal costs one data point. */
     suspend fun signal(kind: String, videoId: String, offsetS: Int? = null) {
         post("$root/signals", buildJsonObject {

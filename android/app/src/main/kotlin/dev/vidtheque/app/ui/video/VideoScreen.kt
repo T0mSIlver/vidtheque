@@ -173,12 +173,12 @@ private fun VideoPage(key: VideoKey, settled: Boolean, still: Still, onBack: () 
         },
         onPlay = {
             // From the start, like a moment at 0: the same link shape and the same signal.
-            model.watched(0.0)
-            if (!context.openLink(Uri.parse("https://youtu.be/${key.videoId}"))) scope.launch { snackbar.showSnackbar(NO_APP) }
+            if (context.openLink(Uri.parse("https://youtu.be/${key.videoId}"))) model.watched(0.0)
+            else scope.launch { snackbar.showSnackbar(NO_APP) }
         },
         onMoment = { moment ->
-            model.watched(moment.offsetS)
-            if (!context.openLink(Uri.parse(moment.url))) scope.launch { snackbar.showSnackbar(NO_APP) }
+            if (context.openLink(Uri.parse(moment.url))) model.watched(moment.offsetS)
+            else scope.launch { snackbar.showSnackbar(NO_APP) }
         },
         onAsk = { verdict ->
             // The Claude app opens claude.ai/new with `q` filled in (checked on Tom's phone,

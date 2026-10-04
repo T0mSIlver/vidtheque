@@ -2,6 +2,8 @@ package dev.vidtheque.app.ui
 
 import dev.vidtheque.app.auth.Instance
 import dev.vidtheque.app.data.Api
+import dev.vidtheque.app.data.WatchClock
+import dev.vidtheque.app.data.MemoryHandOffs
 import dev.vidtheque.app.ui.video.VideoViewModel
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +34,8 @@ class VideoViewModelTest {
     private val server = MockWebServer()
     private val main = StandardTestDispatcher()
     private val test = TestScope(main)
+
+    private fun clock(api: Api) = WatchClock(api, MemoryHandOffs(), { 0L }, test)
     private var refuse = false
 
     @Before
@@ -65,7 +69,7 @@ class VideoViewModelTest {
         test.runCurrent()
     }
 
-    private fun model() = VideoViewModel(Api(OkHttpClient(), Instance(server.url("/").toString().trimEnd('/'))), "vid").also { m ->
+    private fun model() = Api(OkHttpClient(), Instance(server.url("/").toString().trimEnd('/'))).let { VideoViewModel(it, clock(it), "vid") }.also { m ->
         settle { m.ui.value.verdict != null }
     }
 

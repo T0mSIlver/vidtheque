@@ -27,6 +27,20 @@
                 <data android:scheme="https" android:host="${instanceHost}" android:path="/auth/android/callback" />
             </intent-filter>
         </activity>
+        <!-- "Found it elsewhere": a YouTube link shared from any app (companion.md §6). -->
+        <activity
+            android:name=".share.ShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/share_label"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
         <service
             android:name=".push.VerdictMessagingService"
             android:exported="false">
