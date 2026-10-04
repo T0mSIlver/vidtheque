@@ -16,6 +16,9 @@ sentence, the slide, and the second it happened (`https://youtu.be/ID?t=123`).
 
 ## Quickstart
 
+No GPU? [`docs/self-host.md`](docs/self-host.md) runs it on a home machine
+from YouTube captions and your own LLM key, phone and agent included.
+
 Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,web,worker}`:
 
 ```bash
@@ -30,9 +33,7 @@ curl localhost:8080/healthz
 
 Caddy is the one origin over the web and mcp images, by the route table in that
 Caddyfile; all three ship since 0.0.7. The worker image is amd64 + CUDA (~28 GB — what GPU torch genuinely weighs); the mcp image is
-CPU-only, multi-arch, and runs on a Pi. No GPU? Drop the worker: a hosted
-OpenAI-compatible provider covers the transcript leg, and YouTube captions are
-the zero-GPU indexing path. `deploy/vidtheque-update.sh` makes upgrades one
+CPU-only and multi-arch. `deploy/vidtheque-update.sh` makes upgrades one
 command; pin exact tags — `v0.0.x` schemas can still change. To build from source instead: clone this repo, `cp deploy/.env.example
 deploy/.env`, run `make images`, then `docker compose -f deploy/docker-compose.yml up -d`.
 
@@ -72,7 +73,7 @@ flowchart LR
         pages["landing · demo · dashboard"]
     end
     Web -->|"/api/*"| MCP
-    subgraph MCP ["mcp/ — CPU, multi-arch (runs on a Pi)"]
+    subgraph MCP ["mcp/ — CPU, multi-arch"]
         surface["MCP tools · OAuth (CIMD)<br/>/api facade · dashboard JSON + writes"] ---
         pipeline["yt-dlp fetch · scene detection<br/>job queue"] ---
         store[("SQLite + sqlite-vec + FTS5<br/>keyframe JPEGs")]

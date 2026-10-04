@@ -13,6 +13,17 @@ and anything marked **[Tom]** is a decision before it is a ticket.
 
 ## Open
 
+### 2026-10-04: captions-only self-host, what it still lacks
+
+`docs/self-host.md` is the guide (#195). Two gaps are open:
+
+- The web image is amd64 only, so the stack does not start on a Raspberry
+  Pi 5 or an ARM NAS. `build-web.yml` skips arm64 to keep a QEMU Next build
+  off the release path; a native arm64 runner would close it.
+- **[Tom]** Keyword-only search and no novelty check. A small CPU text
+  embedder behind `WORKER_URL` would bring both back; the PR for #195
+  sizes it.
+
 ### 2026-10-03: the companion — verdicts, a profile, a feed and an Android app
 
 Contract: `docs/design/companion.md`, in its §9 order. None of it is built.
