@@ -55,7 +55,7 @@ CHECK_EVERY_S = 60
 
 
 class ScoutSource(Protocol):
-    def search(self, query: str, max_items: int, *, newest: bool = False) -> list[SearchHit]: ...
+    def search(self, query: str, max_items: int, *, this_month: bool = False) -> list[SearchHit]: ...
 
     def probe(self, url: str) -> dict[str, Any]: ...
 
@@ -154,6 +154,9 @@ class Scout:
         except LLMUnavailable as exc:
             state, error = "failed", f"model unavailable ({exc.reason})"
             logger.warning("scout: %s", error)
+        except Exception as exc:  # noqa: BLE001 - the night is settled either way
+            state, error = "failed", f"{type(exc).__name__}: {exc}"[:300]
+            logger.exception("scout run failed")
         if state == "done" and run.requests == 0 and run.speaker is None:
             state = "idle"
         await self.db.write(lambda c: finish(c, run, state, at, error))
@@ -182,7 +185,7 @@ class Scout:
             ):
                 return
             run.requests += 1
-            hits = await asyncio.to_thread(self.source.search, text, RESULTS, newest=True)
+            hits = await asyncio.to_thread(self.source.search, text, RESULTS, this_month=True)
             hit = await self.db.read(lambda c: _first_new(c, hits, self.owner_id))
             if hit is None:
                 continue
@@ -255,6 +258,13 @@ class Scout:
             run.judged += 1
             return
         moments = receipts(cues, answer["moments"])
+        if len(moments) < len(answer["moments"]):
+            logger.info(
+                "scout: %s kept %d of %d moments; the rest failed the receipt check",
+                hit.source_id,
+                len(moments),
+                len(answer["moments"]),
+            )
         score = int(answer["score"])
         state = (
             "shown" if score >= SHOW_MIN_SCORE and shown_so_far < picks.SHOWN_PER_WEEK else "judged"
