@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import type { Shot } from "@/lib/dashboard/schemas";
 import { clock, count } from "@/lib/format";
 import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
@@ -9,7 +9,7 @@ import { frameLink } from "./query";
 
 /** A chapter narrower than this draws its boundary but not its title, which
  *  would be an ellipsis and a letter; the tooltip still names it. */
-const TITLE_MIN_PX = 72;
+const TITLE_MIN_PX = 56;
 
 /** A new shot's still waits this long, so a sweep is not one request per bar. */
 const SETTLE_MS = 70;
@@ -70,14 +70,17 @@ export function Timeline({
 }) {
   const band = useRef<HTMLOListElement>(null);
   const scrub = useRef<HTMLDivElement>(null);
-  const chapterBand = useRef<HTMLOListElement>(null);
   const [bandPx, setBandPx] = useState(0);
-  useEffect(() => {
-    const element = chapterBand.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setBandPx(element.clientWidth));
-    observer.observe(element);
-    return () => observer.disconnect();
+  // A callback ref: the band mounts with the chapters, whenever they arrive.
+  const measured = useRef<ResizeObserver | null>(null);
+  const chapterBand = useCallback((element: HTMLOListElement | null) => {
+    measured.current?.disconnect();
+    measured.current = null;
+    if (!element) return;
+    setBandPx(element.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    measured.current = new ResizeObserver(() => setBandPx(element.clientWidth));
+    measured.current.observe(element);
   }, []);
 
   // A video with no recorded duration is drawn against its furthest shot.
