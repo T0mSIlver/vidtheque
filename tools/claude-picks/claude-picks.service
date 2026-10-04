@@ -1,0 +1,9 @@
+[Unit]
+Description=vidtheque: Claude's daily picks (companion.md §6.4)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/work/vidtheque
+ExecStart=%h/work/vidtheque/tools/claude-picks/run.sh
+TimeoutStartSec=30min
