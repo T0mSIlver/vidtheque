@@ -939,6 +939,13 @@
 
 /* ------------------------------------------------------------ outside */
 
+.picksBand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-bottom: var(--s4);
+}
+
 .outsideBand {
   display: flex;
   flex-direction: column;

@@ -85,6 +85,13 @@ function ThisWeek({ week, target }: { week: ValuedWeek; target: number }) {
           kept from outside your follows
         </li>
       ) : null}
+      {week.picks?.picked ? (
+        <li>
+          <span className={styles.figure}>{percent(week.picks.rate)}</span> of Claude&rsquo;s picks
+          kept, {count(week.picks.kept)} of {count(week.picks.picked)}; top tier{" "}
+          {percent(week.top?.rate ?? null)}
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -114,6 +121,12 @@ function Weeks({ weeks, target }: { weeks: ValuedWeek[]; target: number }) {
             <th scope="col" className={table.num}>
               kept / shown from outside
             </th>
+            <th scope="col" className={table.num}>
+              Claude&rsquo;s picks kept / picked
+            </th>
+            <th scope="col" className={table.num}>
+              top tier kept / offered
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -139,6 +152,16 @@ function Weeks({ weeks, target }: { weeks: ValuedWeek[]; target: number }) {
               <td className={table.num}>
                 {week.outside && week.outside.shown > 0
                   ? `${count(week.outside.kept)} / ${count(week.outside.shown)}`
+                  : DASH}
+              </td>
+              <td className={table.num}>
+                {week.picks && week.picks.picked > 0
+                  ? `${count(week.picks.kept)} / ${count(week.picks.picked)}`
+                  : DASH}
+              </td>
+              <td className={table.num}>
+                {week.top && week.top.offered > 0
+                  ? `${count(week.top.kept)} / ${count(week.top.offered)}`
                   : DASH}
               </td>
             </tr>

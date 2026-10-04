@@ -68,6 +68,18 @@ export type Feed = z.infer<typeof Feed>;
 export const WeekItem = FeedItem.extend({ asks_s: seconds() });
 export type WeekItem = z.infer<typeof WeekItem>;
 
+/** One of Claude's picks for the week, with its reason (companion.md §6.4). */
+export const WeekPick = FeedVideo.extend({
+  source: z.literal("claude"),
+  day: z.string(),
+  reason: z.string(),
+  /** The video's verdict; null when it has none. */
+  score: count().nullable(),
+  moments: z.array(z.object({ offset_s: seconds(), end_s: seconds().nullable(), why: z.string() })),
+  moments_s: seconds().nullable(),
+});
+export type WeekPick = z.infer<typeof WeekPick>;
+
 /** The week fitted to the owner's minutes (dashboard.md §25.13). */
 export const Week = z.object({
   week: z.string(),
@@ -76,6 +88,7 @@ export const Week = z.object({
   budget_min: count(),
   asks_s: seconds(),
   items: z.array(WeekItem),
+  picks: z.array(WeekPick).optional().default([]),
   days: z.array(
     z.object({ day: z.string(), asks_s: seconds(), fitted: count(), candidates: count() }),
   ),

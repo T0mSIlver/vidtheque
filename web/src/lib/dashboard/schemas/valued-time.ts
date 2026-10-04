@@ -18,6 +18,17 @@ export const ValuedWeek = z.object({
     .nullable()
     .optional()
     .default(null),
+  /** The week's 3s, what Claude's picks are held against (companion.md §6.4). */
+  top: z
+    .object({ kept: count(), offered: count(), rate: rate() })
+    .nullable()
+    .optional()
+    .default(null),
+  picks: z
+    .object({ source: z.string(), picked: count(), kept: count(), rate: rate() })
+    .nullable()
+    .optional()
+    .default(null),
 });
 export type ValuedWeek = z.infer<typeof ValuedWeek>;
 
