@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
 import dev.vidtheque.app.data.FittedWeek
+import dev.vidtheque.app.data.OutsideWeek
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,8 @@ import javax.inject.Inject
 data class WeekUi(
     val asked: String? = null,
     val week: FittedWeek? = null,
+    /** The week's picks from outside the follows; null until read, and when the read failed. */
+    val outside: OutsideWeek? = null,
     val refreshing: Boolean = false,
     val error: String? = null,
     val budgetFailed: Boolean = false,
@@ -38,6 +41,15 @@ class WeekViewModel @Inject constructor(private val api: Api) : ViewModel() {
             try {
                 val week = api.week(asked)
                 _ui.update { it.copy(week = week) }
+                // Its own read, after the week's: a failure here only hides the band.
+                val outside = try {
+                    api.outside(week.week)
+                } catch (_: ApiException) {
+                    null
+                } catch (_: IOException) {
+                    null
+                }
+                _ui.update { it.copy(outside = outside) }
             } catch (e: ApiException) {
                 _ui.update { it.copy(error = e.message) }
             } catch (e: IOException) {

@@ -32,7 +32,19 @@ import dev.vidtheque.app.data.Moment
 import dev.vidtheque.app.data.Pick
 import dev.vidtheque.app.data.Receipt
 import dev.vidtheque.app.data.Said
+import dev.vidtheque.app.data.OutsideFollow
+import dev.vidtheque.app.data.OutsideMoment
+import dev.vidtheque.app.data.OutsidePick
+import dev.vidtheque.app.data.OutsideWeek
+import dev.vidtheque.app.data.Speaker
+import dev.vidtheque.app.data.SpeakerChannel
+import dev.vidtheque.app.data.TrialOffer
 import dev.vidtheque.app.ui.brief.BriefContent
+import dev.vidtheque.app.ui.outside.OutsideBand
+import dev.vidtheque.app.ui.outside.OutsideContent
+import dev.vidtheque.app.ui.outside.PickUi
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import dev.vidtheque.app.ui.brief.BriefUi
 import dev.vidtheque.app.ui.signin.SignInScreen
 import dev.vidtheque.app.ui.theme.VidthequeTheme
@@ -120,7 +132,58 @@ class ScreenshotTest {
         }
         compose.onRoot().captureRoboImage("screenshots/brief.png")
     }
+
+    @Test
+    fun outside() {
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+                    OutsideBand(OUTSIDE, emptyMap(), onOpen = {}, onFollowSpeaker = {}, onDismissSpeaker = {}, onLink = {})
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/outside.png")
+    }
+
+    @Test
+    fun outsidePick() {
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                OutsideContent(
+                    pick = OUTSIDE.picks[0],
+                    state = PickUi("up", OutsideFollow(), TrialOffer("Lenny's Podcast", "https://www.youtube.com/@LennysPodcast", 14)),
+                    onBack = {}, onThumb = {}, onFollow = {}, onMoment = { _, _ -> },
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/outside-pick.png")
+    }
 }
+
+private val OUTSIDE = OutsideWeek(
+    week = "2026-09-28",
+    picks = listOf(
+        OutsidePick(
+            id = 1, videoId = "BsWxPI9UM4c", url = "https://youtu.be/BsWxPI9UM4c",
+            title = "Why AI evals are the hottest new skill for product builders | Hamel Husain & Shreya Shankar",
+            channel = "Lenny's Podcast", durationS = 6393.0, because = "Evals", score = 2,
+            reason = "Full eval workflow on your core topic; the trace demo is the part you'd reuse.",
+            summary = "Hamel Husain and Shreya Shankar run their eval process on a live property-management assistant: open coding of errors, axial codes, then an LLM judge per failure mode.",
+            moments = listOf(OutsideMoment(36.0, 69.0, "AI can't self-assess; one trusted person codes the errors", "https://youtu.be/BsWxPI9UM4c?t=36")),
+        ),
+        OutsidePick(
+            id = 4, videoId = "L9QZ97y9Exg", url = "https://youtu.be/L9QZ97y9Exg",
+            title = "Your local LLM is 10x slower than it should be", channel = "Alex Ziskind", durationS = 660.0,
+            because = "Local inference", score = 2,
+            reason = "Hands-on llama.cpp throughput numbers and an open-source sweep tool.",
+        ),
+    ),
+    speaker = Speaker(
+        id = 1, name = "Hamel Husain",
+        reason = "Spoke in “Why AI evals are the hottest new skill for product builders”, which you thumbed up; has a channel of their own, Hamel Husain.",
+        channel = SpeakerChannel("Hamel Husain", "https://www.youtube.com/@hamelhusain7140"),
+    ),
+)
 
 private val HYPE = Match(7, "Model launch hype with no benchmarks", "down", 2)
 

@@ -54,18 +54,28 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.vidtheque.app.data.Brief
 import dev.vidtheque.app.data.ChannelCard
 import dev.vidtheque.app.data.Change
+import dev.vidtheque.app.data.OutsidePick
+import dev.vidtheque.app.data.OutsideWeek
 import dev.vidtheque.app.data.Pick
 import dev.vidtheque.app.data.Proposal
 import dev.vidtheque.app.data.Receipt
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.duration
 import dev.vidtheque.app.ui.openLink
+import dev.vidtheque.app.ui.outside.OutsideBand
+import dev.vidtheque.app.ui.outside.OutsideViewModel
 import dev.vidtheque.app.ui.profile.percent
 import dev.vidtheque.app.ui.scoreWord
 
 @Composable
-fun BriefScreen(onBack: () -> Unit, onOpen: (videoId: String, title: String, channel: String) -> Unit) {
+fun BriefScreen(
+    onBack: () -> Unit,
+    onOpen: (videoId: String, title: String, channel: String) -> Unit,
+    onOutside: (OutsidePick) -> Unit = {},
+) {
     val model: BriefViewModel = hiltViewModel()
+    val outsideModel: OutsideViewModel = hiltViewModel()
+    val speakers by outsideModel.speakers.collectAsStateWithLifecycle()
     val skipModel: SkipViewModel = hiltViewModel()
     val ui by model.ui.collectAsStateWithLifecycle()
     val skips by skipModel.skips.collectAsStateWithLifecycle()
@@ -83,6 +93,9 @@ fun BriefScreen(onBack: () -> Unit, onOpen: (videoId: String, title: String, cha
         onPause = model::pause,
         onAudit = { id, answer -> skipModel.answer(id, answer, "audit") },
         onEase = skipModel::ease,
+        outside = { week ->
+            OutsideBand(week, speakers, onOutside, outsideModel::follow, outsideModel::dismiss) { context.openLink(Uri.parse(it)) }
+        },
     )
 }
 
@@ -102,6 +115,7 @@ fun BriefContent(
     onPause: (String) -> Unit,
     onAudit: (String, String) -> Unit,
     onEase: (String, Proposal) -> Unit,
+    outside: @Composable (OutsideWeek) -> Unit = {},
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val brief = ui.brief
@@ -147,6 +161,7 @@ fun BriefContent(
                     )
                 }
             }
+            brief.outside?.takeIf { !it.empty }?.let { week -> item(key = "outside") { outside(week) } }
             item(key = "checkin") { CheckinCard(brief, ui, onCheckin) }
             briefFolds(brief, skips, ui.busy, onLink, onRevert, onPause, onAudit, onEase)
         }

@@ -287,6 +287,8 @@ data class Brief(
     val checkin: Checkin? = null,
     /** This week of the valued-time ledger (§25.12); null past the weeks it reads. */
     val ledger: ValuedTime? = null,
+    /** Discovery's week (§27.7). */
+    val outside: OutsideWeek? = null,
 )
 
 /** "Ease the entry that sank it to [to]?" — applied only when the reader says so. */
@@ -426,6 +428,37 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
         post("$root/watched", buildJsonObject {
             put("signal_id", signalId)
             put("watched_s", seconds)
+        })
+    }
+
+    /** The week's picks from outside the follows and its speaker suggestion (§27.1). */
+    suspend fun outside(week: String? = null): OutsideWeek =
+        json.decodeFromString(get("$root/outside" + (week?.let { "?week=$it" } ?: "")))
+
+    /** Thumbs on a pick; `up` may come back with a 14-day follow to offer (§27.3). */
+    suspend fun outsideFeedback(pickId: Long, state: String): OutsideFeedbackStored = json.decodeFromString(
+        post("$root/outside/feedback", buildJsonObject {
+            put("id", pickId)
+            put("state", state)
+        }),
+    )
+
+    suspend fun outsideWatched(pickId: Long, offsetS: Int, seconds: Double) {
+        post("$root/outside/watched", buildJsonObject {
+            put("id", pickId)
+            put("offset_s", offsetS)
+            put("watched_s", seconds)
+        })
+    }
+
+    /** A 14-day trial follow of a pick's channel ([kind] `pick`) or a speaker's (`speaker`) (§27.5). */
+    suspend fun trialFollow(kind: String, id: Long): TrialStarted =
+        json.decodeFromString(post("$root/outside/follow", buildJsonObject { put(kind, id) }))
+
+    suspend fun dismissSpeaker(id: Long) {
+        post("$root/outside/speaker", buildJsonObject {
+            put("id", id)
+            put("state", "dismissed")
         })
     }
 
