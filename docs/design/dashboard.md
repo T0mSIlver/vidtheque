@@ -3633,7 +3633,8 @@ behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any othe
                          "direction": "up", "strength": 2},
                         {"entry_id": 36, "text": "Vendor launches with no evaluation",
                          "direction": "down", "strength": 1}],
-            "moments_s": 372.0, "judged_at": 1790000000}],
+            "moments_s": 372.0, "tier": 3, "week": "2026-09-28", "week_rank": 1,
+            "judged_at": 1790000000}],
  "pagination": {"limit": 20, "offset": 0, "has_more": true, "next_offset": 20},
  "skipped": {"count": 12, "capped": false}}
 ```
@@ -3649,6 +3650,12 @@ cover, overlaps counted once, for "6 of 42 min" beside `duration_s`; `0` with
 no moment, `null` when a moment was written before spans and has no end. It
 reads the moments as stored; the video screen's figure counts only those
 whose receipt still holds.
+*Amended 2026-10-04 (#156, 0017):* `tier` is what the feed shows in place of
+`score`: 3 for the week's top five at most, 2 for its other 2+ verdicts, the
+score itself for 0–1 (companion.md §3.4). `week` is the Monday of the video's
+publication week, local, as YYYY-MM-DD, and `week_rank` its place in that week,
+1 the best; both are `null` for a 0–1 verdict or an undated video. `score`
+stays the verdict's own, which the reason explains.
 
 *Amended 2026-10-04 (#146, #128):* four optional parameters narrow and sort
 the band, and the payload echoes them (`null` when absent):
@@ -3696,7 +3703,7 @@ The video screen: `video` (the row fields above), `score`, `reason`,
 `explored`, `matches` (as in the feed), `feedback` (the video's thumb or
 mute: `up`, `down`, `muted` or `none`, §25.4), `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
 that scored it), `model`, `judged_at` and `moments_s` (as in the feed, over
-the moments shown). A moment is
+the moments shown), and `tier`, `week` and `week_rank` as in the feed. A moment is
 `{cue_id, offset_s, end_cue_id, end_s, why, url}` (#156: `end_cue_id` and
 `end_s` are `null` on a moment written before spans), `url` being `https://youtu.be/<id>?t=<s>` with
 the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is

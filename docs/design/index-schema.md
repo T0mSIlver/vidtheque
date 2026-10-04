@@ -1401,6 +1401,38 @@ writes none. A nightly update deletes the rows it leaves with `state` and
 `seen` both `none`; a take-back never deletes, so a night still marks the row it read. Taps
 from before 0016 stay events only; nothing is backfilled.
 
+### 1.18 `week_ranks`, `week_rank_runs` and the week's budget
+
+Added by 0017 (companion.md §3.4, #156). Additive: two tables and a column.
+
+```sql
+CREATE TABLE week_ranks (
+  video_id  INTEGER PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  week      TEXT    NOT NULL,             -- the Monday of its publication week, local, YYYY-MM-DD
+  rank      INTEGER NOT NULL CHECK (rank >= 1),
+  top       INTEGER NOT NULL DEFAULT 0 CHECK (top IN (0,1)),  -- shown as 3; ≤ 5 a week
+  ranked_at INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT;
+CREATE INDEX week_ranks_by_week ON week_ranks(week, rank);
+
+CREATE TABLE week_rank_runs (
+  week       TEXT    PRIMARY KEY,
+  candidates TEXT    NOT NULL DEFAULT '[]',   -- JSON [[video_id, verdict created_at]] last ranked
+  outcome    TEXT    NOT NULL CHECK (outcome IN ('ok','failed')),
+  model      TEXT,
+  ran_at     INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT;
+
+ALTER TABLE owners ADD COLUMN week_budget_min INTEGER NOT NULL DEFAULT 210
+  CHECK (week_budget_min BETWEEN 0 AND 10080);
+```
+
+A rerank replaces the week's `week_ranks` rows in one transaction with its
+`week_rank_runs` row. A week is ranked again when its candidates, the
+fingerprint in `candidates`, differ from the last ranking, or that ranking
+failed; a failed run keeps the week's previous rows. `week_budget_min` is the
+minutes a week the feed fits (companion.md §6).
+
 ## 2. FTS5
 
 Three external-content tables: `cues_fts`, `ocr_frames_fts`, `videos_fts`. The

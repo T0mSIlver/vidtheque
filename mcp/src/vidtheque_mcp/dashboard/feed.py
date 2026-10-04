@@ -29,6 +29,7 @@ from ..profile import signals as signals_store
 from ..profile import store as profile_store
 from ..text import clamp, deeplink
 from ..verdicts import store as verdicts_store
+from ..verdicts import week as verdicts_week
 from .access import require_write
 from .api import NO_STORE
 
@@ -227,6 +228,18 @@ def _video_json(row: sqlite3.Row) -> dict[str, Any]:
 # --------------------------------------------------------------------- feed
 
 
+def _place(score: int, ranked: verdicts_week.Ranked | None) -> dict[str, Any]:
+    """`tier`, what the feed shows, and the video's place in its week (companion.md §3.4).
+
+    A 2+ verdict outside any week's candidates (undated, or past the week's
+    bound) shows as 2: only the week's ranking makes a 3.
+    """
+    if ranked is None:
+        return {"tier": min(score, 2), "week": None, "week_rank": None}
+    return {"tier": ranked.tier, "week": verdicts_week.week_of(ranked.candidate.published_at), "week_rank": ranked.rank}
+
+
+
 def _band(request: Request) -> str:
     band = request.query_params.get("band", "top")
     if band not in BANDS:
@@ -282,10 +295,10 @@ async def feed(request: Request) -> Response:
     low, high = BANDS[band]
     matched = " AND ".join(where)
 
-    def read(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], list[Any], int]:
+    def read(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], list[Any], int, dict[int, Any]]:
         rows = list(
             conn.execute(
-                "SELECT v.public_id, v.title, v.channel_name, v.duration_s, v.published_at,"
+                "SELECT v.id, v.public_id, v.title, v.channel_name, v.duration_s, v.published_at,"
                 " d.score, d.reason, d.explored, d.matches, d.moments, d.created_at FROM verdicts d"
                 f" JOIN videos v ON v.id = d.video_id WHERE {matched} AND d.score BETWEEN ? AND ?"
                 f" ORDER BY {ORDERS[order]} LIMIT ? OFFSET ?",
@@ -298,9 +311,10 @@ async def feed(request: Request) -> Response:
             f" WHERE {matched} AND d.score <= 1 LIMIT ?)",
             (*binds, SKIPPED_COUNT_CAP + 1),
         ).fetchone()[0]
-        return rows, verdicts_store.matches_json(conn, rows[:limit]), int(skipped)
+        ranks = verdicts_week.tiers(conn, [int(r["id"]) for r in rows[:limit]])
+        return rows, verdicts_store.matches_json(conn, rows[:limit]), int(skipped), ranks
 
-    rows, matches, skipped = await request.app.state.assembled.db.read(read)
+    rows, matches, skipped, ranks = await request.app.state.assembled.db.read(read)
     has_more = len(rows) > limit
     # Past the offset ceiling a next page would be clamped back onto this one.
     next_offset = offset + limit if has_more and offset + limit <= OFFSET_MAX else None
@@ -313,6 +327,7 @@ async def feed(request: Request) -> Response:
                 {
                     **_video_json(row),
                     "score": int(row["score"]),
+                    **_place(int(row["score"]), ranks.get(int(row["id"]))),
                     "reason": row["reason"],
                     "explored": bool(row["explored"]),
                     "matches": row_matches,
@@ -407,9 +422,11 @@ async def verdict(request: Request) -> Response:
         kept, dropped = verdicts_store.check_receipts(
             conn, int(video["id"]), verdicts_store.moments_of(row)
         )
+        ranked = verdicts_week.tiers(conn, [int(video["id"])]).get(int(video["id"]))
         return {
             "video": _video_json(video),
             "score": int(row["score"]),
+            **_place(int(row["score"]), ranked),
             "reason": row["reason"],
             "explored": bool(row["explored"]),
             "matches": verdicts_store.matches_json(conn, [row])[0],
