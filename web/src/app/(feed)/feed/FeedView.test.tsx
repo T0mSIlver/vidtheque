@@ -115,7 +115,6 @@ describe("FeedView", () => {
 
   it('names what sank a skipped video, and takes an "I\'d watch this"', async () => {
     const view = await mount({ "POST /dashboard/api/skips": { body: PROPOSED } });
-    await userEvent.click(await screen.findByRole("button", { name: /Skipped/ }));
     expect(
       await screen.findByText("Sunk by “Model launch hype with no benchmarks”"),
     ).toBeInTheDocument();
