@@ -946,6 +946,11 @@
   padding-bottom: var(--s4);
 }
 
+/* The fitted list's own top rule closes the band: one rule, not two around a gap. */
+.picksBand .rows > li:last-child {
+  border-bottom: none;
+}
+
 .outsideBand {
   display: flex;
   flex-direction: column;
