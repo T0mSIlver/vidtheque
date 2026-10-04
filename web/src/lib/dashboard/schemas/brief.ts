@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { count, epoch, httpUrl, seconds } from "./common";
 import { FeedbackState, Match, Moment } from "./feed";
+import { ValuedTime } from "./valued-time";
 
 // The weekly brief (dashboard.md §26, companion.md §6.1).
 
@@ -76,8 +77,8 @@ export const Brief = z.object({
     BriefVideo.extend({ sunk_by: Match.nullable(), answer: z.enum(["right", "wrong"]).nullable() }),
   ),
   checkin: z.object({ rating: count(), missing: z.string().nullable(), at: epoch() }).nullable(),
-  /** #157's weekly numbers; null until the ledger lands. */
-  ledger: z.unknown().nullable(),
+  /** This week of the valued-time ledger (§25.12); null past the weeks it reads. */
+  ledger: ValuedTime.nullable(),
 });
 export type Brief = z.infer<typeof Brief>;
 

@@ -171,7 +171,10 @@ def client(tmp_path: Path):
 def test_the_brief_reads_live_parts_and_refuses_what_it_should(client: TestClient) -> None:
     assert client.get(f"{API}/brief").status_code == 401
     brief = client.get(f"{API}/brief", headers=BEARER).json()
-    assert brief["week"] == client.week and brief["ledger"] is None  # type: ignore[attr-defined]
+    assert brief["week"] == client.week  # type: ignore[attr-defined]
+    # The brief's own week of the ledger, in valued-time's shape.
+    [week] = brief["ledger"]["weeks"]
+    assert week["current"] is True and week["start"] == brief["since"]
     assert brief["picks"][0]["moments"][0]["url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
     sunk = {a["video_id"]: a["sunk_by"] for a in brief["audit"]}
     assert sunk["eMlx5fFNoYc"]["text"] == "Launch hype" and sunk["skip0"] is None
@@ -204,8 +207,10 @@ def test_id_watch_this_is_a_thumb_and_a_proposal_never_a_reweight(client: TestCl
     assert wrong["proposal"]["text"] == "Launch hype" and wrong["proposal"]["to"] == pytest.approx(-0.4)
     entries = {e["text"]: e["weight"] for e in client.get(f"{API}/profile", headers=BEARER).json()["entries"]}
     assert entries["Launch hype"] == pytest.approx(-0.7)
-    audit = {a["video_id"]: a["answer"] for a in client.get(f"{API}/brief", headers=BEARER).json()["audit"]}
-    assert audit["eMlx5fFNoYc"] == "wrong"
+    brief = client.get(f"{API}/brief", headers=BEARER).json()
+    assert {a["video_id"]: a["answer"] for a in brief["audit"]}["eMlx5fFNoYc"] == "wrong"
+    # #157's ledger counts it as a miss.
+    assert brief["ledger"]["weeks"][0]["misses"]["count"] == 1
 
     # Taking it back takes back the thumb it set.
     right = client.post(f"{API}/skips", json={"video_id": "eMlx5fFNoYc", "answer": "right"}, headers=JSON_BEARER).json()

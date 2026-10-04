@@ -3923,7 +3923,8 @@ and so is the latest before the first Sunday.
             "sunk_by": {"entry_id": 36, "text": "Launch hype", "direction": "down", "strength": 2},
             "answer": null}],
  "checkin": {"rating": 4, "missing": "more GPU talks", "at": 1791110000},
- "ledger": null}
+ "ledger": {"regret_target": 0.1, "weeks": [{"start": 1790546400, "current": true, "hits": {…},
+                                            "regret": {…}, "misses": {…}}]}}
 ```
 
 `picks`, `audit` and `said` are what the brief kept on Sunday; a video deleted
@@ -3935,8 +3936,9 @@ asked: the channel report covers the last 30 days, at most 100 follows,
 flagged ones first; `profile_changes` are the week's `nightly` events, at
 most 20, newest first, `reverted` once a later revert touched the entry; the
 page reverts one through `POST profile/revert` (§25.5) and pauses a channel
-through `POST /dashboard/following/{slug}/state` (§21). `ledger` stays `null`
-until #157's ledger lands.
+through `POST /dashboard/following/{slug}/state` (§21). `ledger` is the brief's
+week of the valued-time ledger in §25.12's shape, one week long, or `null` once
+the week is older than the eight the ledger reads.
 
 ### 26.2 `POST /dashboard/api/brief/checkin`
 
