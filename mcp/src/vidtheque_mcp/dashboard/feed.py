@@ -667,7 +667,7 @@ async def collection(request: Request) -> Response:
     raw = str(request.path_params["entry_id"])
 
     def read(conn: sqlite3.Connection) -> dict[str, Any]:
-        entry = int(raw) if raw.isdigit() and len(raw) < 12 else -1
+        entry = int(raw) if raw.isascii() and raw.isdigit() and len(raw) < 12 else -1
         found = verdicts_collections.by_entry(conn, OWNER_ID).get(entry)
         if found is None:
             raise _Refused(
