@@ -1512,6 +1512,18 @@ brief keeps as it was on Sunday: `picks` and `audit` (public video ids),
 the signal the nightly update reads; the row here is what tells a skip audit
 from a thumb.
 
+### 1.19 `owners.week_budget_min`
+
+Added by 0021 (companion.md §6, #156). Additive: one column.
+
+```sql
+ALTER TABLE owners ADD COLUMN week_budget_min INTEGER NOT NULL DEFAULT 210
+  CHECK (week_budget_min BETWEEN 0 AND 10080);
+```
+
+The minutes a week the feed fits, 210 (30 a day) by default, set through
+`POST /dashboard/api/budget` (dashboard.md §25.10).
+
 ## 2. FTS5
 
 Three external-content tables: `cues_fts`, `ocr_frames_fts`, `videos_fts`. The
