@@ -47,7 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.vidtheque.app.data.FeedItem
 import dev.vidtheque.app.data.Week
@@ -175,8 +177,9 @@ private fun Days(week: Week) {
 
 @Composable
 private fun BudgetDialog(perDay: Int, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
-    var text by remember { mutableStateOf(perDay.toString()) }
-    val value = text.toIntOrNull()?.takeIf { it in 0..1440 }
+    // Selected, so the first digit typed replaces the old figure instead of joining it.
+    var field by remember { mutableStateOf(TextFieldValue(perDay.toString(), TextRange(0, perDay.toString().length))) }
+    val value = field.text.toIntOrNull()?.takeIf { it in 0..1440 }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Your time") },
@@ -184,8 +187,8 @@ private fun BudgetDialog(perDay: Int, onDismiss: () -> Unit, onSave: (Int) -> Un
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("The feed fits a week of these. Uploads come in bursts, so a quiet day leaves time for a busy one.")
                 OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it.filter(Char::isDigit).take(4) },
+                    value = field,
+                    onValueChange = { field = it.copy(text = it.text.filter(Char::isDigit).take(4)) },
                     label = { Text("Minutes a day") },
                     singleLine = true,
                     isError = value == null,
