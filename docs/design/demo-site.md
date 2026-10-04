@@ -2155,3 +2155,16 @@ The public box serves what other people said. From 2026-10-04:
   questions in the one-product proposal.
 - Keyframes stay on the AI Engineer corpus, as before (§5).
 - Removal on request, within 72 hours (`docs/takedown.md`), is unchanged.
+
+### 8.4 The pages
+
+| path | what it is |
+|---|---|
+| `/` | The lead sentence over the wall of talks, three recommendations read live from `/api/feed`, then "run your own" and the footer. The corpus count comes from `/api/meta`, so it can no longer disagree with `/demo` (it said 310 while `/demo` said 313). |
+| `/demo` | The sample feed, ten a page, then Ask over the same corpus. `?edition=paris` narrows both to `series:aie-paris-2026`. |
+| `/paris` | A temporary redirect to `/demo?edition=paris` (aie-paris-2026.md §4). |
+| `/docs` | Run your own: a machine at home, the quickstart at the serving version, recommendations, the agent, the app. |
+| `/app` | The Android APK, release `android-v0.2.0`, and what it needs. |
+| `/dashboard`, `/feed` | Absent on the public box (dashboard.md §2.4, amended). |
+
+The header links `/demo`, `/docs` and `/app` on every public page.
