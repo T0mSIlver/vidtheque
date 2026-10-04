@@ -1,9 +1,9 @@
 /* The video detail: a timeline, provenance, keyframes with their OCR, and a
    scrolling transcript. Shared vocabulary is the kit's. */
 
-/* Only a listener for the shot linking: it takes no box of its own. */
+/* A listener for the shot linking around the page's column. */
 .detail {
-  display: contents;
+  min-width: 0;
 }
 
 /* Separators glue to the fact before them, so a wrapped strip never starts

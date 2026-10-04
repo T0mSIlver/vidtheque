@@ -9,7 +9,7 @@ import type { FrameCard, VideoDetail } from "@/lib/dashboard/schemas";
 import { FrameOverlay } from "@/components/dashboard/FrameOverlay";
 import { notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
 import { Crumbs } from "@/components/dashboard/kit/table";
-import { DashLink, PageHead, Pending, Title } from "@/components/dashboard/kit/ui";
+import { DashLink, Page, PageHead, Pending, Title, Wide } from "@/components/dashboard/kit/ui";
 import { ManagePanel } from "../Manage";
 import styles from "./detail.module.css";
 import { Frames, frameShot, keptOrd } from "./Frames";
@@ -43,7 +43,7 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
   if (refusal instanceof DashboardError && refusal.status === 404) {
     // There is no such video; a retry would say so again.
     return (
-      <>
+      <Page>
         <Title>Unknown video</Title>
         <Crumbs section="videos" label="Videos" id={videoId} />
         <PageHead title="Unknown video" />
@@ -51,7 +51,7 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
         <p className={notice.next}>
           <DashLink href={`${ROOT}/videos`}>Back to the videos table</DashLink>
         </p>
-      </>
+      </Page>
     );
   }
 
@@ -71,7 +71,7 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
   }
 
   return (
-    <>
+    <Page>
       <Crumbs section="videos" label="Videos" id={videoId} />
       <PageHead title="Video" />
       {/* A video's panels always run past one screen, so the footer waits below it. */}
@@ -80,7 +80,7 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
       ) : (
         <Pending height="100dvh" />
       )}
-    </>
+    </Page>
   );
 }
 
@@ -147,51 +147,55 @@ function Loaded({
       onPointerOver={(event) => link(event.target)}
       ref={root}
     >
-      <Title>{video.title}</Title>
-      <Crumbs section="videos" label="Videos" id={video.video_id} />
+      <Page>
+        <Title>{video.title}</Title>
+        <Crumbs section="videos" label="Videos" id={video.video_id} />
 
-      <Head data={data} tags={tags} onTagged={setWritten} />
+        <Head data={data} tags={tags} onTagged={setWritten} />
 
-      <Timeline
-        shots={shots.shots}
-        capped={shots.capped}
-        kept={data.counts.keyframes_kept}
-        chapters={data.chapters}
-        runtime={video.duration_s ?? 0}
-        framePage={frames.limit}
-        search={search}
-        videoId={video.video_id}
-        onSelect={selectFrame}
-      />
+        <Wide>
+          <Timeline
+            shots={shots.shots}
+            capped={shots.capped}
+            kept={data.counts.keyframes_kept}
+            chapters={data.chapters}
+            runtime={video.duration_s ?? 0}
+            framePage={frames.limit}
+            search={search}
+            videoId={video.video_id}
+            onSelect={selectFrame}
+          />
 
-      <Frames
-        frames={frames}
-        selected={selected}
-        videoId={video.video_id}
-        pending={paging}
-        error={pagingError}
-        onRetry={onRetry}
-        onOpen={openFrame}
-      />
+          <Frames
+            frames={frames}
+            selected={selected}
+            videoId={video.video_id}
+            pending={paging}
+            error={pagingError}
+            onRetry={onRetry}
+            onOpen={openFrame}
+          />
+        </Wide>
 
-      <Transcript
-        key={video.video_id}
-        search={search}
-        seedOffset={seedOffset}
-        seedSize={seedSize}
-        transcript={data.transcript}
-        videoId={video.video_id}
-      />
+        <Transcript
+          key={video.video_id}
+          search={search}
+          seedOffset={seedOffset}
+          seedSize={seedSize}
+          transcript={data.transcript}
+          videoId={video.video_id}
+        />
 
-      <Provenance stages={data.stages} />
+        <Provenance stages={data.stages} />
 
-      <JobHistory history={data.job_history} />
+        <JobHistory history={data.job_history} />
 
-      <Stored counts={data.counts} origins={data.cue_origins} transcript={data.transcript} />
+        <Stored counts={data.counts} origins={data.cue_origins} transcript={data.transcript} />
 
-      <ManagePanel videoId={video.video_id} />
+        <ManagePanel videoId={video.video_id} />
 
-      <FrameOverlay onClose={closeFrame} shot={open ? frameShot(open, video.video_id) : null} />
+        <FrameOverlay onClose={closeFrame} shot={open ? frameShot(open, video.video_id) : null} />
+      </Page>
     </div>
   );
 }

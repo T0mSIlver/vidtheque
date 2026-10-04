@@ -4270,7 +4270,7 @@ Provenance, the indexing runs, the folded statistics, and re-index.
   `tag_video`. The constraint sentence is gone; a refused tag prints
   `tag_video`'s own refusal.
 - **Timeline.** Chapters ride on the shot band as a row of segments on the
-  same scale, titled where a segment is wide enough (72 px), each linking to
+  same scale, titled where a segment is wide enough (56 px), each linking to
   its own start on YouTube. The scrub preview names the chapter of the shot
   under the pointer. Under the band: the kept keyframe count, and "timeline
   capped" in the warn tone when `shots.capped`. The Chapters panel is gone.

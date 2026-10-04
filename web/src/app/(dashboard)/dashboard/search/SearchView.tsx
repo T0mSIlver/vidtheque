@@ -13,7 +13,7 @@ import { FilterBand } from "@/components/dashboard/kit/FilterBand";
 import { notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
 import { Fold } from "@/components/dashboard/kit/Fold";
 import { Notes, Pager } from "@/components/dashboard/kit/table";
-import { Body, DashLink, PageHead, Sep, ui, Unbroken } from "@/components/dashboard/kit/ui";
+import { Body, DashLink, Page, PageHead, Sep, ui, Unbroken } from "@/components/dashboard/kit/ui";
 import { Moment, momentKey } from "./Moment";
 import { legsOf } from "./parts";
 import styles from "./search.module.css";
@@ -68,7 +68,7 @@ export function SearchView() {
   const told = refusal instanceof DashboardError && !gated;
 
   return (
-    <div className={styles.column}>
+    <Page>
       <PageHead title="Search" />
 
       {gated ? null : <Filters params={params} />}
@@ -85,7 +85,7 @@ export function SearchView() {
           {page ? <Results page={page} query={marked} params={params} /> : null}
         </Body>
       ) : null}
-    </div>
+    </Page>
   );
 }
 

@@ -8,7 +8,7 @@ import { type Library, type LibraryRow, RefusedLibrary } from "@/lib/dashboard/s
 import { count, day, hms } from "@/lib/format";
 import { Notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
 import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
-import { Body, DashLink, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
+import { Body, DashLink, Page, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
 import { Filters } from "./Filters";
 import { apiQuery, type Band, bandOf, carriedOf, linkTo } from "./query";
 import styles from "./videos.module.css";
@@ -45,7 +45,7 @@ export function VideosView() {
   const told = error instanceof DashboardError && !gated;
 
   return (
-    <>
+    <Page>
       <PageHead title="Videos" />
 
       {gated ? null : <Filters band={band} />}
@@ -59,7 +59,7 @@ export function VideosView() {
           {data ? <Table band={band} data={data} offset={params.get("offset") ?? ""} /> : null}
         </Body>
       )}
-    </>
+    </Page>
   );
 }
 
@@ -194,7 +194,7 @@ function Row({ row }: { row: LibraryRow }) {
         <time className={ui.nowrap}>{day(row.published_at)}</time>
       </td>
       {/* A runtime is a clock, the same string the detail page prints. */}
-      <td className={`${table.num} ${styles.wide}`} data-label="Duration">
+      <td className={`${table.num} ${styles.wide} ${ui.nowrap}`} data-label="Duration">
         {hms(row.duration_s)}
       </td>
       <td className={styles.colState} data-label="State">

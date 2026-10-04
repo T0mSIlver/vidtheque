@@ -1,12 +1,6 @@
 /* The owner's search page: the band, the wait, the leg lines, a moment row and
    the snippet treatments. Nothing here is a card. */
 
-/* A reading column: a moment's text is a measure wide, so the row is too. */
-.column {
-  max-width: 60rem;
-  margin-inline: auto;
-}
-
 /* The query owns the first row with its button; the two pickers sit under it. */
 .band > form {
   margin-top: var(--s4);
