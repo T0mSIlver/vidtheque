@@ -44,30 +44,20 @@ const LEDGER = {
 };
 
 describe("the corpus page", () => {
-  it("carries the corpus band, stamped once", async () => {
+  it("says the corpus's size in one line under the title", async () => {
     await mount({ body: OWNER_CORPUS });
 
-    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-    expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
-    expect(screen.getByText("runtime").closest("div")).toHaveTextContent("4.8h");
-    expect(screen.getByText("transcript cues").closest("div")).toHaveTextContent(
-      "in 3 embedding chunks",
+    const line = (await screen.findByRole("link", { name: "4 videos" })).closest("p")!;
+    expect(line).toHaveTextContent("4 videos, 4.8 hours, published 2023-01-17–2025-02-19");
+    expect(screen.getByRole("link", { name: "4 videos" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos?index_state=all",
     );
-    expect(screen.getByText("on-screen lines").closest("div")).toHaveTextContent("5");
-    expect(screen.getByText("videos").closest("div")).toHaveTextContent(
-      "published 2023-01-17–2025-02-19",
-    );
-    // One reading, stamped once, in UTC minutes like every other clock
-    // (§24.6); the attribute keeps the instant.
-    const stamp = screen.getByText("2026-09-05 16:34");
-    expect(stamp.tagName).toBe("TIME");
-    expect(stamp).toHaveAttribute("datetime", "2026-09-05T16:34:40Z");
+    // No band of big figures, and no "counted" stamp.
+    expect(screen.queryByText("runtime")).not.toBeInTheDocument();
+    expect(screen.queryByText("2026-09-05 16:34")).not.toBeInTheDocument();
   });
 
-  // An empty corpus has no oldest video and no newest one, which is exactly
-  // the corpus an operator is staring at while they wonder why. `published
-  // —–—` is a line whose whole content is the absence of one, so there is no
-  // line: the count above it already says none.
   it("leaves the published span out on a corpus that has none", async () => {
     await mount({
       body: {
@@ -76,36 +66,32 @@ describe("the corpus page", () => {
       },
     });
 
-    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-    expect(screen.getByText("videos").closest("div")).not.toHaveTextContent("published");
+    const line = (await screen.findByRole("link", { name: "4 videos" })).closest("p")!;
+    expect(line).not.toHaveTextContent("published");
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 
-  // The five state words existed only as a filter on the videos table until
-  // this page; each figure is the link to its own filter.
-  it("counts the videos by state, and every count is its own filter", async () => {
+  // Statistics on demand: the counts are behind a toggle, and a state no
+  // video is in is not printed.
+  it("keeps every other count behind a toggle, zero states left out", async () => {
     await mount({ body: OWNER_CORPUS });
 
-    const states = (await screen.findByText("Videos by state")).closest("section");
-    const figure = (label: string) =>
-      [...states!.querySelectorAll("div")].find(
-        (div) => div.querySelector("dt")?.textContent === label,
-      );
-    expect(figure("ready")).toHaveTextContent("3");
-    expect(figure("ready")?.querySelector("a")).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "Show every count" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("link", { name: "3 ready" })).toHaveAttribute(
       "href",
       "/dashboard/videos?index_state=ready",
     );
-    expect(figure("stale")).toHaveTextContent("0");
-    // A zero is not a door and does not wear the accent, but it is still a
-    // link: the filter is one click from the number that says it is empty.
-    expect(figure("stale")?.querySelector("a")).toHaveAttribute(
-      "href",
-      "/dashboard/videos?index_state=stale",
-    );
+    expect(screen.getByRole("link", { name: "1 indexing" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /stale/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Transcript cues").closest("div")).toHaveTextContent("10 in 3 chunks");
+    expect(screen.getByText("Keyframe images").closest("div")).toHaveTextContent("4.3 kB");
+    expect(screen.getByText("Index file").closest("div")).toHaveTextContent("4.7 MB");
   });
 
-  it("lists the channels and tags, and what it costs on disk", async () => {
+  it("lists the channels and tags as filters on the videos table", async () => {
     await mount({ body: OWNER_CORPUS });
 
     expect(await screen.findByRole("link", { name: "GPU MODE" })).toHaveAttribute(
@@ -113,13 +99,7 @@ describe("the corpus page", () => {
       "/dashboard/videos?channel=GPU%20MODE&index_state=all",
     );
     expect(screen.getByRole("link", { name: /topic:attention/ })).toBeInTheDocument();
-    expect(screen.getByText("keyframe JPEGs").closest("div")).toHaveTextContent("4.3 kB");
-    expect(screen.getByText("index file").closest("div")).toHaveTextContent("4.7 MB");
-    // Health's, and only Health's (§24).
-    expect(screen.queryByText("Pipeline readiness")).not.toBeInTheDocument();
-    expect(screen.queryByText("What is missing")).not.toBeInTheDocument();
-    expect(screen.queryByText("Jobs by state")).not.toBeInTheDocument();
-    expect(screen.queryByText(/has_more|The largest/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The largest/)).not.toBeInTheDocument();
   });
 
   it("says a capped channel list is the largest ones", async () => {
@@ -127,15 +107,17 @@ describe("the corpus page", () => {
       body: { ...OWNER_CORPUS, channels: { ...OWNER_CORPUS.channels, has_more: true } },
     });
 
-    expect(await screen.findByText(/The largest 3/)).toBeInTheDocument();
+    expect(await screen.findByText("The largest 3.")).toBeInTheDocument();
   });
 
-  it("shows the weekly ledger against YouTube, regret past its target flagged", async () => {
+  it("says this week against YouTube in a line, the weeks before behind a toggle", async () => {
     await mount({ body: OWNER_CORPUS }, OWNER_SESSION, { body: LEDGER });
 
-    const now = (await screen.findByText("this week")).closest("tr")!;
-    expect(now).toHaveTextContent("43%3 / 717%1 / 62 (+1 not judged)");
+    expect(await screen.findByText(/hit rate, 3 of 7 kept/)).toBeInTheDocument();
     expect(screen.getByText("17%")).toHaveClass(/warn/);
+    expect(screen.getByText(/regret, 1 of 6 watched/)).toBeInTheDocument();
+    expect(screen.getByText(/misses, 1 not judged/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show the week before" })).toBeInTheDocument();
     // An empty week is a dash, never 0%; dated by the box's Monday.
     expect(screen.getByText("from 2026-10-05").closest("tr")).toHaveTextContent("—0 / 0—0 / 0");
   });
@@ -146,24 +128,18 @@ describe("the corpus page", () => {
       body: { error: "E_NOT_FOUND" },
     });
 
-    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Channels" })).toBeInTheDocument();
     expect(screen.queryByText("Against YouTube")).not.toBeInTheDocument();
   });
 
   it("keeps the corpus and drops the box in the projection", async () => {
     await mount({ body: DEMO_CORPUS }, DEMO_SESSION);
 
-    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
-    expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
-    // §2.4 drops the operator's box, not the corpus: the span is a fact about
-    // what is in it, so a visitor gets it.
-    expect(screen.getByText("videos").closest("div")).toHaveTextContent(
-      "published 2023-01-17–2025-02-19",
-    );
+    const line = (await screen.findByRole("link", { name: "4 videos" })).closest("p")!;
+    // §2.4 drops the operator's box, not the corpus.
+    expect(line).toHaveTextContent("published 2023-01-17–2025-02-19");
     expect(screen.getByText("Channels")).toBeInTheDocument();
-
-    expect(screen.queryByText("Storage")).not.toBeInTheDocument();
-    expect(screen.queryByText("keyframe JPEGs")).not.toBeInTheDocument();
+    expect(screen.queryByText("Keyframe images")).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 

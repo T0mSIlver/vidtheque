@@ -1,0 +1,71 @@
+/* Corpus (dashboard.md §28.3). */
+
+.rowFigure {
+  composes: t-machine from global;
+  flex: 0 0 auto;
+  color: var(--fg2);
+}
+
+/* The counts sit under the last panel's content, behind their toggle. */
+.more {
+  margin-top: var(--s8);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--seam);
+}
+
+.counts {
+  composes: t-cell from global;
+}
+
+.counts > div {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s1) 0;
+  border-top: 1px solid var(--seam);
+}
+
+.counts > div:first-child {
+  border-top: 0;
+}
+
+.counts dt {
+  color: var(--fg2);
+}
+
+.counts dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.states {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s4);
+}
+
+/* 780px — `--bp-hand` */
+@media (max-width: 48.75rem) {
+  .counts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+/* This week against YouTube, one line that wraps by figure. */
+.weekLine {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s6);
+  margin-bottom: var(--s2);
+  list-style: none;
+  color: var(--fg2);
+}
+
+.figure {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  color: var(--fg);
+}
