@@ -219,6 +219,23 @@ added again. The user's own entries cannot be dropped; at most 40 entries.
 """.strip()
 
 
+RECOMMEND = """
+Your own picks for the owner, on top of the pipeline's verdicts: at most 5
+videos a day, each with why.
+
+USE WHEN: you know the owner well enough to pick better than a score. Call it
+bare first: it lists the last days' verdicts (score, reason, summary, moments)
+and what the owner did with your earlier picks.
+
+DO NOT USE: to rescore every video; to say anything about the owner's
+employer, people they know, pay or job search. The reason is about the video.
+
+video_id=, reason= one line, moments=[{start_s, end_s, why}] (at most 3), each
+held to the transcript's cues: a span that misses one is dropped, never moved.
+Picking a video again today replaces its pick.
+""".strip()
+
+
 # openWorldHint is false for every query tool (the corpus is a closed local
 # index) and true for the two that reach the internet — index-video directly,
 # follow-channel through the checks it schedules.
@@ -280,6 +297,13 @@ ANNOTATIONS: dict[str, ToolAnnotations] = {
         idempotentHint=False,
         openWorldHint=False,
     ),
+    # Not idempotent: a new pick spends one of the day's five.
+    "recommend": ToolAnnotations(
+        title="Pick videos for the owner",
+        readOnlyHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
 }
 
 DESCRIPTIONS: dict[str, str] = {
@@ -295,4 +319,5 @@ DESCRIPTIONS: dict[str, str] = {
     "tag-video": TAG_VIDEO,
     "follow-channel": FOLLOW_CHANNEL,
     "profile": PROFILE,
+    "recommend": RECOMMEND,
 }

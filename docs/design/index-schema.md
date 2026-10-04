@@ -1605,6 +1605,33 @@ stopped by a bot check or a 429; consecutive ones space the next runs out
 (companion.md §6.2). `idle` is a run with nothing to do: the week's caps met,
 or no positive entry.
 
+### 1.23 `picks`
+
+Added by 0024 (companion.md §6.4, #200). Additive: one table.
+
+```sql
+CREATE TABLE picks (
+  id         INTEGER PRIMARY KEY,
+  owner_id   INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  video_id   INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  day        TEXT    NOT NULL,             -- the box's local date it was picked
+  source     TEXT    NOT NULL DEFAULT 'claude' CHECK (source IN ('claude')),
+  reason     TEXT    NOT NULL CHECK (length(reason) BETWEEN 1 AND 200),
+  moments    TEXT    NOT NULL DEFAULT '[]', -- JSON [{cue_id, offset_s, end_cue_id, end_s, why}], ≤ 3
+  client     TEXT,                          -- the OAuth client that picked it
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE (owner_id, source, day, video_id)
+) STRICT;
+CREATE INDEX picks_day ON picks(owner_id, day);
+```
+
+One row per video per day per source; a second pick of the video that day
+updates the row. `moments` are a verdict's moments (§1.13), written only
+after the receipt check; a pick with none is shown with its verdict's. At
+most 5 rows a day per source, held by `recommend` (tool-surface §4.13), not
+by the schema. The thumbs on a picked video are the video's own `feedback`
+row: a pick has no feedback of its own.
+
 ## 2. FTS5
 
 Three external-content tables: `cues_fts`, `ocr_frames_fts`, `videos_fts`. The

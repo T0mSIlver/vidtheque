@@ -34,6 +34,7 @@ from ..profile import store as profile_store
 from ..text import clamp, deeplink
 from ..tools import indexing
 from ..verdicts import collections as verdicts_collections
+from ..verdicts import picks as verdicts_picks
 from ..verdicts import store as verdicts_store
 from ..verdicts import week as verdicts_week
 from .access import require_write
@@ -439,6 +440,7 @@ async def week_feed(request: Request) -> Response:
             "budget_min": budget,
             "asks_s": sum(verdicts_week.asks_s(r) for r in fitted),
             "items": _ranked_json(conn, fitted),
+            "picks": verdicts_picks.of_week(conn, week),
             "days": list(per_day.values()),
             "rest": {
                 "count": len(rest),

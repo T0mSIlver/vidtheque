@@ -63,6 +63,7 @@ HTTP_STATUS: dict[str, int] = {
     # (dashboard.md §21, 2026-09-15).
     "E_NOT_SCHEDULABLE": 409,
     "E_PROFILE_GUARD": 409,
+    "E_PICK_LIMIT": 409,
     "E_TIMEOUT": 408,
     "E_BUSY": 503,
     "E_RATE_LIMIT": 429,

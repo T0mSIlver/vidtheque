@@ -34,6 +34,8 @@ WRITE_TOOLS: frozenset[str] = frozenset(
 # Read-only, and still absent from a public deployment: one call hands over an
 # artifact the owner's gate exists to protect. See the module docstring.
 OWNER_ONLY_TOOLS: frozenset[str] = frozenset({"get-transcript"})
+# `recommend` is a write tool and masked as one; its bare read also hands over
+# the owner's verdicts and thumbs, which a stranger must never see.
 
 
 def hidden_tools(public_readonly: bool) -> frozenset[str]:

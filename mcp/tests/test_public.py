@@ -117,7 +117,7 @@ def call(client: TestClient, method: str, params: dict | None = None) -> dict:
 
 def test_write_tools_are_derived_from_the_annotations() -> None:
     """The write half of the mask is not a hand-written list; it follows readOnlyHint."""
-    assert WRITE_TOOLS == {"index-video", "tag-video", "follow-channel", "profile"}
+    assert WRITE_TOOLS == {"index-video", "tag-video", "follow-channel", "profile", "recommend"}
     assert hidden_tools(False) == frozenset()
     assert hidden_tools(True) == WRITE_TOOLS | OWNER_ONLY_TOOLS
 
