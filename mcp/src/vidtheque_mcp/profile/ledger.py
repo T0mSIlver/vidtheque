@@ -262,8 +262,6 @@ def _misses(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> di
 
 def _skipped_wrong(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> set[str]:
     """Skips the owner answered "I'd watch this" in the weekly brief (#158, migration 0019)."""
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'skip_verdicts'").fetchone() is None:
-        return set()
     return {
         str(r[0])
         for r in conn.execute(

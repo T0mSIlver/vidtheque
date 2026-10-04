@@ -158,12 +158,6 @@ def test_a_miss_waits_for_its_verdict_and_reads_the_follow_at_share_time(conn) -
 
 
 def test_a_skip_called_wrong_in_the_brief_is_a_miss(conn) -> None:
-    # 0019 (#158) lands after this; its table as that branch defines it.
-    conn.execute(
-        "CREATE TABLE skip_verdicts (owner_id INTEGER NOT NULL DEFAULT 1, video_id INTEGER NOT NULL,"
-        " answer TEXT NOT NULL, source TEXT NOT NULL, score INTEGER NOT NULL,"
-        " at INTEGER NOT NULL, PRIMARY KEY (owner_id, video_id))"
-    )
     wrong = _video(conn, "skippedwron")
     fair = _video(conn, "skippedfair")
     _verdict(conn, wrong, 1)
