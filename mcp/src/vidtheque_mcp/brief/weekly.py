@@ -122,7 +122,9 @@ class Weekly:
     async def _push(self, week: build.Week) -> None:
         if self.notifier is not None:
             line = await self.db.read(lambda c: _line(c, week.key, self.owner_id))
-            await self.notifier.brief(week.key, line)
+            # No phone reached (FCM down, none registered): the next tick tries again.
+            if not await self.notifier.brief(week.key, line):
+                return
         await self.db.write(
             lambda c: c.execute(
                 "UPDATE briefs SET pushed_at = unixepoch() WHERE owner_id = ? AND week = ?", (self.owner_id, week.key)
