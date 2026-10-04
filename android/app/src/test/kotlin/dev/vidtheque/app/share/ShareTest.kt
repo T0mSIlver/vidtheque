@@ -16,8 +16,9 @@ class ShareTest {
 
     @Test
     fun theToastSaysWhetherTheFeedMissedIt() {
-        assertEquals("Indexing it. A miss: scored 1.", sharedLine(Shared("v", true, "scored 1")))
-        assertEquals("The feed had it: scored 3.", sharedLine(Shared("v", false, "scored 3")))
-        assertEquals("Indexing it. Whether the feed missed it is known once it is judged.", sharedLine(Shared("v", null, "no verdict yet")))
+        assertEquals("Already indexed. A miss: scored 1.", sharedLine(Shared("v", true, true, "scored 1")))
+        assertEquals("Indexing it. A miss: channel not followed.", sharedLine(Shared("v", false, true, "channel not followed")))
+        assertEquals("The feed had it: scored 3.", sharedLine(Shared("v", true, false, "scored 3")))
+        assertEquals("Indexing it. Whether the feed missed it is known once it is judged.", sharedLine(Shared("v", false, null, "no verdict yet")))
     }
 }

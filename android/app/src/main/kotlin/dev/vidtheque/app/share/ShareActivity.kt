@@ -20,10 +20,13 @@ private val URL = Regex("""https?://\S+""")
 fun sharedLink(text: String?): String? = text?.let { URL.find(it)?.value }
 
 /** What a share's answer says, in one line for a toast. */
-fun sharedLine(shared: Shared): String = when (shared.miss) {
-    true -> "Indexing it. A miss: ${shared.why}."
-    false -> "The feed had it: ${shared.why}."
-    null -> "Indexing it. Whether the feed missed it is known once it is judged."
+fun sharedLine(shared: Shared): String {
+    val start = if (shared.indexed) "Already indexed." else "Indexing it."
+    return when (shared.miss) {
+        true -> "$start A miss: ${shared.why}."
+        false -> "The feed had it: ${shared.why}."
+        null -> "$start Whether the feed missed it is known once it is judged."
+    }
 }
 
 /** "Found it elsewhere": a YouTube link shared from any app, indexed and counted (companion.md §6). Draws nothing. */

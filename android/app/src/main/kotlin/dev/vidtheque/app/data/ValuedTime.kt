@@ -22,7 +22,7 @@ data class ValuedTime(@SerialName("regret_target") val regretTarget: Double = 0.
 
 /** [miss] is null while the video waits for its verdict; [why] says why in a few words. */
 @Serializable
-data class Shared(@SerialName("video_id") val videoId: String, val miss: Boolean? = null, val why: String = "")
+data class Shared(@SerialName("video_id") val videoId: String, val indexed: Boolean = false, val miss: Boolean? = null, val why: String = "")
 
 @Serializable
 internal data class Recorded(@SerialName("signal_id") val signalId: Long? = null)
