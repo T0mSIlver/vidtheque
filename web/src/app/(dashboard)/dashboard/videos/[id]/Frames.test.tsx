@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OWNER_VIDEO } from "@/test/dashboard/library-fixtures";
 import { mountVideo, stripPage, TWO_LINES } from "./detail-harness";
+import { cutFrames } from "./Frames";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
@@ -31,6 +32,27 @@ describe("the frames panel", () => {
       "src",
       "/frames/kCc8FmEb1nY-00000.jpg?w=512&q=70",
     );
+  });
+
+  // A page's line budget is spent in frame order: the frame it ran out on and
+  // every read frame after it are short, and only those say so.
+  it("marks the frames a spent line budget cut", () => {
+    const line = OWNER_VIDEO.frames.frames[0].lines[0];
+    const frame = (ord: number, lines: number, ocr_state = "done") => ({
+      ...OWNER_VIDEO.frames.frames[0],
+      frame_id: `f${ord}`,
+      ord,
+      ocr_state,
+      lines: Array.from({ length: lines }, () => line),
+    });
+    const frames = [frame(0, 3), frame(1, 0), frame(2, 4), frame(3, 0), frame(4, 0, "empty")];
+    // The fixture's boxes infer as `number[]`, not the schema's tuple.
+    const page = { ...OWNER_VIDEO.frames, frames, ocr_lines_capped: true } as unknown as Parameters<
+      typeof cutFrames
+    >[0];
+
+    expect([...cutFrames(page)]).toEqual(["f2", "f3"]);
+    expect(cutFrames({ ...page, ocr_lines_capped: false }).size).toBe(0);
   });
 
   // Frame 7 duplicates frame 0: the strip shows keyframes, so it is not drawn,

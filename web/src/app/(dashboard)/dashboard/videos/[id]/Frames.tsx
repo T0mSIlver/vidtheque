@@ -109,6 +109,7 @@ export function Frames({
                 frame={frame}
                 onOpen={onOpen}
                 selected={frame.ord === target}
+                cut={strip.cut.has(frame.frame_id)}
                 videoId={videoId}
               />
             ))}
@@ -119,13 +120,6 @@ export function Frames({
       ) : (
         <p className={styles.emptyLead}>No keyframes.</p>
       )}
-      {/* The page's line budget ran out: §5.3's double cap. */}
-      {strip.capped ? (
-        <p className={styles.panelNote}>
-          Some frames list fewer lines than they hold: the page&apos;s on-screen-text budget ran
-          out.
-        </p>
-      ) : null}
     </Panel>
   );
 }
@@ -176,7 +170,7 @@ function useStrip(first: Page, videoId: string) {
     start: first.offset,
     next: first.offset + first.limit,
     hasMore: first.has_more,
-    capped: first.ocr_lines_capped,
+    cut: cutFrames(first),
     busy: false,
     error: undefined as unknown,
   });
@@ -188,7 +182,7 @@ function useStrip(first: Page, videoId: string) {
       start: first.offset,
       next: first.offset + first.limit,
       hasMore: first.has_more,
-      capped: first.ocr_lines_capped,
+      cut: cutFrames(first),
       busy: false,
       error: undefined,
     });
@@ -238,7 +232,7 @@ function useStrip(first: Page, videoId: string) {
                       ...last.frames,
                     ],
                     start: page.offset,
-                    capped: last.capped || page.ocr_lines_capped,
+                    cut: new Set([...last.cut, ...cutFrames(page)]),
                     busy: false,
                   }
                 : {
@@ -251,7 +245,7 @@ function useStrip(first: Page, videoId: string) {
                     ],
                     next: Math.max(last.next, page.offset + page.frames.length),
                     hasMore: page.has_more && page.offset + page.frames.length > last.next,
-                    capped: last.capped || page.ocr_lines_capped,
+                    cut: new Set([...last.cut, ...cutFrames(page)]),
                     busy: false,
                   },
           );
@@ -279,7 +273,7 @@ function useStrip(first: Page, videoId: string) {
 
   return {
     frames: state.frames,
-    capped: state.capped,
+    cut: state.cut,
     busy,
     error,
     earlier: start > 0,
@@ -289,15 +283,38 @@ function useStrip(first: Page, videoId: string) {
   };
 }
 
+/**
+ * The frames whose lines a page's budget cut (§5.3's double cap). Lines are
+ * read in frame order until the budget runs out, so the cut starts at the last
+ * frame that has any, and takes every read frame after it.
+ */
+export function cutFrames(page: Page): Set<string> {
+  if (!page.ocr_lines_capped) return new Set();
+  const frames = [...page.frames].sort((a, b) => a.ord - b.ord);
+  let from = -1;
+  frames.forEach((frame, index) => {
+    if (frame.lines.length) from = index;
+  });
+  return new Set(
+    frames
+      .slice(Math.max(from, 0))
+      .filter((frame) => frame.ocr_state === "done")
+      .map((frame) => frame.frame_id),
+  );
+}
+
 const Card = memo(function Card({
   frame,
   videoId,
   selected,
+  cut,
   onOpen,
 }: {
   frame: FrameCard;
   videoId: string;
   selected: boolean;
+  /** The page's line budget ran out before this frame's lines did. */
+  cut: boolean;
   onOpen: (frame: FrameCard) => void;
 }) {
   return (
@@ -330,6 +347,11 @@ const Card = memo(function Card({
         </a>
         <span className={styles.muted}>#{frame.ord}</span>
         {QUIET_OCR.has(frame.ocr_state) ? null : <Pill state={frame.ocr_state} />}
+        {cut ? (
+          <span className={styles.muted} title="Lines past this page's limit are not drawn">
+            text cut
+          </span>
+        ) : null}
       </p>
     </li>
   );
