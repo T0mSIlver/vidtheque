@@ -46,6 +46,7 @@ OPERATIONAL_TABLES = (
     "feedback",
     "shares",
     "skip_verdicts",
+    "picks",
     "verdicts",
     "week_ranks",
     "week_rank_runs",
