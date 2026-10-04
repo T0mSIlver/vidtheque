@@ -56,6 +56,13 @@ fun ValuedTimeCard(ledger: ValuedTime) {
                 Figure("${week.misses.count}", if (week.misses.count == 1) "miss" else "misses")
             }
             Text(detail(week, ledger.regretTarget), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            week.picks?.takeIf { it.picked > 0 }?.let { picks ->
+                Text(
+                    "Claude's picks: kept ${picks.kept} of ${picks.picked}, ${percent(picks.rate)} · top tier ${percent(week.top?.rate)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             ledger.weeks.getOrNull(1)?.let {
                 Text(
                     "Last week: ${percent(it.hits.rate)} hits · ${percent(it.regret.rate)} regret · ${it.misses.count} missed",

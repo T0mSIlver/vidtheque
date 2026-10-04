@@ -18,6 +18,13 @@ import dev.vidtheque.app.data.Regret
 import dev.vidtheque.app.data.SearchHit
 import dev.vidtheque.app.data.ValuedTime
 import dev.vidtheque.app.data.Week
+import dev.vidtheque.app.data.ClaudePick
+import dev.vidtheque.app.data.FeedItem
+import dev.vidtheque.app.data.FittedWeek
+import dev.vidtheque.app.data.PickHits
+import dev.vidtheque.app.data.WeekDay
+import dev.vidtheque.app.ui.week.WeekScreen
+import dev.vidtheque.app.ui.week.WeekUi
 import dev.vidtheque.app.ui.profile.ProfileContent
 import dev.vidtheque.app.ui.profile.ProfileUi
 import dev.vidtheque.app.ui.search.SearchContent
@@ -110,7 +117,7 @@ class ScreenshotTest {
         val ledger = ValuedTime(
             0.1,
             listOf(
-                Week(1791756000, true, Hits(3, 7, 0.429), Regret(1, 6, 0.167), Misses(2, 1, 4)),
+                Week(1791756000, true, Hits(3, 7, 0.429), Regret(1, 6, 0.167), Misses(2, 1, 4), top = Hits(2, 5, 0.4), picks = PickHits(5, 3, 0.6)),
                 Week(1791151200, false, Hits(4, 10, 0.4), Regret(0, 5, 0.0), Misses(1, 0, 2)),
             ),
         )
@@ -238,6 +245,35 @@ class ScreenshotTest {
             }
         }
         compose.onRoot().captureRoboImage("screenshots/brief.png")
+    }
+
+    // Claude's picks open the week, each with its reason in full (companion.md §6.4).
+    @Test
+    fun weekPicks() {
+        val week = FittedWeek(
+            week = "2026-09-28",
+            previous = "2026-09-21",
+            budgetMin = 210,
+            asksS = 3900.0,
+            items = listOf(
+                FeedItem("kCc8FmEb1nY", "Let's build GPT: from scratch, in code, spelled out.", "Andrej Karpathy", 7000.0, null, 3, tier = 3, reason = "The clearest walk through attention and the KV cache.", momentsS = 900.0, asksS = 3600.0),
+            ),
+            picks = listOf(
+                ClaudePick("zduSFxRajkE", "Let's build the GPT Tokenizer", "Andrej Karpathy", 7998.0, null, "The byte-pair merge loop is the piece your tokenizer bug report kept circling.", score = 2, momentsS = 540.0),
+                ClaudePick("L9QZ97y9Exg", "Your local LLM is 10x slower than it should be", "Alex Ziskind", 660.0, null, "Short, and its llama.cpp batch numbers answer the throughput question from Tuesday.", score = 1),
+            ),
+            days = (0..6).map { WeekDay("2026-${if (it < 3) "09-${28 + it}" else "10-0${it - 2}"}", if (it == 2) 3900.0 else 0.0, if (it == 2) 1 else 0, if (it == 2) 3 else 0) },
+        )
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                WeekScreen(
+                    ui = WeekUi(week = week),
+                    onRefresh = {}, onWeek = {}, onBudget = {}, onOpen = {}, onPick = {}, onShowAll = {},
+                    still = { _, modifier -> Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant)) },
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/week-picks.png")
     }
 
     @Test

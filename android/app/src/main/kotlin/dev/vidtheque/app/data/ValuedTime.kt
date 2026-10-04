@@ -18,6 +18,10 @@ data class Misses(val count: Int, val pending: Int = 0, val shared: Int = 0)
 @Serializable
 data class OutsideHits(val shown: Int = 0, val kept: Int = 0, val rate: Double? = null)
 
+/** Claude's picks made that week and how many were kept (companion.md §6.4). */
+@Serializable
+data class PickHits(val picked: Int = 0, val kept: Int = 0, val rate: Double? = null)
+
 @Serializable
 data class Week(
     val start: Long,
@@ -26,6 +30,9 @@ data class Week(
     val regret: Regret,
     val misses: Misses,
     val outside: OutsideHits? = null,
+    /** The week's 3s, what Claude's picks are held against. */
+    val top: Hits? = null,
+    val picks: PickHits? = null,
 )
 
 @Serializable

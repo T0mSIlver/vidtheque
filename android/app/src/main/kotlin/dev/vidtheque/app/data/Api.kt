@@ -59,6 +59,20 @@ data class WeekDay(val day: String, @SerialName("asks_s") val asksS: Double = 0.
 @Serializable
 data class WeekRest(val count: Int = 0, @SerialName("asks_s") val asksS: Double = 0.0)
 
+/** One of Claude's picks atop the week, with its reason (companion.md §6.4). */
+@Serializable
+data class ClaudePick(
+    @SerialName("video_id") val videoId: String,
+    val title: String,
+    val channel: String? = null,
+    @SerialName("duration_s") val durationS: Double = 0.0,
+    @SerialName("published_at") val publishedAt: Long? = null,
+    val reason: String,
+    /** The video's verdict; null when it has none. */
+    val score: Int? = null,
+    @SerialName("moments_s") val momentsS: Double? = null,
+)
+
 /** The week's ranked verdicts fitted to the owner's minutes (dashboard.md §25.13). */
 @Serializable
 data class FittedWeek(
@@ -68,6 +82,7 @@ data class FittedWeek(
     @SerialName("budget_min") val budgetMin: Int,
     @SerialName("asks_s") val asksS: Double = 0.0,
     val items: List<FeedItem> = emptyList(),
+    val picks: List<ClaudePick> = emptyList(),
     val days: List<WeekDay> = emptyList(),
     val rest: WeekRest = WeekRest(),
     /** The week holds 40 candidates or more, the most it compares. */
