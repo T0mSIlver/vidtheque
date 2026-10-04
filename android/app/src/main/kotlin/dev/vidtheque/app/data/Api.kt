@@ -371,7 +371,16 @@ class ApiException(val error: String, message: String, val body: String = "") : 
 @Singleton
 class Api @Inject constructor(@Named("api") private val http: OkHttpClient, private val instance: Instance) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val root get() = "${instance.base}/dashboard/api"
+    private val root get() = "${signedInBase()}/dashboard/api"
+
+    // A public build has no instance before the first sign-in; a share or a notification
+    // action can still call in, and must fail like an unreachable server, not crash.
+    private fun signedInBase(): String = instance.base.ifEmpty { throw IOException("Sign in to your vidtheque instance first.") }
+
+    /** The instance calls go to now; a record kept across launches belongs to the one it names. */
+    val base: String get() = instance.base
+
+    suspend fun restored() = instance.awaitRestored()
 
     suspend fun feed(band: String, offset: Int, filters: FeedFilters = FeedFilters()): FeedPage {
         val url = "$root/feed".toHttpUrl().newBuilder()
@@ -463,7 +472,7 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     /** The console's own pause (dashboard.md §21), a form post like the page's. */
     suspend fun pauseFollow(slug: String) {
         val form = okhttp3.FormBody.Builder().add("action", "pause").build()
-        send(Request.Builder().url("${instance.base}/dashboard/following/$slug/state").header("Accept", "application/json").post(form).build())
+        send(Request.Builder().url("${signedInBase()}/dashboard/following/$slug/state").header("Accept", "application/json").post(form).build())
     }
 
     /** This phone's FCM token, so verdicts at the threshold reach it (§25.6). */

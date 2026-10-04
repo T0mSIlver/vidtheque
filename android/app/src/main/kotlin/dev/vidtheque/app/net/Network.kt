@@ -25,14 +25,14 @@ fun authorized(base: OkHttpClient, session: Session): OkHttpClient = base.newBui
     .addInterceptor(Interceptor { chain ->
         // OkHttp runs interceptors on its own threads, so blocking here blocks no UI.
         // A failed refresh surfaces as the call's IOException, like any network failure.
-        val token = runBlocking { runCatching { session.accessToken() } }.getOrElse { throw IOException(it.message, it) }
         val request = chain.request()
+        val token = runBlocking { runCatching { session.accessToken(request.url.toString()) } }.getOrElse { throw IOException(it.message, it) }
         chain.proceed(if (token == null) request else request.newBuilder().header("Authorization", "Bearer $token").build())
     })
     .authenticator(Authenticator { _, response ->
         val rejected = response.request.header("Authorization")?.removePrefix("Bearer ")
         if (rejected == null || response.priorResponse != null) return@Authenticator null
-        val next = runBlocking { runCatching { session.afterUnauthorized(rejected) }.getOrNull() } ?: return@Authenticator null
+        val next = runBlocking { runCatching { session.afterUnauthorized(rejected, response.request.url.toString()) }.getOrNull() } ?: return@Authenticator null
         response.request.newBuilder().header("Authorization", "Bearer $next").build()
     })
     .build()

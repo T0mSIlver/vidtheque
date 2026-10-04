@@ -1,6 +1,7 @@
 package dev.vidtheque.app.auth
 
 import dev.vidtheque.app.BuildConfig
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -10,11 +11,20 @@ import javax.inject.Singleton
  * it holds there. The server publishes the client document (mcp auth/android.py).
  */
 @Singleton
-class Instance(val default: String, val devToken: String = "") {
-    @Inject constructor() : this(BuildConfig.INSTANCE, BuildConfig.DEV_TOKEN)
+class Instance(val default: String, val devToken: String = "", restored: Boolean = true) {
+    @Inject constructor() : this(BuildConfig.INSTANCE, BuildConfig.DEV_TOKEN, restored = false)
 
     /** Set from the stored session at launch, and by each sign-in. */
     @Volatile var base: String = default
+
+    private val loaded = CompletableDeferred<Unit>().apply { if (restored) complete(Unit) }
+
+    /** Until the stored session is read, [base] is only the build's default. */
+    suspend fun awaitRestored() = loaded.await()
+
+    fun restored() {
+        loaded.complete(Unit)
+    }
 
     val host: String get() = hostOf(base)
 

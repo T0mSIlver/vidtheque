@@ -49,6 +49,7 @@ class Session @Inject constructor(
                 // default; a build without one (the public release) signs it out.
                 ?.let { if (it.instance.isNotEmpty()) it else instance.default.takeIf(String::isNotEmpty)?.let(it::withInstance) }
             tokens?.let { instance.base = it.instance }
+            instance.restored()
             _state.value = if (tokens != null) SessionState.SignedIn else SessionState.SignedOut
         }
     }
@@ -85,15 +86,17 @@ class Session @Inject constructor(
         _state.value = SessionState.SignedIn
     }
 
-    /** A valid access token, refreshed first when it is about to expire; null when signed out. */
-    suspend fun accessToken(): String? = lock.withLock {
-        val current = tokens ?: return null
+    /** A valid access token for a request to [url], refreshed first when it is about to expire;
+     *  null when signed out or when [url] is not on the instance that issued it. */
+    suspend fun accessToken(url: String): String? = lock.withLock {
+        val current = tokens?.takeIf { it.belongTo(url) } ?: return null
         if (clock.nowMs() < current.expiresAtMs - EARLY_MS) current.access else refreshLocked(current)
     }
 
-    /** A call was refused with [rejected]; answer the token to retry with, or null to give up. */
-    suspend fun afterUnauthorized(rejected: String): String? = lock.withLock {
-        val current = tokens ?: return null
+    /** A call to [url] was refused with [rejected]; answer the token to retry with, or null to give up.
+     *  A call that left before a switch of instance gets nothing: the new token is not its server's. */
+    suspend fun afterUnauthorized(rejected: String, url: String): String? = lock.withLock {
+        val current = tokens?.takeIf { it.belongTo(url) } ?: return null
         // Another call already refreshed while this one was in flight.
         if (current.access != rejected) current.access else refreshLocked(current)
     }

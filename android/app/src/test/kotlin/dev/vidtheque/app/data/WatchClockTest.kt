@@ -34,6 +34,7 @@ class WatchClockTest {
     private val store = MemoryHandOffs()
     private var now = 1_000_000L
     private lateinit var clock: WatchClock
+    private lateinit var base: String
 
     @Before
     fun setUp() {
@@ -43,7 +44,8 @@ class WatchClockTest {
             )
         }
         server.start()
-        clock = WatchClock(Api(OkHttpClient(), Instance(server.url("/").toString().trimEnd('/'))), store, { now }, test)
+        base = server.url("/").toString().trimEnd('/')
+        clock = WatchClock(Api(OkHttpClient(), Instance(base)), store, { now }, test)
     }
 
     @After
@@ -85,7 +87,7 @@ class WatchClockTest {
 
     @Test
     fun aReturnTheNetworkLostIsSentBeforeTheNextHandOff() {
-        store.write(HandOff(startedMs = 1L, signalId = 5, awayS = 42.0))
+        store.write(HandOff(startedMs = 1L, signalId = 5, awayS = 42.0, instance = base))
         clock.handOff("vid", 10)
         settle { store.read()?.signalId == 7L }
         val sent = bodies()
@@ -101,6 +103,15 @@ class WatchClockTest {
         val sent = bodies()
         assertEquals(1, sent.size)
         assertTrue(sent[0].contains("/outside/watched") && sent[0].contains("\"id\":4") && sent[0].contains("\"offset_s\":600") && sent[0].contains("\"watched_s\":120.0"))
+    }
+
+    @Test
+    fun aReturnRecordedOnAnotherInstanceIsDroppedUnsent() {
+        // Its signal id is the other instance's; here it would close an unrelated watch.
+        store.write(HandOff(startedMs = 1L, signalId = 5, awayS = 42.0, instance = "https://other.example"))
+        clock.returned()
+        settle { store.read() == null }
+        assertTrue(bodies().isEmpty())
     }
 
     @Test

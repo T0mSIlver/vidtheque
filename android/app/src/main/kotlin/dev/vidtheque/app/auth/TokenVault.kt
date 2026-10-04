@@ -25,6 +25,9 @@ import javax.inject.Singleton
 @Serializable
 data class Tokens(val access: String, val refresh: String?, val expiresAtMs: Long, val instance: String = "") {
     fun withInstance(base: String) = copy(instance = base)
+
+    /** Only requests to the instance that issued them carry them. */
+    fun belongTo(url: String) = url.startsWith("$instance/")
 }
 
 /** Where the tokens live between launches. */
