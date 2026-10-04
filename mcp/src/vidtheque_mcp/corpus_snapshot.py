@@ -37,7 +37,29 @@ OPERATIONAL_TABLES = (
     # Titles and descriptions the owner wrote; no public read uses them.
     "collections",
     "collection_videos",
+    # The companion's (companion.md): one owner's interests, what they did, the
+    # verdicts written for them, their phones and their model spend. None of it
+    # is corpus, and a public box writes its own sample feed (demo-site.md §8).
+    # Children before parents: `_filter_copy` empties them in this order.
+    "profile_events",
+    "signals",
+    "feedback",
+    "shares",
+    "skip_verdicts",
+    "verdicts",
+    "week_ranks",
+    "week_rank_runs",
+    "briefs",
+    "checkins",
+    "outside_picks",
+    "scout_runs",
+    "speaker_suggestions",
+    "nightly_runs",
+    "llm_calls",
+    "devices",
+    "profile_entries",
 )
+COMPANION_TABLES = OPERATIONAL_TABLES[OPERATIONAL_TABLES.index("profile_events") :]
 # Every other table must be empty in a generation, so a table a later migration adds
 # fails the build until someone decides which side of this line it is on.
 CORPUS_TABLES = frozenset(
@@ -154,6 +176,8 @@ def _filter_copy(conn: sqlite3.Connection, rules: Sequence[KeepRule]) -> tuple[i
         conn.execute("DELETE FROM follow_spend")
         conn.execute("DELETE FROM ask_budget")
         conn.execute("DELETE FROM collections")
+        for table in COMPANION_TABLES:
+            conn.execute(f"DELETE FROM {table}")
         conn.execute("DELETE FROM videos WHERE id NOT IN (SELECT video_id FROM snapshot_keep)")
         # What a dropped video leaves behind by name: its tags, its speakers.
         conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM video_tags)")
