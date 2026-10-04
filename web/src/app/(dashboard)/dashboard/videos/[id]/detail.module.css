@@ -52,12 +52,40 @@
   position: relative;
   /* Named once: the preview drops below the bars by this much. */
   --timeline-h: 3rem;
+  --now-h: 2rem;
   margin-top: var(--s8);
 }
 
-/* Chapters on the shots' scale: a segment per chapter, its title inside
-   while it fits. */
+/* The chapter in view, named whole above the band. One line, so a sweep
+   along the band does not move it. */
+.chapternow {
+  composes: t-cell from global;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  height: var(--now-h);
+  margin: 0;
+  overflow: hidden;
+  line-height: var(--now-h);
+  white-space: nowrap;
+}
+
+.chapterord {
+  composes: t-machine-sm from global;
+  color: var(--fg2);
+}
+
+.chaptertitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+
+/* Chapters on the shots' scale: every segment drawn, shaded in turn, so its
+   extent reads without its title. */
 .chapterband {
+  composes: t-cell from global;
   position: relative;
   height: 1.75rem;
   margin: 0;
@@ -77,27 +105,84 @@
   border-left: 1px solid var(--seam2);
 }
 
+.chapterseg:nth-child(even) {
+  background: var(--plate2);
+}
+
 .chapterseg:first-child {
   border-left: 0;
 }
 
-.chapterlink {
-  composes: t-cell from global;
+.chapterbtn {
   display: block;
+  width: 100%;
   height: 100%;
   padding: 0 var(--s2);
   overflow: hidden;
+  font: inherit;
   line-height: 1.75rem;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  text-align: left;
   color: var(--fg2);
-  text-decoration: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
-.chapterlink:hover,
-.chapterlink:focus-visible {
-  color: var(--fg);
+/* The chapter named above: lit, with a rule along its top edge. */
+.chapterseg.isOn {
   background: var(--plate3);
+  box-shadow: inset 0 2px 0 var(--fg2);
+}
+
+.chapterseg.isOn .chapterbtn {
+  color: var(--fg);
+}
+
+.chapternum {
+  composes: t-machine-sm from global;
+}
+
+.chapterbtn:focus-visible {
+  outline-offset: -2px;
+}
+
+.chapterfold {
+  margin-top: var(--s2);
+}
+
+/* A thumb sweeps nothing: the title wraps rather than ending in an ellipsis. */
+@media (max-width: 48.75rem) {
+  .chapternow {
+    height: auto;
+    min-height: var(--now-h);
+    padding: var(--s1) 0;
+    line-height: 1.4;
+    white-space: normal;
+  }
+}
+
+.chapterlist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--s1) var(--s8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chapteritem {
+  composes: t-cell from global;
+  display: grid;
+  grid-template-columns: 1.5rem 3.5rem minmax(0, 1fr);
+  gap: var(--s2);
+  align-items: baseline;
+  padding: var(--s1) 0;
+  color: var(--fg);
+}
+
+.chapterlist .at {
+  justify-self: end;
 }
 
 .timeline {
@@ -184,6 +269,16 @@
 .isBelow {
   top: calc(var(--timeline-h) + 1.75rem);
   transform: translate(-50%, var(--s2));
+}
+
+/* Over the chapter line, which names the same chapter: the preview sits on
+   the bands, not above the section. */
+.chapternow ~ .scrubpreview {
+  top: var(--now-h);
+}
+
+.chapternow ~ .isBelow {
+  top: calc(var(--now-h) + var(--timeline-h) + 1.75rem);
 }
 
 .scrubshot {
@@ -488,15 +583,10 @@ a.at:hover {
 
 /* ------------------------------------------------------------- transcript */
 
-/* Paragraphs at a reading measure, in a box that reads on as it scrolls. */
-.cuebox {
-  max-height: 70vh;
-  min-block-size: min(70vh, 12rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--s3) var(--s4);
-  background: var(--console);
-  border: 1px solid var(--seam2);
+/* Paragraphs at a reading measure, in the page's own flow: the page is the
+   one scroll, and the transcript ends it. */
+.cues {
+  max-inline-size: calc(3.5rem + var(--s3) + var(--prose));
 }
 
 .para {
@@ -536,10 +626,6 @@ a.at:hover {
 }
 
 @media (max-width: 48.75rem) {
-  .cuebox {
-    padding: var(--s2) var(--s3);
-  }
-
   .para {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
