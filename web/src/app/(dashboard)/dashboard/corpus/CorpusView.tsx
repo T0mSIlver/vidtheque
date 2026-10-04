@@ -5,6 +5,7 @@ import { useResource } from "@/lib/dashboard/resource";
 import type { Corpus } from "@/lib/dashboard/schemas";
 import { at, bytes, count, hours, iso } from "@/lib/format";
 import { ReadFailure } from "@/components/dashboard/kit/notice";
+import { ValuedTimePanel } from "./ValuedTime";
 import {
   CountLink,
   DashLink,
@@ -85,6 +86,8 @@ function Loaded({ data }: { data: Corpus }) {
           </Figure>
         </dl>
       </section>
+
+      <ValuedTimePanel />
 
       <div className={ui.split}>
         <Panel id="states" title="Videos by state">
