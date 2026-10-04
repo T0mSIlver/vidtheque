@@ -119,7 +119,7 @@ mangled `youtu.be` id is a broken promise).
   is contract now). Its charisma is receipts rendered perfectly. Every
   self-hosted instance has one; the public box does not serve it
   *(amended 2026-10-04)*.
-- **README** = the twin line early, pillars as sections, quickstart before
-  any protocol word.
+- **README** = the lead sentence first, then the twin line, pillars as
+  sections, quickstart before any protocol word. *(Amended 2026-10-04.)*
 - **Roadmap line that makes the position true by construction:** follow
   channels — vidtheque keeps watching so you don't have to.
