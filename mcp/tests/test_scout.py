@@ -416,3 +416,21 @@ def test_receipts_are_checked_against_the_fetched_cues() -> None:
     kept = scout_mod.receipts(cues, verdict()["moments"])
     assert kept == [{"offset_s": 10.0, "end_s": 31.0, "why": "Forty tasks on every pull request"}]
     assert json.dumps(kept)
+
+
+async def test_a_resent_watch_is_recorded_once(assembled: Assembled) -> None:
+    pick_id = await assembled.db.write(
+        lambda c: picks.insert(
+            c,
+            source_id="shown000001",
+            week=WEEK,
+            because="x",
+            title="t",
+            state="shown",
+            duration_s=600.0,
+        )
+    )
+    for _ in range(2):
+        await assembled.db.write(lambda c: picks.record_watched(c, pick_id, 60.0, 120.0))
+    [row] = await rows(assembled, "SELECT watches FROM outside_picks")
+    assert json.loads(row["watches"]) == [[60.0, 180.0]]

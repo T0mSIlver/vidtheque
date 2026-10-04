@@ -151,7 +151,12 @@ def record_watched(
         offset_s = min(offset_s, duration)
         kept = min(kept, duration - offset_s)
     kept = round(kept, 1)
-    watches = json.loads(row["watches"])[-(WATCHES_MAX - 1) :] + [[offset_s, offset_s + kept]]
+    watches = json.loads(row["watches"])
+    interval = [offset_s, offset_s + kept]
+    # The app resends a return the network may have lost; the same one twice is one watch.
+    if watches and watches[-1] == interval:
+        return kept
+    watches = watches[-(WATCHES_MAX - 1) :] + [interval]
     conn.execute(
         "UPDATE outside_picks SET watches = ? WHERE id = ?", (json.dumps(watches), pick_id)
     )
