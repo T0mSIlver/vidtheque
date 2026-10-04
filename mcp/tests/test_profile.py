@@ -266,6 +266,19 @@ async def test_a_topic_never_lapses_and_a_project_does_not_replace_it(assembled:
     assert await live_at(deps, T0 + 400 * DAYS) == ["Local inference"]
 
 
+async def test_dropping_a_project_and_adding_its_text_again_writes_a_new_one(
+    assembled: Assembled,
+) -> None:
+    deps = assembled.deps
+    await write_projects(deps, "Android video app", now=T0)
+    [old] = await deps.db.read(lambda c: store.entries(c, now=T0))
+    ops = store.Ops(drop=[old["id"]], add=[("Android video app", 0.8, "project")])
+    done = await deps.db.write(lambda c: store.apply(c, ops, actor="agent", now=T0))
+    assert done.refreshed == [] and len(done.event_ids) == 2
+    [new] = await deps.db.read(lambda c: store.entries(c, now=T0))
+    assert new["id"] != old["id"] and new["weight"] == 0.8
+
+
 async def test_the_profile_holds_at_most_ten_live_projects(assembled: Assembled) -> None:
     deps = assembled.deps
     await write_projects(deps, *(f"project {i}" for i in range(store.MAX_PROJECTS)), now=T0)
