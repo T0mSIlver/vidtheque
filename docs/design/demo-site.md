@@ -2113,12 +2113,18 @@ scored against:
 | -0.4 | Funding and hiring |
 
 At boot the server makes the live entries exactly these, writing nothing when
-they already match, then queues a `verdict` job for every queryable video with
-no verdict or with one written under an older profile revision. The stage runs
-without push, week ranking or exploration, so the cost is one model call per
-video: once per video now, again for every video after a corpus generation
-(publishing.md §2: a new generation starts with no verdicts) or a profile edit.
-New channels never join the public corpus (§8.3), so nothing else adds calls.
+they already match. It then queues a `verdict` job for each of the newest
+`VIDTHEQUE_SAMPLE_FEED_VIDEOS` (default 40) queryable videos that has no
+verdict or one written under an older profile revision. A new video joins as
+it arrives; older talks are never judged.
+
+*Amended 2026-10-04 (Tom: a full pass at about $19 was too much):* the
+stage reads the cheap input the scout uses (title, channel, chapters, and
+12,000 characters of transcript from both ends) and runs without push, week
+ranking or exploration. That is one small call per video. On 20 talks,
+`z-ai/glm-5.3-flash` on OpenRouter cost $0.0032 a talk with this input, so
+40 talks cost $0.13 and every later talk costs a third of a cent. The run is
+in #201's body.
 
 ### 8.2 `GET /api/feed`
 
