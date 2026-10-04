@@ -2,6 +2,8 @@ package dev.vidtheque.app.ui
 
 import dev.vidtheque.app.auth.Instance
 import dev.vidtheque.app.data.Api
+import dev.vidtheque.app.data.WatchClock
+import dev.vidtheque.app.data.MemoryHandOffs
 import dev.vidtheque.app.ui.search.SearchViewModel
 import dev.vidtheque.app.ui.search.evidence
 import dev.vidtheque.app.ui.search.receipt
@@ -36,6 +38,8 @@ class SearchViewModelTest {
     private val server = MockWebServer()
     private val main = StandardTestDispatcher()
     private val test = TestScope(main)
+
+    private fun clock(api: Api) = WatchClock(api, MemoryHandOffs(), { 0L }, test)
 
     private fun hit(id: String, at: Int) =
         """{"video_id":"$id","title":"t $id","channel":null,"source":"transcript","start":$at,"match_start":$at,"text":"said","link":"https://youtu.be/$id?t=${at - 2}","published_at":1674000000}"""
@@ -85,7 +89,7 @@ class SearchViewModelTest {
 
     @Test
     fun aQueryIsOneSignalAndPagingSendsNone() {
-        val model = SearchViewModel(api())
+        val model = SearchViewModel(api(), clock(api()))
         model.submit("  kv cache ")
         settle { model.ui.value.hits.size == 2 }
         assertEquals(2, model.ui.value.nextOffset)
@@ -104,11 +108,11 @@ class SearchViewModelTest {
 
     @Test
     fun onlyAnEmptyCorpusSaysNothingIsIndexed() {
-        val miss = SearchViewModel(api())
+        val miss = SearchViewModel(api(), clock(api()))
         miss.submit("miss")
         settle { miss.ui.value.empty != null }
         assertEquals("Nothing matched. Try other words.", miss.ui.value.empty)
-        val bare = SearchViewModel(api())
+        val bare = SearchViewModel(api(), clock(api()))
         bare.submit("bare")
         settle { bare.ui.value.empty != null }
         assertEquals("Nothing is indexed yet.", bare.ui.value.empty)
@@ -116,7 +120,7 @@ class SearchViewModelTest {
 
     @Test
     fun aMomentIsAWatchAtTheSecondThatMatched() {
-        val model = SearchViewModel(api())
+        val model = SearchViewModel(api(), clock(api()))
         model.submit("x")
         settle { model.ui.value.hits.isNotEmpty() }
         requests()
@@ -128,7 +132,7 @@ class SearchViewModelTest {
 
     @Test
     fun anUnjudgedVideoIsDrawnFromTheRefusal() {
-        val model = VideoViewModel(api(), "unjudged")
+        val model = VideoViewModel(api(), clock(api()), "unjudged")
         settle { model.ui.value.unjudged != null || model.ui.value.error != null }
         assertEquals("Plain", model.ui.value.unjudged?.title)
         assertNull(model.ui.value.error)

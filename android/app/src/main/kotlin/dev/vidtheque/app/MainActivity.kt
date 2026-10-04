@@ -19,17 +19,21 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import dev.vidtheque.app.auth.SessionState
+import dev.vidtheque.app.data.WatchClock
 import dev.vidtheque.app.push.VerdictNotifications
 import dev.vidtheque.app.ui.RootViewModel
 import dev.vidtheque.app.ui.SignedIn
 import dev.vidtheque.app.ui.signin.SignInScreen
 import dev.vidtheque.app.ui.signin.SignInViewModel
 import dev.vidtheque.app.ui.theme.VidthequeTheme
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val root: RootViewModel by viewModels()
     private val signIn: SignInViewModel by viewModels()
+
+    @Inject lateinit var watchClock: WatchClock
 
     // Registered before the activity starts, as the Activity Result API requires.
     private val authTab = AuthTabIntent.registerActivityResultLauncher(this) { signIn.onAuthTabResult(it) }
@@ -61,6 +65,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Back from YouTube after a moment was handed to it: that time is the watch's length.
+    override fun onStart() {
+        super.onStart()
+        watchClock.returned()
     }
 
     override fun onNewIntent(intent: Intent) {

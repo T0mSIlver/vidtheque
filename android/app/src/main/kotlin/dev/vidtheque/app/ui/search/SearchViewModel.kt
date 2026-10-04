@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
 import dev.vidtheque.app.data.SearchHit
+import dev.vidtheque.app.data.WatchClock
 import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -32,7 +33,7 @@ data class SearchUi(
 
 /** The MCP `search` tool's search over every channel, paged on `has_more` (dashboard.md §25.9). */
 @HiltViewModel
-class SearchViewModel @Inject constructor(private val api: Api) : ViewModel() {
+class SearchViewModel @Inject constructor(private val api: Api, private val watchClock: WatchClock) : ViewModel() {
     private val _ui = MutableStateFlow(SearchUi())
     val ui: StateFlow<SearchUi> = _ui.asStateFlow()
     private var paging: Job? = null
@@ -62,10 +63,8 @@ class SearchViewModel @Inject constructor(private val api: Api) : ViewModel() {
         page(now.query, now.nextOffset ?: 0)
     }
 
-    /** Opening a moment is watching it, as on the video page. */
-    fun watched(hit: SearchHit) {
-        viewModelScope.launch { runCatching { api.signal("watch", hit.videoId, (hit.matchStart ?: hit.start).toInt()) } }
-    }
+    /** Opening a moment is watching it, as on the video page; call once YouTube took the link. */
+    fun watched(hit: SearchHit) = watchClock.handOff(hit.videoId, (hit.matchStart ?: hit.start).toInt())
 
     private fun page(query: String, offset: Int) {
         paging = viewModelScope.launch {
