@@ -94,6 +94,11 @@ never writes to the live database.
   the cascade `docs/takedown.md` §2 documents, and empty the operational tables
   (queue, jobs, follows, follow spend). A public snapshot carries no source URL
   it did not index and no job history.
+  *Amended 2026-10-04 (#202):* the companion's tables are operational too
+  (profile, signals, verdicts, briefs, devices, model calls and the rest
+  `corpus_snapshot.OPERATIONAL_TABLES` lists), so no owner's interests or
+  verdicts reach a generation. A test fails when a migration adds a table
+  neither list names.
 - Verify with takedown §2.6, `integrity_check` and `foreign_key_check`. An
   orphan is a failed build.
 - Refuse while the queue has a claimed item (`LESSONS.md`, cutting over);
