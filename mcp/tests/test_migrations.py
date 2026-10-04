@@ -663,7 +663,8 @@ def test_0014_keeps_every_verdict_and_reads_them_with_no_matches(
     )
     held = [tuple(r) for r in fresh.execute("SELECT * FROM verdicts")]
     assert migrations.migrate(fresh)[0] == 14
-    assert [tuple(r)[:-1] for r in fresh.execute("SELECT * FROM verdicts")] == held
+    width = len(held[0])
+    assert [tuple(r)[:width] for r in fresh.execute("SELECT * FROM verdicts")] == held
     assert fresh.execute("SELECT matches FROM verdicts").fetchone()[0] == "[]"
 
 
@@ -722,3 +723,23 @@ def test_0020_reads_every_existing_entry_as_a_topic_that_never_expires(
     assert [r[-2:] for r in rows] == [("topic", None)]
     with pytest.raises(sqlite3.IntegrityError):
         fresh.execute("UPDATE profile_entries SET kind = 'company'")
+
+
+def test_0023_keeps_every_verdict_and_reads_them_with_no_overlaps(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 21, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute(
+        "INSERT INTO verdicts (video_id, score, reason, summary, profile_rev, model)"
+        " VALUES (?, 2, 'r', 's', 4, 'm')",
+        (vid,),
+    )
+    held = [tuple(r) for r in fresh.execute("SELECT * FROM verdicts")]
+    assert 23 in migrations.migrate(fresh)
+    rows = [tuple(r) for r in fresh.execute("SELECT * FROM verdicts")]
+    assert [r[: len(held[0])] for r in rows] == held
+    assert fresh.execute("SELECT overlaps FROM verdicts").fetchone()[0] == "[]"

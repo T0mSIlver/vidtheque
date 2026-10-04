@@ -33,6 +33,7 @@ from ..profile import signals as signals_store
 from ..profile import store as profile_store
 from ..text import clamp, deeplink
 from ..tools import indexing
+from ..verdicts import collections as verdicts_collections
 from ..verdicts import store as verdicts_store
 from ..verdicts import week as verdicts_week
 from .access import require_write
@@ -548,6 +549,8 @@ async def verdict(request: Request) -> Response:
             conn, int(video["id"]), verdicts_store.moments_of(row)
         )
         ranked = verdicts_week.tiers(conn, [int(video["id"])]).get(int(video["id"]))
+        seen = _seen_videos(conn, verdicts_store.overlaps_of(row))
+        spans = [o for o in verdicts_store.overlaps_of(row) if o.video_id in seen]
         return {
             "video": _video_json(video),
             "score": int(row["score"]),
@@ -557,22 +560,149 @@ async def verdict(request: Request) -> Response:
             "matches": verdicts_store.matches_json(conn, [row])[0],
             "feedback": feedback_store.state_of(conn, int(video["id"]), OWNER_ID),
             "summary": row["summary"],
-            "moments": [
+            "moments": [_moment_json(video["public_id"], m, spans, seen) for m in kept],
+            "overlaps": [
                 {
-                    "cue_id": m.cue_id,
-                    "offset_s": m.offset_s,
-                    "end_cue_id": m.end_cue_id,
-                    "end_s": m.end_s,
-                    "why": m.why,
-                    "url": deeplink(video["public_id"], m.offset_s),
+                    "video": seen[o.video_id],
+                    "start_s": o.start_s,
+                    "end_s": o.end_s,
+                    "seen_s": o.seen_s,
+                    "url": deeplink(seen[o.video_id]["video_id"], o.seen_s),
                 }
-                for m in kept
+                for o in spans
             ],
             "moments_dropped": len(dropped),
             "moments_s": verdicts_store.moments_s(kept),
             "profile_rev": int(row["profile_rev"]),
             "model": row["model"],
             "judged_at": int(row["created_at"]),
+        }
+
+    try:
+        payload = await request.app.state.assembled.db.read(read)
+    except _Refused as refused:
+        return _from(refused)
+    return _json(payload)
+
+
+def _seen_videos(
+    conn: sqlite3.Connection, spans: list[verdicts_store.Span]
+) -> dict[int, dict[str, Any]]:
+    """The videos the spans repeat, by row id, as `{video_id, title, channel}`;
+    a deleted one is absent, so its spans are not shown."""
+    ids = sorted({o.video_id for o in spans})
+    return {
+        int(r["id"]): {
+            "video_id": r["public_id"],
+            "title": (r["title"] or "")[:TITLE_CHARS],
+            "channel": r["channel_name"],
+        }
+        for r in conn.execute(
+            "SELECT id, public_id, title, channel_name FROM videos"
+            " WHERE owner_id = ? AND id IN (SELECT value FROM json_each(?))",
+            (OWNER_ID, json.dumps(ids)),
+        )
+    }
+
+
+def _moment_json(
+    public_id: str,
+    m: verdicts_store.Moment,
+    spans: list[verdicts_store.Span],
+    seen: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    """A moment whose link starts after the repeats that cover its start (#171)."""
+    start, touching, whole = verdicts_store.start_after(m.offset_s, m.end_s, spans)
+    return {
+        "cue_id": m.cue_id,
+        "offset_s": m.offset_s,
+        "end_cue_id": m.end_cue_id,
+        "end_s": m.end_s,
+        "why": m.why,
+        "start_s": start,
+        "url": deeplink(public_id, start),
+        "repeat": (
+            {**seen[touching[0].video_id], "whole": whole} if touching else None
+        ),
+    }
+
+
+# -------------------------------------------------------------- collections
+
+
+def _collection_s(items: list[verdicts_collections.Item]) -> float:
+    """The collection's seconds, each video's overlapping moments counted once."""
+    by_video: dict[int, list[verdicts_store.Moment]] = {}
+    for i in items:
+        by_video.setdefault(int(i.video["id"]), []).append(i.moment)
+    return sum(verdicts_store.moments_s(ms) or 0.0 for ms in by_video.values())
+
+
+async def collections(request: Request) -> Response:
+    """`GET /dashboard/api/collections` — each positive entry's moment count and minutes."""
+
+    def read(conn: sqlite3.Connection) -> dict[str, Any]:
+        found = verdicts_collections.by_entry(conn, OWNER_ID)
+        texts = {int(e["id"]): str(e["text"]) for e in profile_store.entries(conn, OWNER_ID)}
+        return {
+            "collections": [
+                {
+                    "entry_id": entry,
+                    "text": texts[entry],
+                    "moments": len(items),
+                    "moments_s": _collection_s(items),
+                    "videos": len({int(i.video["id"]) for i in items}),
+                    "has_more": more,
+                }
+                for entry, (items, more) in found.items()
+                if items
+            ]
+        }
+
+    return _json(await request.app.state.assembled.db.read(read))
+
+
+async def collection(request: Request) -> Response:
+    """`GET /dashboard/api/collections/{entry_id}` — one entry's moments, repeats marked."""
+    raw = str(request.path_params["entry_id"])
+
+    def read(conn: sqlite3.Connection) -> dict[str, Any]:
+        entry = int(raw) if raw.isdigit() and len(raw) < 12 else -1
+        found = verdicts_collections.by_entry(conn, OWNER_ID).get(entry)
+        if found is None:
+            raise _Refused(
+                "E_UNKNOWN_ENTRY",
+                f"No live interest entry {raw[:24]} to collect moments for.",
+                "use an entry_id from GET /dashboard/api/collections.",
+            )
+        items, more = found
+        text = next(str(e["text"]) for e in profile_store.entries(conn, OWNER_ID) if int(e["id"]) == entry)
+        placed = verdicts_collections.place(conn, items)
+        return {
+            "entry": {"entry_id": entry, "text": text},
+            "moments": [
+                {
+                    "video": _video_json(p.item.video),
+                    "why": p.item.moment.why,
+                    "offset_s": p.item.moment.offset_s,
+                    "end_s": p.item.moment.end_s,
+                    "start_s": p.start_s,
+                    "url": deeplink(p.item.video["public_id"], p.start_s),
+                    "repeat": (
+                        None
+                        if p.repeats is None
+                        else {
+                            "item": p.repeats,
+                            "video_id": items[p.repeats].video["public_id"],
+                            "title": (items[p.repeats].video["title"] or "")[:TITLE_CHARS],
+                            "whole": p.whole,
+                        }
+                    ),
+                }
+                for p in placed
+            ],
+            "moments_s": _collection_s(items),
+            "has_more": more,
         }
 
     try:

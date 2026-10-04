@@ -13,6 +13,7 @@ from typing import Any, Sequence
 
 from ..db.queries import QUERYABLE_INDEX_STATES
 from ..jobs import store as jobs_store
+from .novelty import Span
 
 # After every indexing job, `high` (50) and plain (100) alike: a verdict is
 # never what an index waits behind (§3.2).
@@ -113,16 +114,17 @@ def save(
     model: str,
     explored: bool = False,
     matches: Sequence[Match] = (),
+    overlaps: Sequence[Span] = (),
 ) -> None:
     """Insert or replace the video's verdict. A rerun keeps `notified_at`."""
     conn.execute(
-        "INSERT INTO verdicts"
-        " (video_id, score, reason, summary, moments, profile_rev, model, explored, matches)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO verdicts (video_id, score, reason, summary, moments, profile_rev,"
+        " model, explored, matches, overlaps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT (video_id) DO UPDATE SET score = excluded.score,"
         " reason = excluded.reason, summary = excluded.summary, moments = excluded.moments,"
         " profile_rev = excluded.profile_rev, model = excluded.model,"
-        " explored = excluded.explored, matches = excluded.matches, created_at = unixepoch()",
+        " explored = excluded.explored, matches = excluded.matches,"
+        " overlaps = excluded.overlaps, created_at = unixepoch()",
         (
             video_id,
             score,
@@ -133,6 +135,7 @@ def save(
             model,
             int(explored),
             json.dumps([m.__dict__ for m in matches]),
+            json.dumps([o.__dict__ for o in overlaps]),
         ),
     )
 
@@ -152,6 +155,37 @@ def moments_of(row: sqlite3.Row) -> list[Moment]:
         )
         for m in json.loads(row["moments"])
     ]
+
+
+def overlaps_of(row: sqlite3.Row) -> list[Span]:
+    return [
+        Span(int(o["video_id"]), float(o["start_s"]), float(o["end_s"]), float(o["seen_s"]))
+        for o in json.loads(row["overlaps"])
+    ]
+
+
+# A repeat that starts this soon after a moment's start still covers it: a
+# chunk is 45 s at a 30 s stride, so a span's edges are that coarse.
+SKIP_SLACK_S = 15.0
+
+
+def start_after(
+    offset_s: float, end_s: float | None, spans: Sequence[Span]
+) -> tuple[float, list[Span], bool]:
+    """Where a moment's link starts, the repeats it touches, and whether they
+    cover all of it. The link starts past every repeat that covers its start;
+    when they cover the whole moment, it starts where the moment does."""
+    reach = end_s if end_s is not None else offset_s
+    touching = [s for s in spans if s.start_s <= reach and s.end_s > offset_s]
+    start = offset_s
+    moved = True
+    while moved:
+        moved = False
+        for s in touching:
+            if s.start_s - SKIP_SLACK_S <= start < s.end_s:
+                start, moved = s.end_s, True
+    whole = end_s is not None and start >= end_s
+    return (offset_s if whole else start), touching, whole
 
 
 def matches_json(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[list[dict[str, Any]]]:

@@ -1298,7 +1298,8 @@ CREATE TABLE verdicts (
   notified_at INTEGER,                        -- kept across a rerun
   explored    INTEGER NOT NULL DEFAULT 0      -- 0011: 1 = rescored without the negative
               CHECK (explored IN (0,1)),      --   entries, shown as outside the profile
-  matches     TEXT    NOT NULL DEFAULT '[]'   -- 0014: JSON [{entry_id, direction, strength}], ≤ 4
+  matches     TEXT    NOT NULL DEFAULT '[]',  -- 0014: JSON [{entry_id, direction, strength}], ≤ 4
+  overlaps    TEXT    NOT NULL DEFAULT '[]'   -- 0023: JSON [{video_id, start_s, end_s, seen_s}], ≤ 8
 ) STRICT;
 CREATE INDEX verdicts_recent ON verdicts(created_at DESC);
 ```
@@ -1311,6 +1312,11 @@ is checked at its start only. A moment that
 fails is dropped, never moved to a nearby cue. A reindex rewrites `cues`, so
 `mark_ready` queues a new verdict when the stored one has a moment whose receipt
 no longer holds, and when the video has none yet.
+
+`overlaps` (0023, companion.md §3.2) are the stretches this video repeats from
+videos the owner saw: `start_s`–`end_s` here says what `video_id` (a `videos`
+row id) says from `seen_s`. Written with the verdict; a verdict from before
+0023 reads `[]` until rescored.
 
 ### 1.14 `devices`
 
