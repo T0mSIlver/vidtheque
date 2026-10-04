@@ -38,7 +38,6 @@ from .cimd import (
     LoopbackRedirectClient,
     looks_like_cimd,
     matches_registered_redirect,
-    synthesize,
 )
 from .store import AuthStore
 from .tokens import TokenIssuer, hash_refresh_token
@@ -73,7 +72,7 @@ class VidthequeOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode,
         through to the DCR table.
         """
         if android.enabled(self.settings) and client_id == android.client_id(self.settings):
-            return synthesize(client_id, android.client_document(self.settings))
+            return android.client(self.settings)
         if looks_like_cimd(client_id):
             try:
                 return await self.cimd.get(client_id)

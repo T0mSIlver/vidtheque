@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from starlette.testclient import TestClient
@@ -544,31 +545,41 @@ def test_android_fingerprints_are_checked_at_boot() -> None:
         parse_fingerprints("AB:CD")
 
 
-def test_android_documents_exist_only_with_a_signing_key(corpus: Path) -> None:
-    paths = ("/auth/android/client.json", "/.well-known/assetlinks.json", "/auth/android/callback")
+def test_android_app_links_exist_only_with_a_signing_key(corpus: Path) -> None:
+    """The client document is every oauth instance's; the App Link callback and
+    assetlinks.json serve builds from before the app scheme, and need the key."""
+    links = ("/.well-known/assetlinks.json", "/auth/android/callback")
     with client(make_settings(corpus, auth_mode="oauth", password="pw")) as c:
-        assert [c.get(p).status_code for p in paths] == [404, 404, 404]
+        assert [c.get(p).status_code for p in links] == [404, 404]
+        assert c.get("/auth/android/client.json").json()["redirect_uris"] == [
+            "dev.vidtheque.app:/oauth/callback"
+        ]
 
     settings = make_settings(corpus, auth_mode="oauth", password="pw", android_cert_sha256=(APP_PRINT,))
     with client(settings) as c:
-        links = c.get("/.well-known/assetlinks.json").json()
-        assert links[0]["target"]["package_name"] == "dev.vidtheque.app"
-        assert links[0]["target"]["sha256_cert_fingerprints"] == [APP_PRINT]
-        assert c.get("/auth/android/client.json").json()["client_id"] == (
-            "http://localhost:8080/auth/android/client.json"
-        )
+        found = c.get("/.well-known/assetlinks.json").json()
+        assert found[0]["target"]["package_name"] == "dev.vidtheque.app"
+        assert found[0]["target"]["sha256_cert_fingerprints"] == [APP_PRINT]
+        assert c.get("/auth/android/client.json").json()["redirect_uris"] == [
+            "dev.vidtheque.app:/oauth/callback",
+            "http://localhost:8080/auth/android/callback",
+        ]
 
 
-def test_android_app_reaches_the_login_page_without_fetching_itself(corpus: Path) -> None:
-    """The app's client_id is answered in-process: a fetch of our own public
-    URL would leave through the tunnel, and in a test it would hit nothing."""
-    settings = make_settings(corpus, auth_mode="oauth", password="pw", android_cert_sha256=(APP_PRINT,))
-    with client(settings) as c:
+def test_android_app_signs_in_through_its_scheme(corpus: Path) -> None:
+    """The whole flow with the app's redirect: the client_id is answered
+    in-process (a fetch of our own public URL would leave through the tunnel),
+    the consent names the app, and the code trades only with the verifier."""
+    app_id = "http://localhost:8080/auth/android/client.json"
+    redirect = "dev.vidtheque.app:/oauth/callback"
+    verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+    origin = {"Origin": "http://localhost:8080"}
+    with client(make_settings(corpus, auth_mode="oauth", password="pw")) as c:
         resp = c.get(
             "/authorize",
             params={
-                "client_id": "http://localhost:8080/auth/android/client.json",
-                "redirect_uri": "http://localhost:8080/auth/android/callback",
+                "client_id": app_id,
+                "redirect_uri": redirect,
                 "response_type": "code",
                 "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
                 "code_challenge_method": "S256",
@@ -578,4 +589,15 @@ def test_android_app_reaches_the_login_page_without_fetching_itself(corpus: Path
             follow_redirects=False,
         )
         assert resp.status_code in (302, 307), resp.text
-        assert "/auth/login" in resp.headers["location"]
+        rq = parse_qs(urlparse(resp.headers["location"]).query)["rq"][0]
+        consent = c.post("/auth/login", data={"rq": rq, "password": "pw"}, headers=origin)
+        assert "The vidtheque Android app" in consent.text
+
+        back = c.post("/auth/consent", data={"rq": rq, "decision": "allow"}, headers=origin, follow_redirects=False)
+        assert back.headers["location"].startswith(f"{redirect}?")
+        query = parse_qs(urlparse(back.headers["location"]).query)
+        assert query["state"] == ["s"]
+
+        trade = {"grant_type": "authorization_code", "code": query["code"][0], "redirect_uri": redirect, "client_id": app_id}
+        assert c.post("/token", data={**trade, "code_verifier": "x" * 43}).status_code == 400
+        assert "access_token" in c.post("/token", data={**trade, "code_verifier": verifier}).json()

@@ -21,6 +21,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from ..config import Settings
+from . import android
 from .cimd import display_host
 from .provider import OWNER_SUBJECT, VidthequeOAuthProvider
 
@@ -142,9 +143,18 @@ def login_routes(settings: Settings, provider: VidthequeOAuthProvider) -> list[R
     def _consent_body(request_key: str, client_id: str, scopes: list[str]) -> str:
         host = html.escape(display_host(client_id))
         scope_text = html.escape(", ".join(scopes))
-        return (
-            f'<p><span class="host">{host}</span> is asking to connect to your '
+        # Any app can claim the Android client's scheme, so its consent cannot
+        # vouch for the app; it asks the owner whether they started it.
+        asking = (
+            '<p><span class="host">The vidtheque Android app</span> is asking to '
+            "connect to your vidtheque corpus.</p>"
+            '<p class="muted">Allow only if you just tapped Sign in in the app.</p>'
+            if android.enabled(settings) and client_id == android.client_id(settings)
+            else f'<p><span class="host">{host}</span> is asking to connect to your '
             "vidtheque corpus.</p>"
+        )
+        return (
+            f"{asking}"
             f'<p class="muted">Scopes: {scope_text}</p>'
             f'<form method="post" action="/auth/consent">'
             f'<input type="hidden" name="rq" value="{html.escape(request_key)}">'
