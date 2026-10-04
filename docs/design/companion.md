@@ -166,7 +166,8 @@ hour apart. A day with no signals is `idle` and calls no model.
 One per video, written after indexing. Table
 `verdicts(video_id, score, reason, summary, moments, matches, profile_rev, model, created_at, notified_at)`.
 
-- **score 0–3**, each tied to an action: 0 skip, 1 the summary is enough,
+- **score 0–3** (*amended 2026-10-04, #156:* what the feed shows is the
+  week's tier, §3.4), each tied to an action: 0 skip, 1 the summary is enough,
   2 watch the moments, 3 watch it whole. 1 is the default for an on-topic but
   ordinary video; a 2 means at least one moment is clearly worth this owner's
   time given the profile. The first backfill (100 videos, 2026-10-03) scored
@@ -268,6 +269,41 @@ week: of the verdicts scored 2–3, the share you opened, watched or asked
 about. If that number does not rise, the profile is not learning, and we will
 see it.
 
+### 3.4 Rank within the week
+
+*Added 2026-10-04 (#156).* The first backfill scored 65 of 100 videos 2, about
+87 hours of moments: one video at a time, the model cannot say which 2 is
+worth more than another. So the verdict keeps its 0–3 score, and its reason
+line still explains it; the feed's order and its 3s come from comparing the
+week's verdicts with each other.
+
+- **The week** runs Monday 00:00 to Sunday 24:00 in the box's local time,
+  keyed by its Monday as YYYY-MM-DD; a video belongs to the week it was
+  published in. The weekly brief (#158) uses the same week.
+- **The candidates** are the week's verdicts scored 2 or 3, at most 40,
+  highest score and newest first.
+- **One model call** (`week_rank`) reads the profile and every candidate's
+  title, channel, minutes asked, score, reason, summary and moments, and
+  answers an order and a `top` of at most 5, the videos worth watching whole.
+  The server holds the answer to the candidates: unknown ids are dropped, a
+  candidate left out goes last in the fallback order, at most 5 are on top
+  whatever the model says, and the top ranks above the rest. A week with one
+  candidate needs no call; it keeps its score.
+- **When:** at the end of a verdict job, once no other verdict job waits, for
+  each week touched by a verdict of the last 8 days whose candidates changed
+  since its last ranking or whose last ranking failed, at most 12 weeks a pass.
+  A backfill so ranks each week once, at the end. A failed ranking never fails
+  the verdict; the week keeps its last ranking and is tried again next time.
+- **What the feed shows** (`tier`): 3 for the week's top, 2 for the other
+  candidates. A candidate judged since the last ranking follows the ranked
+  ones and shows 2. A week never ranked (the model off, or written before
+  0017) reads in the fallback order, score then profile matches then newest,
+  and its first 5 scored 3 show 3. A 2+ verdict with no publication date has
+  no week and shows 2.
+
+Push still follows the verdict's own score (§6); moving it to the tier is
+#158's.
+
 ## 4. The model behind the triage agent
 
 Today the only LLM caller is the demo's `OpenRouter` class in
@@ -301,6 +337,7 @@ weekly Claude limit is the budget that runs out first. All new vars land in
 *Added 2026-10-03 (Tom: "track every API call").* The client records every
 completion in `llm_calls` (index-schema §1.16), whatever its outcome:
 purpose (`verdict`, `verdict_explore` for the exploration rescore,
+`week_rank` for the week's ranking (§3.4),
 `nightly_update`, `unknown` for a caller that names none), the video, backend,
 model, the token counts the backend reported, latency, outcome and cost.
 `build_model` takes the database, so no caller can build a model whose calls

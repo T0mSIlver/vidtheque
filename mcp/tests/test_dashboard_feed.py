@@ -556,3 +556,15 @@ def test_devices_refuse_a_malformed_token(client: TestClient, body: dict) -> Non
     refused = client.post(f"{API}/devices", json=body, headers=BEARER)
     assert refused.status_code == 400
     assert refused.json()["error"] == "E_BAD_PARAM"
+
+
+def test_feed_rows_show_the_weeks_tier_beside_the_verdicts_score(client: TestClient) -> None:
+    items = {i["video_id"]: i for i in client.get(f"{API}/feed", headers=BEARER).json()["items"]}
+    karpathy = items["kCc8FmEb1nY"]
+    # Unranked, alone among its week's 3s: the fallback keeps it a 3.
+    assert (karpathy["score"], karpathy["tier"], karpathy["week_rank"]) == (3, 3, 1)
+    assert len(karpathy["week"]) == 10
+    body = client.get(f"{API}/verdicts/kCc8FmEb1nY", headers=BEARER).json()
+    assert (body["tier"], body["week"], body["week_rank"]) == (3, karpathy["week"], 1)
+    skipped = client.get(f"{API}/feed?band=skipped", headers=BEARER).json()["items"]
+    assert all(i["tier"] == i["score"] and i["week_rank"] is None for i in skipped)

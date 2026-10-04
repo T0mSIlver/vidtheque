@@ -29,7 +29,7 @@ from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
 from ..profile import store as profile_store
 from ..tools.base import CALL_CONTEXT, CallContext, Deps
 from ..tools.library import video_summary
-from . import novelty, store
+from . import novelty, store, week
 
 if TYPE_CHECKING:
     from ..push.notify import Notifier
@@ -187,7 +187,9 @@ def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient
     if PushSettings.from_env().credentials:
         http = http or httpx.AsyncClient()
         notifier = build_notifier(deps.db, http)
-    return VerdictStage(deps, model, model_label(settings), push=notifier), http
+    label = model_label(settings)
+    ranker = week.WeekRanker(deps.db, model, label)
+    return VerdictStage(deps, model, label, push=notifier, ranker=ranker), http
 
 
 class VerdictStage:
@@ -200,9 +202,11 @@ class VerdictStage:
         label: str,
         rng: random.Random | None = None,
         push: "Notifier | None" = None,
+        ranker: "week.WeekRanker | None" = None,
     ) -> None:
         self.deps = deps
         self.push = push
+        self.ranker = ranker
         self.model = model
         self.label = label
         # Injected so tests decide which verdicts explore.
@@ -293,6 +297,12 @@ class VerdictStage:
             else:
                 if reached:
                     await ctx.log(f"pushed to {reached} phone(s)")
+        # Once no other verdict waits, so a backfill ranks each week once (§3.4).
+        if self.ranker is not None and not await db.read(_other_verdict_queued):
+            try:
+                await self.ranker.rank_pending(ctx.log)
+            except Exception as exc:  # noqa: BLE001 - a ranking never fails the verdict
+                await ctx.log(f"week ranking failed: {type(exc).__name__}: {exc}", "warn")
 
     async def _ask(self, prompt: str, video_id: int) -> dict[str, Any]:
         try:
@@ -406,6 +416,13 @@ def middle_lines(lines: list[str], budget: int) -> str:
     tail.reverse()
     omitted = len(lines) - len(head) - len(tail)
     return "\n".join([*head, f"[… {omitted} cues omitted …]", *tail])
+
+
+def _other_verdict_queued(conn: sqlite3.Connection) -> bool:
+    return (
+        conn.execute("SELECT 1 FROM jobs WHERE kind = 'verdict' AND state = 'queued' LIMIT 1").fetchone()
+        is not None
+    )
 
 
 def _video_arg(conn: sqlite3.Connection, job_id: int) -> int:
