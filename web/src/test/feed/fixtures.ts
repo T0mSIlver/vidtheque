@@ -341,6 +341,21 @@ export const WEEK = {
   capped: false,
 };
 
+/** One of Claude's picks atop the week (companion.md §6.4). */
+export const CLAUDE_PICK = {
+  video_id: "pick0000001",
+  title: "Paged attention from the allocator up",
+  channel: "GPU MODE",
+  duration_s: 3600.0,
+  published_at: 1_791_110_000,
+  source: "claude",
+  day: "2026-09-30",
+  reason: "Answers the cache question your server work keeps hitting.",
+  score: 2,
+  moments: [{ offset_s: 600, end_s: 960, why: "the block table" }],
+  moments_s: 360,
+};
+
 export const OUTSIDE: OutsideWeek = {
   week: "2026-10-05",
   picks: [

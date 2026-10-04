@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
 import { mountDashboard } from "@/test/dashboard/harness";
-import { WEEK } from "@/test/feed/fixtures";
+import { CLAUDE_PICK, WEEK } from "@/test/feed/fixtures";
 import { WeekView } from "./WeekView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
@@ -53,6 +53,17 @@ describe("WeekView", () => {
       "/feed?week=2026-09-21",
     );
     expect(screen.queryByRole("link", { name: "The week after" })).toBeNull();
+  });
+
+  it("opens with Claude's picks and their reasons, apart from the fitted list", async () => {
+    await mount({ "/dashboard/api/week": { body: { ...WEEK, picks: [CLAUDE_PICK] } } });
+    const picks = await screen.findByRole("region", { name: "Claude’s picks" });
+    const [row] = within(picks).getAllByRole("link");
+    expect(row).toHaveAttribute("href", "/feed/pick0000001");
+    expect(within(row).getByText(CLAUDE_PICK.reason)).toBeInTheDocument();
+    expect(within(row).getByText("6 of 60 min")).toBeInTheDocument();
+    const fitted = screen.getByRole("list", { name: "Worth your time" });
+    expect(within(fitted).queryByText(CLAUDE_PICK.title)).toBeNull();
   });
 
   it("shows the budget per day and what each day asks", async () => {

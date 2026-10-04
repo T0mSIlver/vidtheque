@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { ClaudePicks } from "@/components/feed/ClaudePicks";
 import { OutsideBand } from "@/components/feed/OutsidePicks";
 import { FeedFailure } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
@@ -62,6 +63,8 @@ function Loaded({ week, onBudget }: { week: Week; onBudget: () => void }) {
         <Budget week={week} onSaved={onBudget} />
         <Days week={week} />
       </section>
+
+      <ClaudePicks picks={week.picks} />
 
       <ol className={styles.rows} aria-label="Worth your time">
         {week.items.map((item) => (
