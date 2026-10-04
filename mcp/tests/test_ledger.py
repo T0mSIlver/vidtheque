@@ -136,7 +136,7 @@ def test_weeks_count_hits_regret_and_misses(conn) -> None:
     assert week["hits"] == {"kept": 2, "offered": 4, "rate": 0.5, "capped": False}
     # Two watched a minute or more; the 1 thumbed down after it is the regret.
     assert week["regret"] == {"down": 1, "watched": 2, "rate": 0.5, "capped": False}
-    assert week["misses"] == {"count": 2, "pending": 1, "shared": 4, "capped": False}
+    assert week["misses"] == {"count": 2, "pending": 1, "shared": 4, "skipped": 0, "capped": False}
     last = ledger.weeks(conn, NOW)["weeks"][1]
     assert last["hits"]["offered"] == 0 and last["hits"]["rate"] is None
 
@@ -151,6 +151,25 @@ def test_a_miss_waits_for_its_verdict_and_reads_the_follow_at_share_time(conn) -
     _video(conn, "unjudged001")
     assert ledger.miss_of(conn, "unjudged001", T + 10) == (None, "no verdict yet")
     assert ledger.miss_of(conn, "absent00001", T) == (None, "not indexed yet")
+
+
+def test_a_skip_called_wrong_in_the_brief_is_a_miss(conn) -> None:
+    # 0019 (#158) lands after this; its table as that branch defines it.
+    conn.execute(
+        "CREATE TABLE skip_verdicts (owner_id INTEGER NOT NULL DEFAULT 1, video_id INTEGER NOT NULL,"
+        " answer TEXT NOT NULL, source TEXT NOT NULL, score INTEGER NOT NULL,"
+        " at INTEGER NOT NULL, PRIMARY KEY (owner_id, video_id))"
+    )
+    wrong = _video(conn, "skippedwron")
+    fair = _video(conn, "skippedfair")
+    _verdict(conn, wrong, 1)
+    _verdict(conn, fair, 0)
+    conn.execute("INSERT INTO skip_verdicts VALUES (1, ?, 'wrong', 'audit', 1, ?)", (wrong, T - 60))
+    conn.execute("INSERT INTO skip_verdicts VALUES (1, ?, 'right', 'audit', 0, ?)", (fair, T - 60))
+    # Also shared: still one miss.
+    ledger.record_share(conn, "skippedwron", now=T - 30)
+    misses = ledger.weeks(conn, NOW)["weeks"][0]["misses"]
+    assert misses == {"count": 1, "pending": 0, "shared": 1, "skipped": 1, "capped": False}
 
 
 def test_week_starts_on_the_boxs_monday() -> None:

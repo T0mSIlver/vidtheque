@@ -3877,10 +3877,14 @@ each starting Monday 00:00 on the box's clock:
  "weeks": [{"start": 1791756000, "current": true,
             "hits": {"kept": 2, "offered": 9, "rate": 0.222, "capped": false},
             "regret": {"down": 0, "watched": 3, "rate": 0.0, "capped": false},
-            "misses": {"count": 1, "pending": 1, "shared": 3, "capped": false}}]}
+            "misses": {"count": 1, "pending": 1, "shared": 3, "skipped": 0,
+                       "capped": false}}]}
 ```
 
-`rate` is null when its denominator is 0. Every figure is computed on read,
+`rate` is null when its denominator is 0. `misses.skipped` counts the skips
+answered "I'd watch this" (#158), read only once its `skip_verdicts` table
+exists; `count` is the shared misses and those, a video in both counted once.
+Every figure is computed on read,
 so a thumb given this week to last week's video moves last week's hit rate.
 Each cohort reads at most 500 videos a week and says `capped` past that. No
 parameters. The time budget (#156) adds its minutes asked against budget to

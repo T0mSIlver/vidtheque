@@ -420,7 +420,7 @@ def test_a_share_logs_the_link_and_says_whether_the_feed_missed_it(
         ("aaaaaaaaaaa", "app"),
     ]
     week = client.get(f"{API}/valued-time", headers=BEARER).json()["weeks"][0]
-    assert week["misses"] == {"count": 1, "pending": 1, "shared": 2, "capped": False}
+    assert week["misses"] == {"count": 1, "pending": 1, "shared": 2, "skipped": 0, "capped": False}
 
 
 @pytest.mark.parametrize(

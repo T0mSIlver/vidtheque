@@ -216,14 +216,37 @@ def _misses(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> di
         (owner_id, start, end, COHORT_CAP + 1),
     ).fetchall()
     capped = len(rows) > COHORT_CAP
-    count = pending = 0
+    missed: set[str] = set()
+    pending = 0
     for r in rows[:COHORT_CAP]:
         miss, _ = miss_of(conn, str(r["source_id"]), int(r["at"]), owner_id=owner_id)
         if miss is None:
             pending += 1
         elif miss:
-            count += 1
-    return {"count": count, "pending": pending, "shared": min(len(rows), COHORT_CAP), "capped": capped}
+            missed.add(str(r["source_id"]))
+    skipped = _skipped_wrong(conn, start, end, owner_id)
+    return {
+        # A video both shared and called a wrong skip is one miss.
+        "count": len(missed | skipped),
+        "pending": pending,
+        "shared": min(len(rows), COHORT_CAP),
+        "skipped": len(skipped),
+        "capped": capped or len(skipped) >= COHORT_CAP,
+    }
+
+
+def _skipped_wrong(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> set[str]:
+    """Skips the owner answered "I'd watch this" in the weekly brief (#158, migration 0019)."""
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'skip_verdicts'").fetchone() is None:
+        return set()
+    return {
+        str(r[0])
+        for r in conn.execute(
+            "SELECT v.source_id FROM skip_verdicts k JOIN videos v ON v.id = k.video_id"
+            " WHERE k.owner_id = ? AND k.answer = 'wrong' AND k.at >= ? AND k.at < ? LIMIT ?",
+            (owner_id, start, end, COHORT_CAP),
+        )
+    }
 
 
 def _rate(part: int, whole: int) -> float | None:
