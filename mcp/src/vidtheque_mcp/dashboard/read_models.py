@@ -1817,6 +1817,8 @@ def follow_row_json(row: Any) -> dict[str, Any]:
         "next_check_at": _epoch(row["next_check_at"]),
         "last_check_at": _epoch(row["last_sync_at"]),
         "last_new_at": _epoch(row["last_new_at"]),
+        # A trial follow's end (following.md §10.7); null on a lasting follow.
+        "trial_until": _epoch(row["trial_until"]),
     }
 
 

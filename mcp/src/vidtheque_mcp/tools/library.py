@@ -565,6 +565,7 @@ def _follow_lines(
         lines.append(
             f"  {name:<24} {brief_rule(Rules.from_row(row))} · last check {last} · "
             f"{entry['brought_in']} brought in"
+            + (f" · trial until {iso_minute(row['trial_until'])}" if row["trial_until"] is not None else "")
         )
     if total > len(entries):
         lines.append(f"  … and {total - len(entries)} more")
@@ -590,6 +591,9 @@ def _follows_payload(band: dict[str, int], entries: list[dict[str, Any]]) -> dic
                 if entry["row"]["last_sync_at"]
                 else None,
                 "brought_in": entry["brought_in"],
+                "trial_until": iso_minute(entry["row"]["trial_until"])
+                if entry["row"]["trial_until"] is not None
+                else None,
             }
             for entry in entries
         ],

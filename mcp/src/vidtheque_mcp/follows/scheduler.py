@@ -48,8 +48,10 @@ async def enqueue_due(db: object, *, enabled: bool = True, limit: int = MAX_ENQU
 
 
 def _enqueue(conn: sqlite3.Connection, limit: int) -> int:
-    from . import store
+    from . import store, trials
 
+    # Trials past their end are kept or ended first, so an ended one is never queued.
+    trials.settle(conn)
     enqueued = 0
     for follow in store.due(conn, limit):
         collection_id = int(follow["collection_id"])

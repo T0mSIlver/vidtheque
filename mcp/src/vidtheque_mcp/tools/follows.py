@@ -1,10 +1,10 @@
 """`follow-channel` — start, pause, resume, check or stop a following.
 
-Five verbs on one tool rather than five tools, because they are five things to
+Six verbs on one tool rather than six tools, because they are six things to
 say about one object, and a model choosing between `pause-follow` and
 `unfollow-channel` would be choosing between two names for the same noun. Each
 extra tool is permanent context in every session (DECISIONS.md's description
-budget is the same argument), and none of these five verbs needs its own.
+budget is the same argument), and none of these six verbs needs its own.
 
 **Nothing here talks to YouTube.** Creating a follow is a database row, and the
 display name is read off the URL — a probe would make `action="follow"` a
@@ -29,7 +29,7 @@ from urllib.parse import parse_qs, urlsplit
 from mcp_types import CallToolResult
 
 from ..errors import ToolError, bad_param
-from ..follows import store
+from ..follows import store, trials
 from ..follows.params import build_rules
 from ..follows.rules import Rules, describe
 from ..pipeline.settings import PipelineSettings
@@ -37,7 +37,7 @@ from ..pipeline.sources import is_indexable_url, looks_like_container
 from ..text import duration_clock, iso_minute, middle_truncate
 from .base import Deps, handle_errors, text_result
 
-ACTIONS = ("follow", "unfollow", "pause", "resume", "check_now")
+ACTIONS = ("follow", "trial", "unfollow", "pause", "resume", "check_now")
 
 # A URL is caller-supplied and unbounded; every line that echoes one is capped,
 # for the reason `bad_time` caps the value it rejects (2026-08-10 audit, F-14).
@@ -94,7 +94,8 @@ async def follow_channel(
     if action not in ACTIONS:
         raise bad_param(
             f"action must be one of {', '.join(ACTIONS)}.",
-            'action="follow" starts one; the other four name a follow you already have.',
+            'action="follow" starts one, action="trial" one that lasts 14 days; the other '
+            "four name a follow you already have.",
         )
     needle = (url or "").strip()
     if not needle:
@@ -113,7 +114,7 @@ async def follow_channel(
         )
 
     settings = _pipeline_settings()
-    if action == "follow":
+    if action in ("follow", "trial"):
         rules = build_rules(
             tabs=tabs,
             min_duration=min_duration,
@@ -131,7 +132,7 @@ async def follow_channel(
             # here as well as for the ones the dashboard makes.
             default_interval_s=settings.follow_interval_s,
         )
-        return await _follow(deps, needle, title, rules, settings)
+        return await _follow(deps, needle, title, rules, settings, trial=action == "trial")
 
     row = await deps.db.read(lambda c: store.find(c, needle))
     if row is None:
@@ -163,7 +164,13 @@ async def follow_channel(
 
 
 async def _follow(
-    deps: Deps, raw: str, title: str | None, rules: Rules, settings: PipelineSettings
+    deps: Deps,
+    raw: str,
+    title: str | None,
+    rules: Rules,
+    settings: PipelineSettings,
+    *,
+    trial: bool = False,
 ) -> CallToolResult:
     source_url = _normalize(raw)
     if not is_indexable_url(source_url):
@@ -205,17 +212,24 @@ async def _follow(
 
     existing = await deps.db.read(lambda c: store.by_source_url(c, source_url))
     if existing is not None:
+        if not trial and existing["trial_until"] is not None:
+            return await _make_lasting(deps, existing, settings)
         return await _already_following(deps, existing, settings)
 
-    collection_id = await deps.db.write(
-        lambda c: store.create(c, title=name, source_url=source_url, kind=kind, rules=rules)
-    )
+    def create(c: sqlite3.Connection) -> int:
+        collection_id = store.create(c, title=name, source_url=source_url, kind=kind, rules=rules)
+        if trial:
+            trials.start(c, collection_id)
+        return collection_id
+
+    collection_id = await deps.db.write(create)
     row = await deps.db.read(lambda c: store.get(c, collection_id))
     if row is None:  # pragma: no cover - the write above just created it
         raise ToolError("E_INTERNAL", "the follow was written but could not be read back.")
 
     lines = [
-        f"Following: {name} ({kind}) — {middle_truncate(source_url, MAX_URL_CHARS)}",
+        f"{'On trial' if trial else 'Following'}: {name} ({kind}) — "
+        f"{middle_truncate(source_url, MAX_URL_CHARS)}",
         # No probe ran, so the name is a reading of the URL and nothing more.
         # Saying so costs a line and is cheaper than the request that would
         # make it authoritative; an operator seeing the handle where they
@@ -235,7 +249,29 @@ async def _follow(
     lines.append(nxt)
     return text_result(
         "\n".join(lines),
-        await _structured(deps, "follow", row, rules, settings, nxt, already_following=False),
+        await _structured(
+            deps, "trial" if trial else "follow", row, rules, settings, nxt, already_following=False
+        ),
+    )
+
+
+async def _make_lasting(deps: Deps, row: sqlite3.Row, settings: PipelineSettings) -> CallToolResult:
+    """`follow` on a trial: the same follow, now with no end."""
+    collection_id = int(row["collection_id"])
+    await deps.db.write(lambda c: trials.make_lasting(c, collection_id))
+    row = await _reread(deps, row, collection_id)
+    rules = Rules.from_row(row)
+    name = str(row["title"])
+    lines = [
+        f"Following: {name} ({row['kind']}) is now a lasting follow; its trial end was cleared.",
+        f"Rule: {describe(rules, name=name)}",
+    ]
+    lines.extend(await _state_lines(deps, row, rules, settings))
+    nxt = f'next: follow-channel url="{row["slug"]}" action="check_now" to look for new uploads sooner.'
+    lines.append(nxt)
+    return text_result(
+        "\n".join(lines),
+        await _structured(deps, "follow", row, rules, settings, nxt, already_following=True),
     )
 
 
@@ -496,6 +532,11 @@ async def _state_lines(
         f"State: {_state_word(row)} · {_every(rules)} · next check {due} · last check "
         f"{iso_minute(row['last_sync_at']) if row['last_sync_at'] else 'never'}",
     ]
+    if row["trial_until"] is not None:
+        lines.append(
+            f"Trial: ends {iso_minute(row['trial_until'])} unless a video it brings in gets "
+            'a thumbs up or a full watch; action="follow" keeps it now.'
+        )
     if rules.mode == "review":
         lines.append(
             "Mode: review — candidates are held for you and nothing is queued "
@@ -608,6 +649,7 @@ def _follow_fields(row: sqlite3.Row) -> dict[str, Any]:
         "check_interval_s": int(row["check_interval_s"]),
         "next_check_at": iso_minute(row["next_check_at"]),
         "last_check_at": iso_minute(row["last_sync_at"]) if row["last_sync_at"] else None,
+        "trial_until": iso_minute(row["trial_until"]) if row["trial_until"] is not None else None,
     }
 
 

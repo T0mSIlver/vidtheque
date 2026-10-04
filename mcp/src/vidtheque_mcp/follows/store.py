@@ -65,7 +65,7 @@ SELECT c.id            AS collection_id,
        f.backfill, f.max_per_check, f.mode, f.check_interval_s,
        f.next_check_at, f.last_new_at, f.fail_count,
        f.last_error_code, f.last_error_message,
-       f.created_at, f.updated_at
+       f.created_at, f.updated_at, f.trial_until
   FROM follows f
   JOIN collections c ON c.id = f.collection_id
 """

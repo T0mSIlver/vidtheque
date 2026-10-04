@@ -170,20 +170,19 @@ force_reindex is for a job that actually reported "failed".
 
 FOLLOW_CHANNEL = """
 Follow a YouTube channel or playlist: new uploads that match your rule are
-indexed on their own, on a schedule. One tool, five verbs —
-action="follow|unfollow|pause|resume|check_now".
+indexed on their own, on a schedule. One tool, six verbs —
+action="follow|trial|unfollow|pause|resume|check_now".
 
-USE WHEN: the user wants to keep up with a source rather than paste its videos
-one at a time, or asks to stop, pause, resume or re-check something they
-already follow.
+USE WHEN: the user wants a source's new uploads without pasting each one, or
+asks to stop, pause, resume or re-check something they already follow.
 
 DO NOT USE: for one video or a one-off playlist (index-video); to see what is
 already followed (corpus-summary include_follows=true).
 
-Nothing is fetched here — the first check runs on the next tick. Bound what it
-takes with tabs, min_duration, max_per_check and title_include; mode="review"
-holds candidates instead of queueing them. Unfollowing keeps every video it
-brought in.
+Nothing is fetched here — the first check runs on the next tick. Bound it with
+tabs, min_duration, max_per_check and title_include; mode="review" holds
+candidates instead of queueing them. action="trial" lapses after 14 days unless
+a video it brought in is liked. Unfollowing keeps its videos.
 """.strip()
 
 TAG_VIDEO = """
