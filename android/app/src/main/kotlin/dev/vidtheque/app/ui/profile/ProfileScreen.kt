@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.vidtheque.app.data.CostWindow
+import dev.vidtheque.app.data.ValuedTime
 import dev.vidtheque.app.data.PROFILE_PROMPT
 import dev.vidtheque.app.data.ProfileEntry
 import dev.vidtheque.app.data.ProfileEvent
@@ -85,6 +86,7 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
     val ui by model.ui.collectAsStateWithLifecycle()
     val pushOn by model.pushOn.collectAsStateWithLifecycle()
     val costs by hiltViewModel<CostViewModel>().month.collectAsStateWithLifecycle()
+    val ledger by hiltViewModel<ValuedTimeViewModel>().ledger.collectAsStateWithLifecycle()
     // Asked when the reader turns notifications on, never at launch.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) model.setPush(true)
@@ -103,6 +105,7 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
         onOlder = model::older,
         push = if (model.pushAvailable) pushOn else null,
         costs = costs,
+        ledger = ledger,
         onPush = { on ->
             if (!on) model.setPush(false)
             else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -134,6 +137,7 @@ fun ProfileContent(
     push: Boolean? = null,
     onPush: (Boolean) -> Unit = {},
     costs: CostWindow? = null,
+    ledger: ValuedTime? = null,
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val profile = ui.profile
@@ -187,6 +191,7 @@ fun ProfileContent(
                 )
             }
             if (push != null) item { Notifications(push, enabled = !ui.busy, onPush) }
+            ledger?.let { item { ValuedTimeCard(it) } }
             if (costs != null && costs.calls > 0) item { CostCard(costs) }
             if (profile.entries.isEmpty()) {
                 item { Text("No interests yet, so every verdict is scored without them.", style = MaterialTheme.typography.bodyLarge) }

@@ -8,7 +8,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
+import androidx.compose.material3.SnackbarHostState
+import dev.vidtheque.app.data.Hits
+import dev.vidtheque.app.data.History
+import dev.vidtheque.app.data.Misses
+import dev.vidtheque.app.data.Profile
+import dev.vidtheque.app.data.ProfileEntry
+import dev.vidtheque.app.data.Regret
 import dev.vidtheque.app.data.SearchHit
+import dev.vidtheque.app.data.ValuedTime
+import dev.vidtheque.app.data.Week
+import dev.vidtheque.app.ui.profile.ProfileContent
+import dev.vidtheque.app.ui.profile.ProfileUi
 import dev.vidtheque.app.ui.search.SearchContent
 import dev.vidtheque.app.ui.search.SearchUi
 import dev.vidtheque.app.ui.signin.SignInScreen
@@ -53,5 +64,33 @@ class ScreenshotTest {
             }
         }
         compose.onRoot().captureRoboImage("screenshots/search.png")
+    }
+
+    @Test
+    fun valuedTime() {
+        val ledger = ValuedTime(
+            0.1,
+            listOf(
+                Week(1791756000, true, Hits(3, 7, 0.429), Regret(1, 6, 0.167), Misses(2, 1, 4)),
+                Week(1791151200, false, Hits(4, 10, 0.4), Regret(0, 5, 0.0), Misses(1, 0, 2)),
+            ),
+        )
+        val profile = Profile(
+            12,
+            40,
+            listOf(ProfileEntry(7, "Coding agent evals", 0.9, "nightly"), ProfileEntry(3, "Local inference", 0.6, "owner")),
+            History(emptyList(), false),
+        )
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                ProfileContent(
+                    ui = ProfileUi(profile = profile),
+                    snackbar = SnackbarHostState(),
+                    onBack = {}, onSignOut = {}, onRetry = {}, onDrop = {}, onRevert = {}, onOlder = {}, onBuild = {},
+                    ledger = ledger,
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/valued-time.png")
     }
 }
