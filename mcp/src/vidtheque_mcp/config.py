@@ -52,6 +52,11 @@ def _env(name: str, default: str | None = None) -> str | None:
     return default
 
 
+def _worker_url(raw: str) -> str:
+    # `none` is the no-worker install; an empty value already means the default.
+    return "" if raw.strip().lower() == "none" else raw.rstrip("/")
+
+
 def _int_env(name: str, default: int) -> int:
     raw = _env(name)
     if raw is None:
@@ -266,7 +271,7 @@ class Settings:
         settings = cls(
             data_dir=data_dir,
             public_url=public_url,
-            worker_url=(_env("WORKER_URL", "http://worker:8081") or "").rstrip("/"),
+            worker_url=_worker_url(_env("WORKER_URL", "http://worker:8081") or ""),
             auth_mode=mode,
             static_token=_env("VIDTHEQUE_TOKEN"),
             password=_env("VIDTHEQUE_PASSWORD"),
