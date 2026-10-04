@@ -31,6 +31,8 @@ export const FeedItem = FeedVideo.extend({
   /** Scored 2+ only once rescored without the negative entries. */
   explored: z.boolean().optional().default(false),
   matches: z.array(Match).optional().default([]),
+  /** Seconds the moments cover; null for moments written before spans. */
+  moments_s: seconds().nullable().optional().default(null),
   judged_at: epoch(),
 });
 export type FeedItem = z.infer<typeof FeedItem>;
@@ -78,6 +80,8 @@ export type FeedFacets = z.infer<typeof FeedFacets>;
 export const Moment = z.object({
   cue_id: count(),
   offset_s: seconds(),
+  /** Where the moment ends: its last cue's end; null before spans. */
+  end_s: seconds().nullable().optional().default(null),
   why: z.string(),
   url: httpUrl(),
 });
@@ -97,6 +101,7 @@ export const Verdict = z.object({
   summary: z.string(),
   moments: z.array(Moment),
   moments_dropped: count(),
+  moments_s: seconds().nullable().optional().default(null),
   profile_rev: count(),
   model: z.string().nullable(),
   judged_at: epoch(),

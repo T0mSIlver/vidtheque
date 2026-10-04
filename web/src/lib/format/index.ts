@@ -11,6 +11,16 @@ export function clock(seconds: number): string {
   return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
 }
 
+/** What a verdict asks of you: "6 of 42 min" when its moments have spans and
+ *  cover a part of the video, else the video's length (companion.md §3.1). */
+export function asked(momentsS: number | null | undefined, durationS: number): string {
+  if (momentsS == null || momentsS <= 0 || durationS <= 0) return clock(durationS);
+  const whole = Math.max(1, Math.round(durationS / 60));
+  // A short moment still costs a minute; never more than the video.
+  const part = Math.min(whole, Math.max(1, Math.round(momentsS / 60)));
+  return `${part} of ${whole} min`;
+}
+
 /** The three parts a receipt is printed in (`components/Receipt`). */
 export interface ReceiptParts {
   /** `youtu.be/` — which surface, trailing slash included. */

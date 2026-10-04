@@ -38,7 +38,8 @@ describe("VideoView", () => {
     const view = await mount();
     const moment = await screen.findByRole("link", { name: /the self-attention block/ });
     expect(moment).toHaveAttribute("href", "https://youtu.be/kCc8FmEb1nY?t=840");
-    expect(screen.getByText("14:02")).toBeInTheDocument();
+    expect(screen.getByText("14:02–20:14")).toBeInTheDocument();
+    expect(screen.getByText(/6 of 116 min/)).toBeInTheDocument();
     expect(screen.getByText(/1 moment is left out/)).toBeInTheDocument();
     expect(
       screen.getByLabelText("Strongly matches an interest: Evals for coding agents"),

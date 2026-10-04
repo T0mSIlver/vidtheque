@@ -8,7 +8,7 @@ import { z } from "zod";
 import { dashboard, DashboardError, echoOf } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import { FeedVideo, type FeedbackState, type Moment, type Verdict } from "@/lib/dashboard/schemas";
-import { clock, day } from "@/lib/format";
+import { asked, clock, day } from "@/lib/format";
 import { claudeUrl, videoPrompt } from "@/lib/feed/words";
 
 // One verdict: the summary, the moments as receipts, and what you thought of
@@ -90,7 +90,7 @@ function Loaded({ verdict }: { verdict: Verdict }) {
             <Score score={verdict.score} />
             {verdict.explored ? <Outside /> : null}
             <span className={styles.duration}>
-              {clock(video.duration_s)}
+              {asked(verdict.moments_s, video.duration_s)}
               {video.published_at ? ` · ${day(video.published_at)}` : ""}
             </span>
           </p>
@@ -148,7 +148,10 @@ function Moments({
                 void dashboard.signal("watch", videoId, moment.offset_s).catch(() => {})
               }
             >
-              <span className={styles.timecode}>{clock(moment.offset_s)}</span>
+              <span className={styles.timecode}>
+                {clock(moment.offset_s)}
+                {moment.end_s != null ? `–${clock(moment.end_s)}` : ""}
+              </span>
               <span className={styles.why}>{moment.why}</span>
               <span className={styles.arrow} aria-hidden="true">
                 ↗
