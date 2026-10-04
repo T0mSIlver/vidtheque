@@ -285,9 +285,10 @@ read live from `GET /dashboard/api/valued-time` (dashboard.md §25.12):
 
 - **Hit rate**: of the videos scored 2–3 and published that week, the share
   kept, meaning thumbed up or watched past half the moments. A moment is
-  watched when one stretch in the player starts at most 5 s after it and runs
-  a minute past it (or to the end); a video with no moment needs half its
-  length. Opens alone never count: opening the page or a bounce back from
+  watched when one stretch in the player starts at most 5 s after it and
+  passes the middle of its span (a minute past it for a moment written before
+  spans, never past the video's end); a video with no moment needs half its
+  length, overlapping stretches counted once. Opens alone never count: opening the page or a bounce back from
   YouTube is not a hit.
 - **Regret**: of the videos watched that week for a minute or more, the share
   thumbed down after it. Target under 10%.

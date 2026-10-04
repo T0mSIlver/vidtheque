@@ -89,16 +89,19 @@ def test_watch_time_only_lands_on_a_watch(conn) -> None:
 @pytest.mark.parametrize(
     ("moments", "spans", "kept"),
     [
-        ([100.0, 400.0], [(95.0, 170.0)], True),  # one of two
-        ([100.0, 400.0, 500.0], [(95.0, 170.0)], False),  # one of three
-        ([100.0, 400.0, 500.0], [(95.0, 170.0), (400.0, 470.0)], True),
-        ([100.0], [(0.0, 120.0)], False),  # left before a minute of it
-        ([100.0], [(110.0, 200.0)], False),  # started past it
-        ([590.0], [(590.0, 600.0)], True),  # to the end of the video
+        ([(100.0, None), (400.0, None)], [(95.0, 170.0)], True),  # one of two
+        ([(100.0, None), (400.0, None), (500.0, None)], [(95.0, 170.0)], False),  # one of three
+        ([(100.0, None), (400.0, None), (500.0, None)], [(95.0, 170.0), (400.0, 470.0)], True),
+        ([(100.0, None)], [(0.0, 120.0)], False),  # left before a minute of it
+        ([(100.0, None)], [(110.0, 200.0)], False),  # started past it
+        ([(590.0, None)], [(590.0, 600.0)], True),  # to the end of the video
+        ([(100.0, 300.0)], [(100.0, 210.0)], True),  # past the span's middle
+        ([(100.0, 300.0)], [(100.0, 190.0)], False),
+        ([(100.0, 110.0)], [(100.0, 106.0)], True),  # a short span needs no full minute
         ([], [(0.0, 290.0)], False),
         ([], [(0.0, 150.0), (300.0, 450.0)], True),  # half of 600 s
         ([], [(0.0, 150.0), (0.0, 150.0), (100.0, 200.0)], False),  # overlaps count once
-        ([100.0], [], False),
+        ([(100.0, None)], [], False),
     ],
 )
 def test_kept_means_past_half_the_moments(moments, spans, kept) -> None:
