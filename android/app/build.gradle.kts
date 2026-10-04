@@ -12,6 +12,15 @@ val instance = providers.gradleProperty("vidtheque.instance").getOrElse("").trim
 // The one instance whose server holds this build's Firebase key, so the only one push can reach.
 val pushInstance = providers.gradleProperty("vidtheque.pushInstance").getOrElse(instance).trimEnd('/')
 
+// CI passes the tag's X.Y.Z (android-vX.Y.Z); each part gets three digits, so a release
+// always installs over the one before. Local builds stay 1 and "dev".
+val release = providers.gradleProperty("vidtheque.version").orNull
+val releaseCode = release?.let { v ->
+    val parts = Regex("""(\d{1,3})\.(\d{1,3})\.(\d{1,3})""").matchEntire(v)?.destructured?.toList()
+        ?: throw GradleException("vidtheque.version must be X.Y.Z, got $v")
+    parts.fold(0) { code, part -> code * 1000 + part.toInt() }
+}
+
 android {
     namespace = "dev.vidtheque.app"
     compileSdk = 37
@@ -20,8 +29,8 @@ android {
         applicationId = "dev.vidtheque.app"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseCode ?: 1
+        versionName = release ?: "dev"
         buildConfigField("String", "INSTANCE", "\"$instance\"")
         buildConfigField("String", "PUSH_INSTANCE", "\"$pushInstance\"")
         // The Firebase project's app identity (not secrets): from the environment in CI
