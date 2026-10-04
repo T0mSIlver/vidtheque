@@ -237,6 +237,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                             onWeek = week::go,
                             onBudget = week::budget,
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
+                            onPick = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty(), alone = true)) },
                             onShowAll = { stack.add(AllKey) },
                             card = sharedCard,
                             list = weekList,

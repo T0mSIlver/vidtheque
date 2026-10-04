@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -44,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -52,6 +58,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import dev.vidtheque.app.data.ClaudePick
 import dev.vidtheque.app.data.FeedItem
 import dev.vidtheque.app.data.FittedWeek
 import dev.vidtheque.app.ui.feed.Hero
@@ -59,6 +66,8 @@ import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Row
 import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.feed.plainStill
+import dev.vidtheque.app.ui.asked
+import dev.vidtheque.app.ui.dated
 import dev.vidtheque.app.ui.minutes
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -78,6 +87,7 @@ fun WeekScreen(
     onWeek: (String?) -> Unit,
     onBudget: (Int) -> Unit,
     onOpen: (FeedItem) -> Unit,
+    onPick: (ClaudePick) -> Unit,
     onShowAll: () -> Unit,
     still: Still = plainStill,
     card: Lift = { _, _ -> Modifier },
@@ -114,6 +124,10 @@ fun WeekScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item(key = "head") { Head(week, ui.budgetFailed, onWeek, onBudget) }
+                if (week.picks.isNotEmpty()) {
+                    item(key = "picks") { Text("Claude's picks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
+                    itemsIndexed(week.picks, key = { _, it -> "pick-${it.videoId}" }) { _, pick -> PickRow(pick, still) { onPick(pick) } }
+                }
                 itemsIndexed(week.items, key = { _, it -> "week-${it.videoId}" }) { index, item ->
                     if (index == 0) Hero(item, still, card) { onOpen(item) } else Row(item, still, card) { onOpen(item) }
                 }
@@ -125,8 +139,40 @@ fun WeekScreen(
 }
 
 /** Where [videoId]'s card sits in the week's list, as the LazyColumn lays it out, or null. */
-fun weekIndex(ui: WeekUi, videoId: String): Int? =
-    ui.week?.items?.indexOfFirst { it.videoId == videoId }?.takeIf { it >= 0 }?.let { it + 1 }
+fun weekIndex(ui: WeekUi, videoId: String): Int? {
+    val week = ui.week ?: return null
+    // The head, then the picks' label and rows when there are any.
+    val before = 1 + if (week.picks.isEmpty()) 0 else 1 + week.picks.size
+    return week.items.indexOfFirst { it.videoId == videoId }.takeIf { it >= 0 }?.let { it + before }
+}
+
+/**
+ * One of Claude's picks (companion.md §6.4): its reason in full, since the reason is the point.
+ * Opened alone, with no shared card: the same video may also be in the fitted list below.
+ */
+@Composable
+private fun PickRow(pick: ClaudePick, still: Still, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            still(pick.videoId, Modifier.width(128.dp).aspectRatio(16f / 9f).clip(MaterialTheme.shapes.medium))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    listOfNotNull(pick.channel, pick.publishedAt?.let { dated(it) }, asked(pick.momentsS, pick.durationS)).joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(pick.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Text(pick.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp))
+    }
+}
 
 @Composable
 private fun Head(week: FittedWeek, budgetFailed: Boolean, onWeek: (String?) -> Unit, onBudget: (Int) -> Unit) {
