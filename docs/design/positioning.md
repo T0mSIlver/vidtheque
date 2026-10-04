@@ -7,9 +7,30 @@ commit as the surface that needs the change, and say why. The evidence and the
 rejected alternatives live in `research/positioning-2026-08-10.md` (append-only);
 this file contains only what we ship.
 
+**Amended (Tom, 2026-10-04): the lead.** The position below put the agent
+first. The product's goal puts the person learning first: an agent that
+filters the channels you follow and recommends the videos, and the minutes,
+you will learn from. The lead sentence now opens every public surface, and
+"your agent watched it" becomes the second pillar. The reasoning is in the
+one-product proposal of 2026-10-04 (issue #194).
+
 ---
 
+## The lead
+
+**vidtheque watches the channels you follow and tells you which videos, and
+which minutes, will teach you something.**
+
+Every recommendation carries its receipts: a short summary, the reason it
+matched what you care about, and links to the second on YouTube. A public
+page that shows recommendations shows them for a published sample profile
+and ends in "run your own", because only your own instance learns what you
+care about.
+
 ## The position
+
+The lead above opens public copy. This position is what the lead stands
+on, and it still governs the agent-facing copy.
 
 **vidtheque empowers AI with the knowledge of the builders and creators.**
 
@@ -87,13 +108,17 @@ mangled `youtu.be` id is a broken promise).
 
 ## Surface implications
 
-- **Demo site** = the proof: "the knowledge of AI Engineer 2026, on tap —
-  ask it something." Real frames, real receipts, the corpus visible (the
-  wall/grid), an agent visibly consuming it (activity lines, the field-test
-  transcripts as the shown artifact). The corpus grid ends with the roadmap
-  affordance: *+ follow a channel*.
+- **Landing** = the lead sentence, three sample recommendations, then two
+  ways in: see the sample feed, run your own. *(Amended 2026-10-04.)*
+- **Demo site** = the proof: a sample feed of recommendations over AI
+  Engineer 2026, scored against one published sample profile, with Ask over
+  the same corpus below it. Real receipts, short attributed excerpts, links
+  to the second on YouTube. *(Amended 2026-10-04; it was "the knowledge of
+  AI Engineer 2026, on tap, ask it something".)*
 - **Dashboard** = the instrument: sells nothing, narrates nothing (the cull
-  is contract now). Its charisma is receipts rendered perfectly.
+  is contract now). Its charisma is receipts rendered perfectly. Every
+  self-hosted instance has one; the public box does not serve it
+  *(amended 2026-10-04)*.
 - **README** = the twin line early, pillars as sections, quickstart before
   any protocol word.
 - **Roadmap line that makes the position true by construction:** follow
