@@ -512,6 +512,15 @@ Two surfaces, each answering one question. Nothing appears on both.
     channel filter, a profile-entry filter and newest/oldest order narrow it
     (dashboard.md §25.2). Plain text, not semantic search, which is its own
     page (#127).
+    *Amended 2026-10-04 (#156):* the feed is the week, fitted to your time,
+    then a stop. It lists the week's highest-ranked verdicts (§3.4) that fit
+    the budget below, with the total they ask and what each day asks, and
+    ends with "That is everything worth your time this week." and what did
+    not fit. Arrows step to earlier weeks. **Show all videos**, under that
+    line, opens every judged video, newest first, with the search and filters
+    above (`band=all`); it is the only way to the rest, one tap away, and
+    never mixed into the fitted list. Tom: he must still be able to see every
+    video when he wants to.
   - **Video**: summary, moments (each a `youtu.be/ID?t=` link), thumbs up and
     down, mute, **Ask Claude**.
   - **Profile**: entries, history with revert, **Ask Claude to build my
@@ -655,6 +664,14 @@ Kept out on purpose, so the loop ships polished:
   vidtheque through the profile tool, never the other way.
 - Multi-user. `owner_id` stays `1` (DECISIONS.md #2).
 - iOS.
+
+*Added 2026-10-04 (#156):* one rule that outlives v1. **No vertical swipe feed
+of moments.** The feed is a list that ends; a stream that plays the next
+moment on a swipe has no end and spends the time the budget exists to keep.
+The pager between videos on the Android video screen stays navigation only:
+it swipes through the list the video was opened from, the fitted week or
+"Show all", plays nothing on its own, and sends no signal but the `open` of
+the page it settles on.
 
 ## 9. Order of work
 
