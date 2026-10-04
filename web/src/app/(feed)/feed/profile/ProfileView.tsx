@@ -1,13 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { FeedFailure } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
 import { refusalOf, useWrite } from "@/components/dashboard/kit/write";
-import { dashboard } from "@/lib/dashboard/client";
+import { dashboard, FEED } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
-import type { Profile, ProfileEntry, ProfileEvent } from "@/lib/dashboard/schemas";
-import { at, iso } from "@/lib/format";
+import type { Collections, Profile, ProfileEntry, ProfileEvent } from "@/lib/dashboard/schemas";
+import { at, count, iso, minutes } from "@/lib/format";
 import { claudeUrl, lapses, parsePasted, PROFILE_PROMPT, signed } from "@/lib/feed/words";
 
 // The interest profile: what scores the next verdict, who changed it and why,
@@ -24,14 +25,24 @@ function useProfilePage(before: number | null) {
   );
 }
 
+type Collected = Collections["collections"][number];
+
 export function ProfileView() {
   const profile = useProfilePage(null);
+  // Each wanted entry's moments (companion.md §6.2); the profile draws without them.
+  const collections = useResource<Collections>("collections", (signal) =>
+    dashboard.collections(signal),
+  );
+  const collected = new Map(
+    (collections.data?.collections ?? []).map((c) => [c.entry_id, c] as const),
+  );
   // History pages read so far, by their `before`; a write starts over.
   const [befores, setBefores] = useState<(number | null)[]>([null]);
 
   function changed() {
     setBefores([null]);
     profile.reload();
+    collections.reload();
   }
 
   if (!profile.data) {
@@ -46,7 +57,7 @@ export function ProfileView() {
         <h1 className={styles.label} id="entries">
           Your interests · {entries.length} of {max_entries}
         </h1>
-        <Entries entries={entries} onChanged={changed} />
+        <Entries entries={entries} collected={collected} onChanged={changed} />
       </section>
 
       <section className={styles.build} aria-labelledby="build">
@@ -79,7 +90,15 @@ export function ProfileView() {
   );
 }
 
-function Entries({ entries, onChanged }: { entries: ProfileEntry[]; onChanged: () => void }) {
+function Entries({
+  entries,
+  collected,
+  onChanged,
+}: {
+  entries: ProfileEntry[];
+  collected: Map<number, Collected>;
+  onChanged: () => void;
+}) {
   if (entries.length === 0) {
     return (
       <p className={styles.quiet}>
@@ -92,13 +111,26 @@ function Entries({ entries, onChanged }: { entries: ProfileEntry[]; onChanged: (
   return (
     <ul className={styles.rows}>
       {sorted.map((entry) => (
-        <Entry key={entry.id} entry={entry} onChanged={onChanged} />
+        <Entry
+          key={entry.id}
+          entry={entry}
+          collection={collected.get(entry.id)}
+          onChanged={onChanged}
+        />
       ))}
     </ul>
   );
 }
 
-function Entry({ entry, onChanged }: { entry: ProfileEntry; onChanged: () => void }) {
+function Entry({
+  entry,
+  collection,
+  onChanged,
+}: {
+  entry: ProfileEntry;
+  collection: Collected | undefined;
+  onChanged: () => void;
+}) {
   const [drop, run] = useWrite(
     () => dashboard.profileOps({ drop: [entry.id], reason: "dropped on the profile screen" }),
     onChanged,
@@ -117,6 +149,13 @@ function Entry({ entry, onChanged }: { entry: ProfileEntry; onChanged: () => voi
             : ""}
           {entry.evidence ? ` · ${entry.evidence}` : ""}
         </span>
+        {collection ? (
+          <Link className={styles.collected} href={`${FEED}/profile/${entry.id}`}>
+            {collection.moments === 1 ? "1 moment" : `${count(collection.moments)} moments`},{" "}
+            {minutes(collection.moments_s)}
+            <span aria-hidden="true"> ›</span>
+          </Link>
+        ) : null}
         {drop.status === "failed" ? (
           <span className={styles.refused} role="status">
             {refusalOf(drop.error).message}

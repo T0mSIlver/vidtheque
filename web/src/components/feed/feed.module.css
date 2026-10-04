@@ -404,6 +404,29 @@
   color: var(--fg2);
 }
 
+/* A collection moment's video, above the moment itself. */
+.source {
+  composes: t-machine-sm from global;
+  display: block;
+  padding-top: var(--s3);
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+
+.momentText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* What a moment repeats from a video you saw, and where its link starts. */
+.repeat {
+  composes: t-machine-sm from global;
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+
 .moment:hover .why {
   text-decoration: underline;
   text-decoration-color: var(--gold-44);
@@ -523,6 +546,15 @@
   composes: t-machine-sm from global;
   color: var(--fg2);
   overflow-wrap: anywhere;
+}
+
+/* An entry's moment collection (companion.md §6.2): a tap away, in gold like
+   every other way into a video. */
+.collected {
+  composes: t-machine-sm from global;
+  align-self: flex-start;
+  padding-block: var(--s1);
+  color: var(--gold);
 }
 
 .small {

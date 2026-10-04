@@ -100,6 +100,77 @@ export const VERDICT = {
   judged_at: now - 10,
 };
 
+/** A verdict whose first moment opens on a stretch the owner saw elsewhere (#171). */
+export const REPEATING_VERDICT = {
+  ...VERDICT,
+  moments: [
+    {
+      ...VERDICT.moments[0],
+      start_s: 942.5,
+      url: "https://youtu.be/kCc8FmEb1nY?t=940",
+      repeat: {
+        video_id: "zduSFxRajkE",
+        title: "Making LLMs go brrr",
+        channel: "GPU MODE",
+        whole: false,
+      },
+    },
+  ],
+  overlaps: [
+    {
+      video: { video_id: "zduSFxRajkE", title: "Making LLMs go brrr", channel: "GPU MODE" },
+      start_s: 800.0,
+      end_s: 942.5,
+      seen_s: 125.0,
+      url: "https://youtu.be/zduSFxRajkE?t=123",
+    },
+  ],
+};
+
+export const COLLECTIONS = {
+  collections: [
+    {
+      entry_id: 3,
+      text: "Local inference on consumer GPUs",
+      moments: 4,
+      moments_s: 1140,
+      videos: 3,
+      has_more: false,
+    },
+  ],
+};
+
+export const COLLECTION = {
+  entry: { entry_id: 3, text: "Local inference on consumer GPUs" },
+  moments: [
+    {
+      video: VERDICT.video,
+      why: "the self-attention block",
+      offset_s: 842.5,
+      end_s: 1214.5,
+      start_s: 842.5,
+      url: "https://youtu.be/kCc8FmEb1nY?t=840",
+      repeat: null,
+    },
+    {
+      video: {
+        ...VERDICT.video,
+        video_id: "zduSFxRajkE",
+        title: "Making LLMs go brrr",
+        channel: "GPU MODE",
+      },
+      why: "paged attention, after a recap",
+      offset_s: 30.0,
+      end_s: 150.0,
+      start_s: 105.0,
+      url: "https://youtu.be/zduSFxRajkE?t=103",
+      repeat: { item: 0, video_id: "kCc8FmEb1nY", title: VERDICT.video.title, whole: false },
+    },
+  ],
+  moments_s: 492.0,
+  has_more: true,
+};
+
 export const PROFILE = {
   revision: 3,
   max_entries: 40,

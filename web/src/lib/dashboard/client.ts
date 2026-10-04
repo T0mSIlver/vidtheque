@@ -18,6 +18,8 @@ import {
   Costs,
   CuePage,
   BudgetStored,
+  Collection,
+  Collections,
   Feed,
   FeedFacets,
   FollowCreated,
@@ -302,6 +304,13 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     },
     profile(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/profile${suffix(query)}`, Profile, { signal });
+    },
+    /** Each wanted entry's moment count and minutes (§25.14). */
+    collections(signal?: AbortSignal) {
+      return get(`${ROOT}/api/collections`, Collections, { signal });
+    },
+    collection(entryId: number, signal?: AbortSignal) {
+      return get(`${ROOT}/api/collections/${entryId}`, Collection, { signal });
     },
     /** `offset_s` only with `watch` (§25.4). */
     signal(kind: SignalKind, videoId: string, offsetS?: number) {

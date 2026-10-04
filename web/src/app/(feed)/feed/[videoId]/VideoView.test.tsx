@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
 import { mountDashboard, type Route } from "@/test/dashboard/harness";
-import { VERDICT } from "@/test/feed/fixtures";
+import { REPEATING_VERDICT, VERDICT } from "@/test/feed/fixtures";
 import { VideoView } from "./VideoView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
@@ -52,6 +52,26 @@ describe("VideoView", () => {
         kind: "watch",
         video_id: "kCc8FmEb1nY",
         offset_s: 842.5,
+      }),
+    );
+  });
+
+  it("starts a moment after what you saw elsewhere, and names where", async () => {
+    const view = await mount({ body: REPEATING_VERDICT });
+    const moment = await screen.findByRole("link", { name: /the self-attention block/ });
+    expect(moment).toHaveAttribute("href", "https://youtu.be/kCc8FmEb1nY?t=940");
+    expect(screen.getByText("15:42–20:14")).toBeInTheDocument();
+    expect(screen.getByText("Skips 1:40 you saw in “Making LLMs go brrr”")).toBeInTheDocument();
+    const seen = screen.getByRole("link", { name: /GPU MODE · said there from 2:05/ });
+    expect(seen).toHaveAttribute("href", "/feed/zduSFxRajkE");
+    expect(seen).toHaveTextContent("13:20–15:42");
+
+    await userEvent.click(moment);
+    await waitFor(() =>
+      expect(signals(view)).toContainEqual({
+        kind: "watch",
+        video_id: "kCc8FmEb1nY",
+        offset_s: 942.5,
       }),
     );
   });
