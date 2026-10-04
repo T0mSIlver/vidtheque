@@ -58,7 +58,9 @@ from .public import (
     public_routes,
 )
 from .public.ask import OpenRouter
+from .public import sample as sample_feed
 from .public.runs import Runs
+from .public.sample import SampleFeedSettings
 from .server import build_mcp_server
 from .tools import Deps
 from .profile.nightly import build_nightly
@@ -240,9 +242,14 @@ def assemble(
     )
 
     # Verdicts (companion.md §3.2): a handler for the `verdict` job kind, and
-    # the indexing pipeline queues one after each video it marks ready. Never
-    # on a public deployment, which has no owner to triage for.
-    verdicts, llm_http = (None, None) if public.enabled else build_verdicts(deps)
+    # the indexing pipeline queues one after each video it marks ready. A
+    # public deployment has no owner to triage for, so it judges only against
+    # the published sample profile, and only when asked to (demo-site.md §8).
+    sample = public.enabled and SampleFeedSettings.from_env().enabled
+    if public.enabled and not sample:
+        verdicts, llm_http = None, None
+    else:
+        verdicts, llm_http = build_verdicts(deps, sample=sample)
     if verdicts is not None:
         runner.handlers["verdict"] = verdicts
         if isinstance(runner.pipeline, IndexingPipeline):
@@ -298,6 +305,10 @@ def assemble(
             await budget.open()
         if not db.vectors.enabled:
             logger.warning("vector legs disabled: %s", db.vectors.reason)
+        if verdicts is not None and sample and run_pipeline:
+            synced = await db.write(sample_feed.sync_profile)
+            queued = await db.write(sample_feed.queue_stale)
+            logger.info("sample feed: %d profile change(s), %d verdict(s) queued", synced, queued)
         async with mcp.session_manager.run():
             if run_pipeline:
                 await runner.start()

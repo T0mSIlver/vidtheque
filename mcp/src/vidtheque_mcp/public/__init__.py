@@ -58,7 +58,9 @@ def public_routes() -> list[Route]:
     routed elsewhere. A private deployment is unaffected — this whole list is
     registered only under `VIDTHEQUE_PUBLIC_READONLY=1`.
     """
-    return api_routes(demo=True)
+    from .feed import feed_endpoint
+
+    return [*api_routes(demo=True), Route("/api/feed", feed_endpoint, methods=["GET"])]
 
 
 def public_middleware(

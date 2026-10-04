@@ -2085,3 +2085,73 @@ shown.
    of this entry stands unchanged: still one set of handlers, still two
    policies, still no second query layer, and `/api/*` is still
    public-mode-only.
+
+---
+
+## 8. The sample feed (added 2026-10-04, Tom; issue #196)
+
+`positioning.md`'s lead, amended the same day, promises recommendations. The
+public box had none: verdicts were off there because it has no owner to triage
+for. It now triages for one published sample profile, and `/demo` shows the
+result. The private instance is unchanged.
+
+### 8.1 The profile and its verdicts
+
+`VIDTHEQUE_SAMPLE_FEED=1`, with `VIDTHEQUE_PUBLIC_READONLY=1` and the companion
+model configured (`VIDTHEQUE_LLM_*`), turns it on. The profile is a constant in
+`mcp/src/vidtheque_mcp/public/sample.py`, so anyone can read what the feed was
+scored against:
+
+| weight | entry |
+|---|---|
+| +0.9 | Coding agent evals |
+| +0.8 | Agent harness design |
+| +0.7 | Context engineering |
+| +0.6 | RL environments |
+| +0.5 | Local inference |
+| -0.6 | Product launch pitches |
+| -0.4 | Funding and hiring |
+
+At boot the server makes the live entries exactly these, writing nothing when
+they already match, then queues a `verdict` job for every queryable video with
+no verdict or with one written under an older profile revision. The stage runs
+without push, week ranking or exploration, so the cost is one model call per
+video: once per video now, again for every video after a corpus generation
+(publishing.md §2: a new generation starts with no verdicts) or a profile edit.
+New channels never join the public corpus (§8.3), so nothing else adds calls.
+
+### 8.2 `GET /api/feed`
+
+Registered with the rest of the facade, in public mode only, charged to the
+`search` bucket.
+
+| param | default | bounds |
+|---|---|---|
+| `tags` | none | up to 10, AND semantics, same validation as `/api/search` |
+| `min_score` | `2` | `0`..`3`; 2 and 3 are the recommendations |
+| `order` | `score` | `score` (score, then newest) or `newest`; anything else is `E_BAD_PARAM` |
+| `limit` | `10` | `1`..`20` |
+| `offset` | `0` | `0`..`1000` |
+
+The payload is `{profile, items, has_more, next_offset}`. `profile` is
+`{name, entries: [{text, weight}]}`, or `null` before the first sync. Each item
+carries the video (`video_id`, `title`, `channel`, `duration_s`,
+`published_at`, `url`, `thumb`), the verdict (`score`, `reason` ≤300 chars,
+`summary` ≤600, `matches: [{text, direction}]`) and up to three `moments`:
+`{offset_s, url, why, excerpt, speaker}`, where `url` is the `youtu.be` link at
+that second and `excerpt` is the cue the moment starts in, cut to 160
+characters.
+
+### 8.3 Copyright posture
+
+The public box serves what other people said. From 2026-10-04:
+
+- New surfaces quote short and attribute: an excerpt of at most 160
+  characters, the talk, the channel and the speaker when known, and a link to
+  the second on YouTube. The feed never sends a transcript passage longer than
+  that.
+- No channel joins the public corpus. It stays the AI Engineer 2026 talks the
+  organizers were asked about; a new one waits for a lawyer's answer to the
+  questions in the one-product proposal.
+- Keyframes stay on the AI Engineer corpus, as before (§5).
+- Removal on request, within 72 hours (`docs/takedown.md`), is unchanged.
