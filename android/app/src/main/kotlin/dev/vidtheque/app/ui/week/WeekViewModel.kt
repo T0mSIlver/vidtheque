@@ -40,7 +40,8 @@ class WeekViewModel @Inject constructor(private val api: Api) : ViewModel() {
         reading = viewModelScope.launch {
             try {
                 val week = api.week(asked)
-                _ui.update { it.copy(week = week) }
+                // The band is the week's: another week's never stays under this one.
+                _ui.update { it.copy(week = week, outside = null) }
                 // Its own read, after the week's: a failure here only hides the band.
                 val outside = try {
                     api.outside(week.week)
