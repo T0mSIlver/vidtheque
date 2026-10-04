@@ -41,7 +41,7 @@ function chapterAt(chapters: Chapter[], second: number): Chapter | null {
 
 /**
  * One bar per shot across the runtime, at percentages computed from the
- * payload's seconds (§20), under the chapters on the same scale (§28.3). A bar
+ * payload's seconds (§20), under the chapters on the same scale (§29.3). A bar
  * has a CSS minimum width because its position is the fact, and links to the
  * strip page holding its first keyframe.
  */

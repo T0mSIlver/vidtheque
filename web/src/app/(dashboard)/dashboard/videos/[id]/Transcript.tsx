@@ -78,7 +78,7 @@ export interface Paragraph {
   speaker: string | null;
 }
 
-/** Consecutive cues as paragraphs a person can skim (§28.3): a cue is a
+/** Consecutive cues as paragraphs a person can skim (§29.3): a cue is a
  *  sentence or less, so one per line read as a list. */
 export function paragraphsOf(cues: Cue[]): Paragraph[] {
   const paragraphs: Paragraph[] = [];
