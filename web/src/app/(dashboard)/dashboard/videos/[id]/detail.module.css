@@ -14,12 +14,6 @@
   color: var(--muted);
 }
 
-.taglist {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-}
-
 /* The failed stage named under the header. Not a notice: the table below
    already carries the alarm. */
 .alarm {
@@ -59,6 +53,51 @@
   /* Named once: the preview drops below the bars by this much. */
   --timeline-h: 3rem;
   margin-top: var(--s8);
+}
+
+/* Chapters on the shots' scale: a segment per chapter, its title inside
+   while it fits. */
+.chapterband {
+  position: relative;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--seam2);
+  border-bottom: 0;
+  background: var(--plate);
+  overflow: hidden;
+}
+
+.chapterseg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-left: 1px solid var(--seam2);
+}
+
+.chapterseg:first-child {
+  border-left: 0;
+}
+
+.chapterlink {
+  composes: t-cell from global;
+  display: block;
+  height: 100%;
+  padding: 0 var(--s2);
+  overflow: hidden;
+  line-height: 1.75rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg2);
+  text-decoration: none;
+}
+
+.chapterlink:hover,
+.chapterlink:focus-visible {
+  color: var(--fg);
+  background: var(--plate3);
 }
 
 .timeline {
@@ -143,7 +182,7 @@
 }
 
 .isBelow {
-  top: var(--timeline-h);
+  top: calc(var(--timeline-h) + 1.75rem);
   transform: translate(-50%, var(--s2));
 }
 
@@ -237,6 +276,10 @@
   margin: 0;
 }
 
+.capped {
+  color: var(--tone-warn);
+}
+
 .legend {
   composes: t-machine-sm from global;
   display: flex;
@@ -294,16 +337,76 @@
 
 /* ----------------------------------------------------------------- frames */
 
-/* Cells sized for reading detection boxes; cards start-align so a long OCR
-   list does not stretch its neighbours. */
+/* One row that scrolls sideways, snapping to a frame; the arrows sit over
+   its two ends and the scrollbar stays thin. */
+.strip {
+  position: relative;
+}
+
 .frames {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: var(--s6) var(--s4);
-  align-items: start;
+  display: flex;
+  gap: var(--s4);
   margin: 0;
-  padding: 0;
+  /* Room for the selected frame's outline, which the scroller would clip. */
+  padding: var(--s1) var(--s1) var(--s3);
   list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--seam2) transparent;
+}
+
+.earlier {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.arrow {
+  position: absolute;
+  top: calc(var(--frame-w) * 9 / 32 - 1.25rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  color: var(--fg);
+  background: var(--over);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+
+.arrow[hidden] {
+  display: none;
+}
+
+.strip:hover .arrow,
+.arrow:focus-visible {
+  opacity: 1;
+}
+
+.arrow:hover {
+  color: var(--accent);
+  border-color: var(--gold-44);
+}
+
+.arrowStart {
+  left: 0;
+}
+
+.arrowEnd {
+  right: 0;
+}
+
+/* On touch the strip is swiped; there is no hover to reveal an arrow. */
+@media (hover: none) {
+  .arrow {
+    display: none;
+  }
 }
 
 /* The strip being replaced by the next page: still readable, visibly old. */
@@ -312,9 +415,21 @@
   transition: opacity var(--t-fast);
 }
 
+.strip {
+  --frame-w: 18rem;
+}
+
 .framecard {
+  flex: 0 0 var(--frame-w);
   min-width: 0;
-  scroll-margin-top: var(--s8);
+  scroll-snap-align: start;
+  scroll-margin: var(--s8);
+}
+
+@media (max-width: 48.75rem) {
+  .strip {
+    --frame-w: 78vw;
+  }
 }
 
 .framecard:target .framebtn,
@@ -352,14 +467,6 @@
   transition: filter var(--t-fast);
 }
 
-.isDup .framebtn img {
-  filter: brightness(0.42) saturate(0.7);
-}
-
-.isDup:hover .framebtn img {
-  filter: none;
-}
-
 .framemeta {
   composes: t-machine-sm from global;
   display: flex;
@@ -379,102 +486,38 @@ a.at:hover {
   text-decoration: underline;
 }
 
-.dupnote {
-  color: var(--muted);
-  border-bottom: 1px dashed var(--seam2);
-}
-
-/* A card's lines scroll past ten; the line and box classes are
-   `frame.module.css`'s, shared with the overlay. */
-.ocrlines {
-  composes: t-cell from global;
-  margin: var(--s2) 0 0;
-  padding: 0;
-  list-style: none;
-  max-height: 11rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.conf {
-  composes: t-machine-sm from global;
-  flex: 0 0 2.25rem;
-  align-self: start;
-  padding-top: 3px;
-  text-align: right;
-  color: var(--muted);
-}
-
 /* ------------------------------------------------------------- transcript */
 
-.cuepos {
-  composes: t-machine-sm from global;
-  margin: 0 0 var(--s2);
-  color: var(--muted);
-}
-
-/* At least roughly what the first batch brings (its rows and one chunk mark,
-   at measured heights), from before it lands, so the page does not move when
-   it does. A batch that fills the box is exact. */
+/* Paragraphs at a reading measure, in a box that reads on as it scrolls. */
 .cuebox {
-  --cue-row: 1.5rem;
-  --cue-mark: 1.3rem;
-  max-height: 26rem;
-  min-block-size: min(
-    26rem,
-    calc(var(--cue-rows, 1) * var(--cue-row) + var(--cue-mark) + var(--s2) * 2 + 0.9rem)
-  );
+  max-height: 70vh;
+  min-block-size: min(70vh, 12rem);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--s2) var(--s3);
+  padding: var(--s3) var(--s4);
   background: var(--console);
   border: 1px solid var(--seam2);
 }
 
-/* A cue wraps to two lines about half the time at phone width. */
-@media (max-width: 48.75rem) {
-  .cuebox {
-    --cue-row: 2.35rem;
-    --cue-mark: 2.1rem;
-  }
-}
-
-.cues {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cue {
-  display: flex;
+.para {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, var(--prose));
   gap: var(--s3);
   align-items: baseline;
-  padding: 2px 0;
 }
 
-/* Inside an embedding chunk, the unit a vector hit points at. */
-.inChunk {
-  box-shadow: inset 2px 0 0 var(--seam2);
-  padding-left: var(--s2);
+.para + .para {
+  margin-top: var(--s3);
 }
 
-.chunkmark {
-  composes: t-label from global;
-  margin: var(--s3) 0 var(--s1);
-  padding-top: var(--s1);
-  color: var(--mark);
-  border-top: 1px solid var(--seam);
-}
-
-.cuetext {
-  composes: t-cell from global;
-  flex: 1 1 auto;
-  min-width: 0;
+.paratext {
+  composes: t-prose from global;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
-.cue .at {
-  flex: 0 0 auto;
+.para .at {
+  justify-self: end;
 }
 
 .speaker {
@@ -488,19 +531,53 @@ a.at:hover {
   color: var(--muted);
 }
 
-/* --------------------------------------------------------------- chapters */
-
-/* A timecode and its title side by side, not `minirow`'s space-between. */
-.chapters {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.cuemore {
+  margin-top: var(--s3);
 }
 
-.chapter {
-  composes: t-cell from global;
+@media (max-width: 48.75rem) {
+  .cuebox {
+    padding: var(--s2) var(--s3);
+  }
+
+  .para {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .para .at {
+    justify-self: start;
+  }
+}
+
+/* -------------------------------------------------------------- statistics */
+
+.stats {
+  margin-top: var(--s8);
+}
+
+.statlist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--s1) var(--s8);
+  margin: 0;
+}
+
+.statlist > div {
   display: flex;
+  justify-content: space-between;
   gap: var(--s3);
-  align-items: baseline;
-  padding: 2px 0;
+  padding: var(--s1) 0;
+  border-bottom: 1px solid var(--seam);
+}
+
+.statLabel {
+  composes: t-cell from global;
+  color: var(--muted);
+}
+
+.statValue {
+  composes: t-machine from global;
+  margin: 0;
+  color: var(--fg);
 }

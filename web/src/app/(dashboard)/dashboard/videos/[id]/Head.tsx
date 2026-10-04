@@ -16,27 +16,46 @@ import {
   Unbroken,
 } from "@/components/dashboard/kit/ui";
 import { useWriteSide } from "@/components/dashboard/kit/write";
+import { Tags } from "../Manage";
 import styles from "./detail.module.css";
+
+/** `data_status` words that mean every leg is there. */
+const FINE_DATA = new Set(["ok", "ready"]);
 
 /** The video's name, states and source facts, and what the pipeline said
  *  about it: notes, the summary's refusal, and any stage that failed. */
-export function Head({ data, tags }: { data: VideoDetail; tags: string[] }) {
+export function Head({
+  data,
+  tags,
+  onTagged,
+}: {
+  data: VideoDetail;
+  tags: string[];
+  onTagged: (tags: string[]) => void;
+}) {
   const { video } = data;
   const failed = data.stages.filter((stage) => stage.state === "failed");
+  // Quiet when fine: a ready video whose data is whole says nothing (§28.3).
+  const fine =
+    video.index_state === "ready" && (!data.data_status || FINE_DATA.has(data.data_status));
   return (
     <>
       {/* Separators glue to the fact before them, with a real space after, so
           a strip keeps its break opportunities. */}
       <PageHead title={video.title}>
-        <Unbroken>
-          <StatePair label="index_state" word={video.index_state} />
-        </Unbroken>{" "}
-        {/* Both words, named, only when they differ (§4.5). */}
-        {data.data_status && data.data_status !== video.index_state ? (
-          <Unbroken>
-            <StatePair label="data_status" word={data.data_status} />
-          </Unbroken>
-        ) : null}
+        {fine ? null : (
+          <>
+            <Unbroken>
+              <StatePair label="index_state" word={video.index_state} />
+            </Unbroken>{" "}
+            {/* Both words, named, only when they differ (§4.5). */}
+            {data.data_status && data.data_status !== video.index_state ? (
+              <Unbroken>
+                <StatePair label="data_status" word={data.data_status} />
+              </Unbroken>
+            ) : null}
+          </>
+        )}
       </PageHead>
 
       <p className={styles.facts}>
@@ -66,24 +85,10 @@ export function Head({ data, tags }: { data: VideoDetail; tags: string[] }) {
         <a href={video.url} rel="noopener noreferrer" target="_blank">
           Open on YouTube
         </a>
-        {tags.length ? (
-          <>
-            <Sep />{" "}
-            <span className={styles.taglist}>
-              {tags.map((tag) => (
-                <DashLink
-                  key={tag}
-                  className={ui.chip}
-                  href={`${ROOT}/videos?tags=${encodeURIComponent(tag)}&index_state=all`}
-                >
-                  {tag}
-                </DashLink>
-              ))}
-            </span>
-          </>
-        ) : null}
         <QueueChannel url={video.url} />
       </p>
+
+      <Tags videoId={video.video_id} tags={tags} onWritten={onTagged} />
 
       <Notes notes={data.notes} />
 

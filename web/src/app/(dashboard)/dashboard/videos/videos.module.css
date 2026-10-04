@@ -1,5 +1,28 @@
 /* The videos table and the two writes on a video. */
 
+/* ------------------------------------------------------------- the band */
+
+.band > form {
+  margin-top: var(--s4);
+}
+
+/* The rare filters: a row of their own under the three used most. */
+.more {
+  flex: 1 1 100%;
+}
+
+/* Closed, the toggle is the band's last line and needs no gap under it. */
+.more > :not([data-open]) > button {
+  margin-bottom: 0;
+}
+
+.moreFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+}
+
 /* ------------------------------------------------------------ date ranges */
 
 .rangeField {
@@ -64,37 +87,24 @@
   white-space: nowrap;
 }
 
-/* One word per pipeline leg, struck through when it is missing. */
-.coverage {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.cov {
-  composes: t-label from global;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 1.25rem;
-  padding: 0 var(--s1);
-  letter-spacing: 0;
-  text-transform: none;
-  border: 1px solid var(--seam);
-}
-
-.covOn {
-  color: var(--tone-ok);
-  background: var(--tone-ok-bg);
-  border-color: var(--tone-ok-line);
-}
-
-.covOff {
+/* Quiet when fine: `ready` with every leg is muted text, not a pill. */
+.fine {
+  composes: t-machine-sm from global;
   color: var(--muted);
-  border-style: dashed;
-  text-decoration: line-through;
+}
+
+.index {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+}
+
+/* A missing leg is the loud case: its name, in the warn tone. */
+.gap {
+  composes: t-machine-sm from global;
+  color: var(--tone-warn);
+  white-space: nowrap;
 }
 
 .taglist {
@@ -110,66 +120,82 @@
 
 /* -------------------------------------------------------------- the writes */
 
-.colActions {
-  white-space: nowrap;
-}
-
-.colActions > * {
-  vertical-align: middle;
-}
-
-.colActions > a {
-  margin-left: var(--s1);
-}
-
-/* A job id replaces the button: it takes the lane's width and the Tag link
-   drops under it, rather than widening the table. */
-.colActions > [data-write] {
-  display: inline-flex;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.manageAction {
-  min-width: 0;
-}
-
-.label {
-  composes: t-label from global;
-  display: block;
-  margin: 0 0 var(--s2);
-  color: var(--muted);
-}
-
-.manageAction > [data-write] {
-  display: block;
+/* A tag is a chip; its remove is a drawn cross inside it, and the add box
+   sits at the end of the row as one more chip. */
+.tags {
   margin-top: var(--s3);
 }
 
-.manageNote {
-  composes: t-cell from global;
-  margin-top: var(--s3);
-  max-width: var(--note);
-  color: var(--muted);
-}
-
-.manageNote code {
-  font-family: var(--mono);
-  font-variant-ligatures: none;
-}
-
-.tagform {
+.tags .taglist {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--s3) var(--s4);
-  margin-top: var(--s3);
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-@media (max-width: 70rem) {
-  .manageAction + .manageAction {
-    margin-top: var(--s8);
-  }
+.tag {
+  composes: t-machine-sm from global;
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  border: 1px solid var(--seam2);
+}
+
+.tag a {
+  padding: 0 var(--s2);
+  color: var(--fg2);
+  text-decoration: none;
+}
+
+.tag a:hover {
+  color: var(--accent);
+}
+
+.untag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 100%;
+  padding: 0;
+  color: var(--fg3);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--seam);
+  cursor: pointer;
+}
+
+.untag:hover,
+.untag:focus-visible {
+  color: var(--tone-bad);
+}
+
+.taginput {
+  composes: t-machine-sm from global;
+  width: 9rem;
+  height: 1.75rem;
+  padding: 0 var(--s2);
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--seam2);
+}
+
+.taginput::placeholder {
+  color: var(--fg3);
+  opacity: 1;
+}
+
+.taginput:focus {
+  border-color: var(--gold-44);
+}
+
+.manage {
+  margin-top: var(--s8);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--seam);
 }
 
 .videos {

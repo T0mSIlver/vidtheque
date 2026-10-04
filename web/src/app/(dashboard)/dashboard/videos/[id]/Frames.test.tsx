@@ -1,30 +1,29 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deferred, type Answer } from "@/test/dashboard/harness";
 import { OWNER_VIDEO } from "@/test/dashboard/library-fixtures";
 import { mountVideo, stripPage, TWO_LINES } from "./detail-harness";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-// Keyframes with their OCR boxes at stored coordinates, the strip's pages, and
-// the enlarged frame.
+// Keyframes with their OCR boxes at stored coordinates, the strip's pages read
+// in place, and the enlarged frame.
 
 describe("the frames panel", () => {
   afterEach(() => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("draws every OCR box at the coordinates the store holds", async () => {
+  it("draws every OCR box at the coordinates the store holds, titled", async () => {
     await mountVideo({ body: OWNER_VIDEO });
 
-    await screen.findByText("Frames, and what the machine read");
-    const boxes = document.body.querySelectorAll("[data-ocrbox]");
-    // Two of the three keyframes carry a line; the third was deduplicated.
-    expect(boxes.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("nvidia-smi 18304MiB")).toBeInTheDocument();
-    expect(screen.getByText("duplicate of #0")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Keyframes" });
+    const box = screen.getByTitle("nvidia-smi 18304MiB · 0.90");
+    expect(box).toHaveAttribute("data-ocrbox");
+    expect(box).toHaveStyle({ left: "0%", top: "0%", width: "100%", height: "100%" });
+    // The lines are the boxes' titles now, not a list under each frame.
+    expect(screen.queryByText("nvidia-smi 18304MiB")).toBeNull();
     // The card is the way into the enlarged frame, not a link out to a JPEG:
     // the still it shows is the 512px one, and the 1280px one is the dialog's.
     const card = screen.getByRole("button", { name: "Keyframe 0 at 0:05" });
@@ -34,106 +33,55 @@ describe("the frames panel", () => {
     );
   });
 
-  // Point at a line and its box lights. Only that direction at this size: a
-  // detection box on a 512px still is a few millimetres of screen, and a
-  // pointer aimed at one would be stealing the click that opens the frame.
-  it("lights a card's box from its line", async () => {
-    await mountVideo({ body: OWNER_VIDEO });
-    await screen.findByText("Frames, and what the machine read");
+  // Frame 7 duplicates frame 0: the strip shows keyframes, so it is not drawn,
+  // and a link that selects it marks the frame it duplicates.
+  it("draws no duplicate, and selects the frame a duplicate stands for", async () => {
+    await mountVideo({ body: OWNER_VIDEO }, { search: "select=7" });
 
-    const line = screen.getByText("nvidia-smi 18304MiB").closest("li");
-    const card = line?.closest("li[id]");
-    const box = card?.querySelector("[data-ocrbox]");
-    expect(box).toBeTruthy();
-    expect(box).not.toHaveAttribute("data-lit");
-
-    await userEvent.hover(line as HTMLElement);
-    expect(box).toHaveAttribute("data-lit");
-    expect(line).toHaveAttribute("data-lit");
-
-    await userEvent.unhover(line as HTMLElement);
-    expect(box).not.toHaveAttribute("data-lit");
+    await screen.findByRole("heading", { name: "Keyframes" });
+    expect(screen.queryByRole("button", { name: "Keyframe 7 at 11:40" })).toBeNull();
+    expect(document.getElementById("frame-0")).toHaveAttribute("data-selected");
   });
 
-  // A strip page replaces one panel: the strip on screen stays until the next
-  // one lands, marked busy, and the link that asked keeps focus.
-  it("keeps the strip on screen while the next page is read", async () => {
-    const later = deferred<Answer>();
-    const { navigate } = await mountVideo(
-      (url) => (url.includes("frame_offset=1") ? later.promise : { body: stripPage(0) }),
+  // Nearing the strip's end reads the next page and appends it; jsdom lays
+  // nothing out, so the strip is always at its end.
+  it("appends the next page as the strip nears its end", async () => {
+    const { calls } = await mountVideo(
+      (url) => ({ body: stripPage(url.includes("frame_offset=1") ? 1 : 0) }),
       { search: "frames=1" },
     );
-    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
-    const next = within(pager).getByRole("link", { name: "Next 1 frames →" });
-    next.focus();
 
-    await navigate("/dashboard/videos/kCc8FmEb1nY?frames=1&frame_offset=1");
-
-    const card = screen.getByRole("button", { name: "Keyframe 0 at 0:05" });
-    expect(card.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
-    expect(
-      screen.getByRole("heading", { name: "Let's build GPT: from scratch" }),
-    ).toBeInTheDocument();
-
-    later.resolve({ body: stripPage(1) });
-    const landed = await screen.findByRole("button", { name: "Keyframe 1 at 7:10" });
-    expect(landed.closest("[aria-busy]")).toBeNull();
-    expect(within(pager).getByRole("link", { name: "Next 1 frames →" })).toBe(next);
-    expect(document.activeElement).toBe(next);
-  });
-
-  // The last page has no Next link, so the one that was used cannot keep focus.
-  it("hands focus to Earlier when the next page is the last", async () => {
-    const { navigate } = await mountVideo(
-      (url) => ({ body: stripPage(url.includes("frame_offset=2") ? 2 : 1) }),
-      { search: "frames=1&frame_offset=1" },
-    );
-    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
-    const next = within(pager).getByRole("link", { name: "Next 1 frames →" });
-    next.focus();
-    // A click the router takes; the test moves the URL itself.
-    next.addEventListener("click", (event) => event.preventDefault(), { once: true });
-    fireEvent.click(next);
-
-    await navigate("/dashboard/videos/kCc8FmEb1nY?frames=1&frame_offset=2");
-
-    await screen.findByRole("button", { name: "Keyframe 7 at 11:40" });
-    expect(document.activeElement).toBe(
-      within(pager).getByRole("link", { name: "← Earlier frames" }),
+    expect(await screen.findByRole("button", { name: "Keyframe 1 at 7:10" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keyframe 0 at 0:05" })).toBeInTheDocument();
+    expect(calls("/dashboard/api/library/").map((call) => call.url)).toContain(
+      "/dashboard/api/library/kCc8FmEb1nY?frames=1&frame_offset=1",
     );
   });
 
-  it("tells a refused strip page inside the panel, over the strip it replaces", async () => {
-    const { navigate } = await mountVideo(
+  it("reads the keyframes before a strip seeded past the first", async () => {
+    await mountVideo((url) => ({ body: stripPage(url.includes("frame_offset=0") ? 0 : 1) }), {
+      search: "frames=1&frame_offset=1",
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Earlier keyframes" }));
+
+    expect(await screen.findByRole("button", { name: "Keyframe 0 at 0:05" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Earlier keyframes" })).toBeNull();
+  });
+
+  it("tells a refused page inside the panel, over the strip it extends", async () => {
+    await mountVideo(
       (url) =>
         url.includes("frame_offset=1")
           ? { status: 400, body: { error: "E_BAD_PARAM", message: "No such page.", next: null } }
           : { body: stripPage(0) },
       { search: "frames=1" },
     );
-    await screen.findByRole("button", { name: "Keyframe 0 at 0:05" });
 
-    await navigate("/dashboard/videos/kCc8FmEb1nY?frames=1&frame_offset=1");
-
-    const panel = screen
-      .getByRole("heading", { name: "Frames, and what the machine read" })
-      .closest("section")!;
+    const panel = (await screen.findByRole("heading", { name: "Keyframes" })).closest("section")!;
     expect(await within(panel).findByText("No such page.")).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "Keyframe 0 at 0:05" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "Try again" })).toBeInTheDocument();
-  });
-
-  it("pages the strip through the URL, keeping the reader's page size", async () => {
-    await mountVideo(
-      { body: { ...OWNER_VIDEO, frames: { ...OWNER_VIDEO.frames, limit: 2, has_more: true } } },
-      { search: "frames=2" },
-    );
-
-    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
-    expect(within(pager).getByRole("link", { name: "Next 2 frames →" })).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?frames=2&frame_offset=2#frames",
-    );
   });
 
   // The enlarged frame — the half of the interaction a 512px card cannot
@@ -142,7 +90,7 @@ describe("the frames panel", () => {
   describe("the enlarged frame", () => {
     it("opens the frame in the page rather than navigating to a JPEG", async () => {
       await mountVideo({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
+      await screen.findByRole("heading", { name: "Keyframes" });
 
       await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
 
@@ -175,7 +123,7 @@ describe("the frames panel", () => {
     // `?select=`, the same address a shot bar would have produced.
     it("marks the opened frame in the URL", async () => {
       await mountVideo({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
+      await screen.findByRole("heading", { name: "Keyframes" });
 
       await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
 
@@ -184,7 +132,7 @@ describe("the frames panel", () => {
 
     it("lights a line from its box and a box from its line", async () => {
       await mountVideo({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
+      await screen.findByRole("heading", { name: "Keyframes" });
       await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
 
       const shot = screen.getByRole("dialog");
@@ -208,7 +156,7 @@ describe("the frames panel", () => {
 
     it("closes on Escape and hands the focus back to the card", async () => {
       await mountVideo({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
+      await screen.findByRole("heading", { name: "Keyframes" });
       const card = screen.getByRole("button", { name: "Keyframe 1 at 7:10" });
 
       await userEvent.click(card);
@@ -223,25 +171,12 @@ describe("the frames panel", () => {
 
     it("closes on the Close control", async () => {
       await mountVideo({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
+      await screen.findByRole("heading", { name: "Keyframes" });
 
       await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
       await userEvent.click(screen.getByRole("button", { name: "Close" }));
 
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-
-    // A frame with nothing on it is the same dialog without the list, and its
-    // pill says which kind of nothing it is.
-    it("says what a deduplicated frame is instead of listing lines", async () => {
-      await mountVideo({ body: OWNER_VIDEO });
-      await screen.findByText("Frames, and what the machine read");
-
-      await userEvent.click(screen.getByRole("button", { name: "Keyframe 7 at 11:40" }));
-
-      const shot = screen.getByRole("dialog");
-      expect(within(shot).getByText(/shot 7 · duplicate of #0 · skipped/)).toBeInTheDocument();
-      expect(shot.textContent).not.toMatch(/null|NaN|undefined/);
     });
   });
 });

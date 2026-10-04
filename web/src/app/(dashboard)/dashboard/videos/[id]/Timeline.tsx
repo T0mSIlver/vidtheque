@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Shot } from "@/lib/dashboard/schemas";
 import { clock, count } from "@/lib/format";
 import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 import { frameLink } from "./query";
+
+/** A chapter narrower than this draws its boundary but not its title, which
+ *  would be an ellipsis and a letter; the tooltip still names it. */
+const TITLE_MIN_PX = 72;
 
 /** A new shot's still waits this long, so a sweep is not one request per bar. */
 const SETTLE_MS = 70;
@@ -18,20 +22,34 @@ const STEPS: Record<string, number | undefined> = {
 };
 
 type Bar = { shot: Shot; left: number; width: number; right: number };
+type Chapter = { start_s: number; title: string };
 type Preview = { shot: Shot; left: number; below: boolean };
 
 function barElement(target: EventTarget | null): Element | null {
   return target instanceof Element ? target.closest("[data-shot]") : null;
 }
 
+/** The chapter holding a second: the last one to start at or before it. */
+function chapterAt(chapters: Chapter[], second: number): Chapter | null {
+  let found: Chapter | null = null;
+  for (const chapter of chapters) {
+    if (chapter.start_s <= second) found = chapter;
+    else break;
+  }
+  return found;
+}
+
 /**
  * One bar per shot across the runtime, at percentages computed from the
- * payload's seconds (§20). A bar has a CSS minimum width because its position
- * is the fact, and links to the strip page holding its first keyframe.
+ * payload's seconds (§20), under the chapters on the same scale (§28.3). A bar
+ * has a CSS minimum width because its position is the fact, and links to the
+ * strip page holding its first keyframe.
  */
 export function Timeline({
   shots,
   capped,
+  kept,
+  chapters,
   runtime,
   framePage,
   search,
@@ -40,6 +58,9 @@ export function Timeline({
 }: {
   shots: Shot[];
   capped: boolean;
+  /** The video's kept keyframes, the count under the band. */
+  kept: number;
+  chapters: Chapter[];
   runtime: number;
   framePage: number;
   search: string;
@@ -49,16 +70,25 @@ export function Timeline({
 }) {
   const band = useRef<HTMLOListElement>(null);
   const scrub = useRef<HTMLDivElement>(null);
+  const chapterBand = useRef<HTMLOListElement>(null);
+  const [bandPx, setBandPx] = useState(0);
+  useEffect(() => {
+    const element = chapterBand.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setBandPx(element.clientWidth));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
+  // A video with no recorded duration is drawn against its furthest shot.
+  const span = runtime > 0 ? runtime : Math.max(...shots.map((s) => s.end_s), 1);
   const bars = useMemo<Bar[]>(() => {
-    // A video with no recorded duration is drawn against its furthest shot.
-    const span = runtime > 0 ? runtime : Math.max(...shots.map((s) => s.end_s), 1);
     return shots.map((shot) => {
       const left = (100 * Math.min(shot.start_s, span)) / span;
       const width = (100 * Math.max(shot.end_s - shot.start_s, 0)) / span || 0.05;
       return { shot, left, width, right: left + width };
     });
-  }, [shots, runtime]);
+  }, [shots, span]);
 
   const { preview, still, show, hide } = useShotPreview(band, scrub);
 
@@ -86,15 +116,8 @@ export function Timeline({
 
   if (!shots.length) {
     return (
-      <Panel id="timeline" title="Scene timeline">
-        <div className={styles.empty}>
-          <p className={styles.emptyLead}>
-            No keyframes were captured, so this video has no shots.
-          </p>
-          <p className={ui.emptyNote}>
-            The <code>keyframe</code> row in Provenance says why.
-          </p>
-        </div>
+      <Panel id="timeline" title="Timeline">
+        <p className={styles.emptyLead}>No keyframes.</p>
       </Panel>
     );
   }
@@ -104,8 +127,39 @@ export function Timeline({
   return (
     <section className={styles.timeband} aria-labelledby="timeline">
       <h2 className={ui.srOnly} id="timeline">
-        Scene timeline
+        Timeline
       </h2>
+      {chapters.length ? (
+        <ol aria-label="Chapters" className={styles.chapterband} ref={chapterBand}>
+          {chapters.map((chapter, index) => {
+            const end = chapters[index + 1]?.start_s ?? span;
+            const left = (100 * Math.min(chapter.start_s, span)) / span;
+            const width = (100 * Math.max(Math.min(end, span) - chapter.start_s, 0)) / span;
+            return (
+              <li
+                className={styles.chapterseg}
+                key={`${chapter.start_s}-${chapter.title}`}
+                style={{ left: `${left}%`, width: `${width}%` }}
+              >
+                {/* The chapter's own start, not a quoted moment (§3.6). */}
+                <a
+                  className={styles.chapterlink}
+                  href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${Math.floor(chapter.start_s)}`}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                  title={`${clock(chapter.start_s)} ${chapter.title}`}
+                >
+                  {(width / 100) * bandPx >= TITLE_MIN_PX ? (
+                    chapter.title
+                  ) : (
+                    <span className={ui.srOnly}>{chapter.title}</span>
+                  )}
+                </a>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
       {/* Arrows move focus between the bars' own links, so Enter always
           follows one. */}
       <ol
@@ -194,30 +248,29 @@ export function Timeline({
           {preview ? `${clock(preview.shot.start_s)}–${clock(preview.shot.end_s)}` : ""}
         </span>
         <span className={styles.scrubmeta}>
-          {preview
-            ? `shot ${preview.shot.shot_id} · ${preview.shot.kept}/${preview.shot.frames} kept`
-            : ""}
+          {preview ? (chapterAt(chapters, preview.shot.start_s)?.title ?? "") : ""}
         </span>
       </div>
       <p className={styles.scale} aria-hidden="true">
         {[0, 25, 50, 75, 100].map((q) => (
           <span className={styles.tick} key={q} style={{ left: `${q}%` }}>
-            {clock((runtime * q) / 100)}
+            {clock((span * q) / 100)}
           </span>
         ))}
       </p>
       <div className={styles.timebandFoot}>
         <p className={styles.panelNote}>
-          {count(shots.length)} shot(s){capped ? ", capped: the video has more" : ""}.
+          <span className={ui.mono}>{count(kept)}</span> keyframes
+          {capped ? <span className={styles.capped}> · timeline capped</span> : null}
         </p>
         <p className={styles.legend}>
           <span>
             <span className={`${styles.swatch} ${styles.swatchKept}`} aria-hidden="true" />
-            keyframes kept
+            kept
           </span>
           <span>
             <span className={`${styles.swatch} ${styles.swatchDedup}`} aria-hidden="true" />
-            every frame deduplicated
+            duplicates only
           </span>
         </p>
       </div>

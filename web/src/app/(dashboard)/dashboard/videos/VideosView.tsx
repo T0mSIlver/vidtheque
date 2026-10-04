@@ -6,14 +6,10 @@ import { dashboard, DashboardError, echoOf, ROOT } from "@/lib/dashboard/client"
 import { useResource } from "@/lib/dashboard/resource";
 import { type Library, type LibraryRow, RefusedLibrary } from "@/lib/dashboard/schemas";
 import { count, day, hms } from "@/lib/format";
-import controls from "@/components/dashboard/kit/controls.module.css";
 import { Notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
 import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
-import { Fold } from "@/components/dashboard/kit/Fold";
 import { Body, DashLink, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
-import { useWriteSide } from "@/components/dashboard/kit/write";
-import { Filters, Narrowing } from "./Filters";
-import { ReindexControl } from "./Manage";
+import { Filters } from "./Filters";
 import { apiQuery, type Band, bandOf, carriedOf, linkTo } from "./query";
 import styles from "./videos.module.css";
 
@@ -29,8 +25,7 @@ const SORTED: Record<string, [string, "ascending" | "descending"]> = {
   indexed_at: ["indexed", "descending"],
 };
 
-// Each leg's word on the chip, and its sentence behind it (§24.3: three bare
-// letters needed the tooltip to read).
+// Each leg's word when it is missing, and its sentence behind it.
 const COVERAGE: [keyof LibraryRow["coverage"], string, string][] = [
   ["transcript", "transcript", "transcript"],
   ["ocr", "ocr", "on-screen text"],
@@ -51,16 +46,9 @@ export function VideosView() {
 
   return (
     <>
-      <PageHead title="Videos">
-        <Narrowing band={band} />
-      </PageHead>
+      <PageHead title="Videos" />
 
-      {/* On a phone the band was the whole first screen (§24.3). */}
-      {gated ? null : (
-        <Fold phone label="the filters">
-          <Filters band={band} />
-        </Fold>
-      )}
+      {gated ? null : <Filters band={band} />}
 
       {!data && told ? (
         <RefusalNotice error={error} variant="notice" id="filter-refused" />
@@ -78,8 +66,6 @@ export function VideosView() {
 function Table({ band, data, offset }: { band: Band; data: Library; offset: string }) {
   const [sortedCol, sortedDir] = SORTED[data.order] ?? [null, null];
   const carried = carriedOf(band, offset);
-  // Absent, not disabled, where no write side is registered (§2.4).
-  const { rendered } = useWriteSide();
   const sort = (col: string) => (sortedCol === col ? sortedDir : null);
 
   return (
@@ -119,7 +105,6 @@ function Table({ band, data, offset }: { band: Band; data: Library; offset: stri
                     sort={sort("duration")}
                   />
                   <th scope="col">State</th>
-                  <th scope="col">Coverage</th>
                   <th scope="col">Tags</th>
                   <SortHead
                     label="Indexed"
@@ -127,16 +112,11 @@ function Table({ band, data, offset }: { band: Band; data: Library; offset: stri
                     carried={carried}
                     sort={sort("indexed")}
                   />
-                  {rendered ? (
-                    <th scope="col" className={styles.colActions}>
-                      Actions
-                    </th>
-                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {data.videos.map((row) => (
-                  <Row key={row.video_id} row={row} actions={rendered} />
+                  <Row key={row.video_id} row={row} />
                 ))}
               </tbody>
             </table>
@@ -177,7 +157,7 @@ function SortHead({
   );
 }
 
-function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
+function Row({ row }: { row: LibraryRow }) {
   const href = `${ROOT}/videos/${encodeURIComponent(row.video_id)}`;
   return (
     <tr>
@@ -218,24 +198,7 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
         {hms(row.duration_s)}
       </td>
       <td className={styles.colState} data-label="State">
-        <Pill state={row.index_state} />
-      </td>
-      <td className={styles.wide} data-label="Coverage">
-        <span className={styles.coverage}>
-          {COVERAGE.map(([key, word, label]) => {
-            const present = row.coverage[key];
-            return (
-              <span
-                key={key}
-                className={`${styles.cov} ${present ? styles.covOn : styles.covOff}`}
-                title={present ? label : `${label} — missing`}
-              >
-                <span aria-hidden="true">{word}</span>
-                <span className={ui.srOnly}>{`${label}: ${present ? "present" : "missing"}`}</span>
-              </span>
-            );
-          })}
-        </span>
+        <Index row={row} />
       </td>
       <td className={styles.wide} data-label="Tags">
         {row.tags.length ? (
@@ -257,16 +220,30 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
       <td data-label="Indexed">
         <time className={ui.nowrap}>{day(row.indexed_at)}</time>
       </td>
-      {/* Tagging needs two text fields, so it lives on the detail page. */}
-      {actions ? (
-        <td className={`${styles.colActions} ${styles.wide}`} data-label="Actions">
-          <ReindexControl videoId={row.video_id} label="Re-index" />
-          <DashLink className={controls.ghostlink} href={`${href}#manage`}>
-            Tag
-          </DashLink>
-        </td>
-      ) : null}
     </tr>
+  );
+}
+
+/** Quiet when fine: a ready video with every leg is the word `ready`, muted.
+ *  Anything else is its pill, then each missing leg by name (§28.2). */
+function Index({ row }: { row: LibraryRow }) {
+  const missing = COVERAGE.filter(([key]) => !row.coverage[key]);
+  if (row.index_state === "ready" && !missing.length) {
+    return <span className={styles.fine}>ready</span>;
+  }
+  return (
+    <span className={styles.index}>
+      {row.index_state === "ready" ? (
+        <span className={styles.fine}>ready</span>
+      ) : (
+        <Pill state={row.index_state} />
+      )}
+      {missing.map(([key, word, label]) => (
+        <span className={styles.gap} key={key} title={`${label} missing`}>
+          no {word}
+        </span>
+      ))}
+    </span>
   );
 }
 

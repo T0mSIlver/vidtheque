@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountDashboard, type Answer, type Route } from "@/test/dashboard/harness";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
-import { REINDEX_REFUSED, REINDEXED } from "@/test/dashboard/index-fixtures";
 import {
   DEMO_LIBRARY,
   OWNER_LIBRARY,
@@ -21,17 +19,13 @@ vi.mock("next/navigation", async () => (await import("@/test/next")).navigationM
 
 function mount(
   library: Route,
-  {
-    search = "",
-    session = OWNER_SESSION as unknown,
-    post = { body: REINDEXED } as Answer,
-  }: { search?: string; session?: unknown; post?: Answer } = {},
+  { search = "", session = OWNER_SESSION as unknown }: { search?: string; session?: unknown } = {},
 ) {
   return mountDashboard(<VideosView />, {
     path: "/dashboard/videos",
     search,
     session,
-    routes: { "/dashboard/api/library": library, "POST /dashboard/videos/*": post },
+    routes: { "/dashboard/api/library": library },
   });
 }
 
@@ -114,14 +108,15 @@ describe("the videos table", () => {
     );
   });
 
-  it("draws the state as its own word and coverage as three legs", async () => {
+  // Quiet when fine: a present leg says nothing; a missing one is named.
+  it("draws the state as its own word and names each missing leg", async () => {
     await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
 
     const table = within(await screen.findByRole("table"));
     expect(table.getByText("indexing")).toBeInTheDocument();
     expect(table.getAllByText("ready")).toHaveLength(3);
-    expect(table.getAllByText("transcript: present")).toHaveLength(3);
-    expect(table.getAllByText("frame embeddings: missing")).toHaveLength(3);
+    expect(table.getAllByText("no frames")).toHaveLength(3);
+    expect(table.getAllByTitle("frame embeddings missing")).toHaveLength(3);
   });
 
   it("names the sorted column and links every other head to its own order", async () => {
@@ -175,16 +170,33 @@ describe("the videos table", () => {
     expect(screen.getByText(/order='nope' is not one of/)).toBeInTheDocument();
   });
 
-  it("puts what is narrowing the table on the title's own baseline", async () => {
+  // The rare filters are folded, and open themselves when one of them is on,
+  // so a filter that narrows the table is never hidden.
+  it("folds the rare filters and offers no reset of nothing", async () => {
+    await mount({ body: OWNER_LIBRARY }, { search: "" });
+    await screen.findByRole("table");
+    expect(screen.getByRole("button", { name: "Show more filters" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByRole("link", { name: "Reset" })).toBeNull();
+  });
+
+  it("opens the folded filters when one of them narrows the table", async () => {
     await mount(
-      { body: ran({ published_after: 1767225600, index_state: "failed" }) },
-      { search: "index_state=failed&published_after=2026-01-01" },
+      { body: ran({ published_after: 1767225600 }) },
+      { search: "published_after=2026-01-01" },
     );
     await screen.findByRole("table");
-
-    const head = within(screen.getByRole("heading", { name: "Videos" }).closest("div")!);
-    expect(head.getByText("failed")).toBeInTheDocument();
-    expect(head.getByText("2026-01-01 – …")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide more filters" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByLabelText("Published on or after")).toHaveValue("2026-01-01");
+    expect(screen.getByRole("link", { name: "Reset" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos",
+    );
   });
 
   // `_before` is exclusive, so the box holds the echo's day less one.
@@ -202,8 +214,6 @@ describe("the videos table", () => {
     expect(await screen.findByText(/published_before=2999-01-01 → 2026-09-05/)).toBeInTheDocument();
     expect(screen.getByLabelText("Published on or before")).toHaveValue("2026-09-05");
     expect(screen.getByLabelText("Published on or after")).toHaveValue("");
-    const head = within(screen.getByRole("heading", { name: "Videos" }).closest("div")!);
-    expect(head.getByText("… – 2026-09-05")).toBeInTheDocument();
   });
 
   it("draws both ends of both ranges without a key collision", async () => {
@@ -283,7 +293,7 @@ describe("the videos table", () => {
     });
 
     // Apply stays in the markup for a browser that never ran the script.
-    it("hides Apply once it is doing the applying, and keeps Reset", async () => {
+    it("hides Apply once it is doing the applying", async () => {
       await mount({ body: OWNER_LIBRARY }, { search: "" });
       await screen.findByRole("table");
 
@@ -291,31 +301,27 @@ describe("the videos table", () => {
       expect(apply).toHaveTextContent("Apply");
       expect(apply).toHaveAttribute("data-apply");
       expect(form()).toHaveAttribute("data-scripted");
-      expect(screen.getByRole("link", { name: "Reset" })).toHaveAttribute(
-        "href",
-        "/dashboard/videos",
-      );
     });
 
     it("keeps the caret in the field that searched, across the navigation", async () => {
       const { push } = await band(
         byQuery((params) =>
-          params.get("channel") ? { body: ran({ channel: "Karpathy" }) } : { body: OWNER_LIBRARY },
+          params.get("q") ? { body: ran({ q: "Karpathy" }) } : { body: OWNER_LIBRARY },
         ),
         { search: "" },
       );
       const before = form();
-      const channel = screen.getByLabelText("Channel") as HTMLInputElement;
-      channel.focus();
+      const box = screen.getByLabelText("Title, channel or description") as HTMLInputElement;
+      box.focus();
 
-      typed("Channel", "Karpathy");
+      typed("Title, channel or description", "Karpathy");
       await pause();
       await settle();
 
       expect(push).toHaveBeenCalledTimes(1);
       expect(form()).toBe(before);
-      expect(document.activeElement).toBe(channel);
-      expect(channel).toHaveValue("Karpathy");
+      expect(document.activeElement).toBe(box);
+      expect(box).toHaveValue("Karpathy");
     });
 
     it("re-seeds a control that is not in use from what the server resolved", async () => {
@@ -339,27 +345,27 @@ describe("the videos table", () => {
       let release: (() => void) | undefined;
       await mount(
         async (request) => {
-          const channel = new URL(request.url, "http://dashboard.test").searchParams.get("channel");
-          if (!channel) return { body: OWNER_LIBRARY };
+          const q = new URL(request.url, "http://dashboard.test").searchParams.get("q");
+          if (!q) return { body: OWNER_LIBRARY };
           await new Promise<void>((done) => (release = done));
-          return { body: ran({ channel }) };
+          return { body: ran({ q }) };
         },
         { search: "" },
       );
       await settle();
-      const channel = screen.getByLabelText("Channel") as HTMLInputElement;
-      channel.focus();
+      const box = screen.getByLabelText("Title, channel or description") as HTMLInputElement;
+      box.focus();
 
-      typed("Channel", "Karp");
+      typed("Title, channel or description", "Karp");
       await pause();
       await settle();
       // The reply to "Karp" is out; the reader keeps typing.
-      typed("Channel", "Karpathy");
+      typed("Title, channel or description", "Karpathy");
       await act(async () => release?.());
       await settle();
 
-      expect(channel).toHaveValue("Karpathy");
-      expect(document.activeElement).toBe(channel);
+      expect(box).toHaveValue("Karpathy");
+      expect(document.activeElement).toBe(box);
     });
   });
 
@@ -431,76 +437,6 @@ describe("the videos table", () => {
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 
-  describe("the row action", () => {
-    const rowOf = () =>
-      screen.getByRole("link", { name: "Let's build GPT: from scratch" }).closest("tr")!;
-
-    it("queues a forced rebuild from the row, names the job, and focuses it", async () => {
-      const { posts, fetcher } = await mount(
-        { body: OWNER_LIBRARY },
-        { search: "index_state=all" },
-      );
-      await screen.findByRole("table");
-
-      await userEvent.click(within(rowOf()).getByRole("button", { name: "Re-index" }));
-
-      expect(posts()[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/reindex");
-      expect(posts()[0].headers.get("accept")).toBe("application/json");
-      const post = fetcher.mock.calls.find((call) => call[1]?.method === "POST");
-      expect(post?.[1]?.credentials).toBe("same-origin");
-
-      const job = await screen.findByRole("link", { name: "job_02e028870c97" });
-      expect(job).toHaveAttribute("href", "/dashboard/jobs/job_02e028870c97");
-      expect(rowOf().contains(document.activeElement)).toBe(true);
-    });
-
-    it("sends the reader to the panel that has room for two text fields", async () => {
-      await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
-      await screen.findByRole("table");
-
-      expect(within(rowOf()).getByRole("link", { name: "Tag" })).toHaveAttribute(
-        "href",
-        "/dashboard/videos/kCc8FmEb1nY#manage",
-      );
-    });
-
-    it("prints the tool's refusal in the row it was refused for", async () => {
-      await mount(
-        { body: OWNER_LIBRARY },
-        { search: "index_state=all", post: { status: 409, body: REINDEX_REFUSED } },
-      );
-      await screen.findByRole("table");
-
-      await userEvent.click(within(rowOf()).getByRole("button", { name: "Re-index" }));
-
-      expect(await within(rowOf()).findByText("E_INDEXING")).toBeInTheDocument();
-      expect(
-        within(rowOf()).getByText("kCc8FmEb1nY is already being indexed."),
-      ).toBeInTheDocument();
-    });
-
-    it("disables the action where the database refuses writes", async () => {
-      await mount(
-        { body: OWNER_LIBRARY },
-        { search: "index_state=all", session: { ...OWNER_SESSION, writes_allowed: false } },
-      );
-      await screen.findByRole("table");
-
-      await vi.waitFor(() =>
-        expect(screen.getAllByRole("button", { name: "Re-index" })[0]).toBeDisabled(),
-      );
-    });
-
-    it("draws no action column at all in the projection", async () => {
-      await mount({ body: DEMO_LIBRARY }, { search: "index_state=all", session: DEMO_SESSION });
-      await screen.findByRole("table");
-
-      expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Re-index" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("link", { name: "Tag" })).not.toBeInTheDocument();
-    });
-  });
-
   describe("when the read does not land", () => {
     it("keeps the band under a refused filter", async () => {
       await mount(
@@ -547,9 +483,8 @@ describe("the videos table", () => {
 
       await screen.findByText("order=relevance needs a query to be relevant to.");
       expect(screen.getByLabelText("Channel")).toHaveValue("Andrej Karpathy");
+      expect(screen.getByLabelText("State")).toHaveValue("failed");
       expect(screen.getByLabelText("Published on or after")).toHaveValue("2026-01-01");
-      const head = within(screen.getByRole("heading", { name: "Videos" }).closest("div")!);
-      expect(head.getByText("2026-01-01 – …")).toBeInTheDocument();
     });
 
     // A 500 takes the same page a 400 does: the query typed survives.

@@ -75,8 +75,13 @@
   transition:
     border-color var(--t-fast),
     background-color var(--t-fast);
-  /* At card size a box would steal the click that opens the frame. */
-  pointer-events: none;
+}
+
+/* At card size the box is inside the frame's button: hovering it shows its
+   title and the click still opens the frame. */
+.ocrbox:hover {
+  border-color: var(--seen);
+  background: color-mix(in srgb, var(--seen) 12%, transparent);
 }
 
 .ocrline {

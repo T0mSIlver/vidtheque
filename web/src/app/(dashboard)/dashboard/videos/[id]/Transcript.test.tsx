@@ -2,9 +2,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deferred, type Answer } from "@/test/dashboard/harness";
 import { OWNER_CUES, OWNER_VIDEO } from "@/test/dashboard/library-fixtures";
-import { cuePage, mountVideo, stripPage } from "./detail-harness";
+import { cuePage, mountVideo, stripAt } from "./detail-harness";
+import { paragraphsOf } from "./Transcript";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
@@ -16,48 +16,68 @@ describe("the transcript", () => {
   });
 
   // The transcript is a pointer, not a copy: the detail payload carries the
-  // totals and the endpoint's name, and the cues arrive a page at a time.
+  // endpoint's name, and the cues arrive the endpoint's largest page at a time.
   it("reads the transcript from the endpoint the payload names", async () => {
     const { fetcher } = await mountVideo({ body: OWNER_VIDEO });
 
     expect(await screen.findByText("we cache the keys and the values at every new token"));
     expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=50",
+      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
-    // Totals, not position: the count the counts band already read, plus the
-    // words and characters, which is what "how big is this transcript" means.
-    const totals = screen.getByText("292").closest("p");
-    expect(totals).toHaveTextContent("6 cues");
-    expect(totals).toHaveTextContent("54 words");
-    expect(totals).toHaveTextContent("292 chars");
   });
 
-  // The endpoint answers in numbers and every rendering is this page's: the
-  // timecode from `start_s`, the confidence from `avg_logprob`, the chunk label
-  // composed from the chunk's own five fields.
-  it("composes the timecode, the confidence and the chunk label from the numbers", async () => {
+  // A cue is a sentence or less: consecutive ones read as a paragraph under the
+  // first one's timecode, and each keeps its own second as a title.
+  it("reads consecutive cues as one paragraph under its first timecode", async () => {
     await mountVideo({ body: OWNER_VIDEO });
-    expect(
-      await screen.findByText(/chunk 0 · 0:00–7:03 · 54 words · 297 chars/),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("0:00").length).toBeGreaterThan(0);
-    expect(screen.getByText("-0.42")).toBeInTheDocument();
-    // A cue whose log-probability is `null` prints no confidence at all, rather
-    // than a word standing in for one.
-    expect(screen.getAllByTitle("avg_logprob")).toHaveLength(1);
+
+    const first = await screen.findByText("we cache the keys and the values at every new token");
+    const second = screen.getByText(
+      "otherwise you would recompute attention over the entire prefix",
+    );
+    expect(first.closest("p")).toBe(second.closest("p"));
+    expect(second).toHaveAttribute("title", "0:03");
+    // The chunk marks and the log-probabilities were the machine's, not the
+    // reader's: neither is drawn.
+    expect(screen.queryByText(/chunk 0/)).toBeNull();
+    expect(screen.queryByText("-0.42")).toBeNull();
+  });
+
+  it("starts a paragraph at a pause or a new speaker", () => {
+    const cue = (start_s: number, speaker: string | null = null) => ({
+      ...OWNER_CUES.cues[1],
+      start_s,
+      end_s: start_s + 1,
+      t: Math.floor(start_s),
+      text: `at ${start_s}`,
+      speaker,
+    });
+    const paragraphs = paragraphsOf([
+      cue(0),
+      cue(1.5),
+      cue(10),
+      cue(11, "SPEAKER_01"),
+      cue(12, "SPEAKER_01"),
+    ]);
+    expect(paragraphs.map((paragraph) => paragraph.cues.map((c) => c.start_s))).toEqual([
+      [0, 1.5],
+      [10],
+      [11, 12],
+    ]);
+    expect(paragraphs[2].speaker).toBe("SPEAKER_01");
   });
 
   it("appends the next batch rather than reloading the page", async () => {
     const { fetcher } = await mountVideo({ body: OWNER_VIDEO });
     await screen.findByText("we cache the keys and the values at every new token");
 
-    await userEvent.click(screen.getByRole("link", { name: /Next 50 cues/ }));
+    await userEvent.click(screen.getByRole("link", { name: "Read on" }));
 
     // The offset is the server's own: `page.offset + page.cues.length`, not
     // this page's arithmetic over a limit it asked for.
     expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=3&limit=50",
+      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=3&limit=200",
       expect.anything(),
     );
     // Nothing above the first row, so nothing to go back to: the Earlier
@@ -77,9 +97,8 @@ describe("the transcript", () => {
       "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=100&limit=25",
       expect.objectContaining({ credentials: "same-origin" }),
     );
-    expect(screen.getByRole("link", { name: "Next 25 cues →" })).toBeInTheDocument();
     // Real addresses at the server's offsets, so a page can go to a tab.
-    expect(screen.getByRole("link", { name: "Next 25 cues →" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Read on" })).toHaveAttribute(
       "href",
       "/dashboard/videos/kCc8FmEb1nY?cues=25&cue_offset=125#transcript",
     );
@@ -131,8 +150,8 @@ describe("the transcript", () => {
     );
   });
 
-  // `?cues=0` asks for a page of no cues: the pager reads "Next 0 cues", and
-  // Earlier steps back by nothing, so neither control moves. A size is at
+  // `?cues=0` asks for a page of no cues, and Earlier would step back by
+  // nothing, so neither control would move. A size is at
   // least one cue — `?cue_offset=0`, which is the top of the transcript, keeps
   // its zero.
   it("floors ?cues= at a cue, and leaves ?cue_offset= its zero", async () => {
@@ -146,7 +165,10 @@ describe("the transcript", () => {
       "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=1",
       expect.anything(),
     );
-    expect(screen.getByRole("link", { name: "Next 1 cues →" })).toBeInTheDocument();
+    // One cue on screen, so reading on starts at the second.
+    expect(screen.getByRole("link", { name: "Read on" }).getAttribute("href")).toContain(
+      "cue_offset=1#transcript",
+    );
   });
 
   it("pages back from a seeded offset and writes where it landed", async () => {
@@ -192,17 +214,20 @@ describe("the transcript", () => {
   });
 
   // `cue.t` is the whole second the endpoint sends for the deeplink.
-  it("makes each cue timecode the deeplink at that second", async () => {
+  it("makes a paragraph's timecode the deeplink at its first second", async () => {
     await mountVideo({ body: OWNER_VIDEO });
-    const row = (
+    const paragraph = (
       await screen.findByText("otherwise you would recompute attention over the entire prefix")
-    ).closest("li");
+    ).closest("div");
 
-    expect(within(row!).getByRole("link", { name: "0:03" })).toHaveAttribute(
+    expect(within(paragraph!).getByRole("link", { name: "0:00" })).toHaveAttribute(
       "href",
-      "https://youtu.be/kCc8FmEb1nY?t=3",
+      "https://youtu.be/kCc8FmEb1nY?t=0",
     );
-    expect(within(row!).getByRole("link", { name: "0:03" })).toHaveAttribute("target", "_blank");
+    expect(within(paragraph!).getByRole("link", { name: "0:00" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
   });
   it("keeps the page when only the transcript's next batch fails", async () => {
     await mountVideo(
@@ -210,41 +235,20 @@ describe("the transcript", () => {
       { cues: { status: 429, body: { error: "E_RATE_LIMIT", message: "Slow down." } } },
     );
 
-    expect(await screen.findByText("What was stored")).toBeInTheDocument();
     expect(await screen.findByText("Slow down.")).toBeInTheDocument();
     // The panels the detail payload answered for are untouched.
     expect(screen.getByText("Provenance")).toBeInTheDocument();
   });
 
-  // The box holds the rows the totals predict before they land, and the pager
-  // is drawn only where the totals say there is a next page.
-  it("reserves the first batch's rows and predicts its pager", async () => {
-    const held = deferred<Answer>();
-    await mountVideo({ body: OWNER_VIDEO }, { cues: () => held.promise });
-
-    const panel = (await screen.findByRole("heading", { name: "Transcript" })).closest("section")!;
-    const box = panel.querySelector<HTMLElement>("[tabindex='0']")!;
-    // Six cues in all, fifty a page: six rows, and no next page.
-    expect(box.style.getPropertyValue("--cue-rows")).toBe("6");
-    expect(within(panel).queryByRole("navigation")).toBeNull();
-
-    held.resolve({ body: OWNER_CUES });
-    await within(panel).findByText("we cache the keys and the values at every new token");
-    expect(box.style.getPropertyValue("--cue-rows")).toBe("6");
-  });
-
   // Paging the strip re-reads the video, not the transcript: the cues already
   // appended stay where the reader left them.
   it("keeps the appended cues across a strip page", async () => {
-    const { calls, navigate } = await mountVideo(
-      (url) => ({ body: stripPage(url.includes("frame_offset=1") ? 1 : 0) }),
-      {
-        search: "frames=1&cues=25",
-        cues: (url) => ({ body: cuePage(url) }),
-      },
-    );
+    const { calls, navigate } = await mountVideo((url) => ({ body: stripAt(url) }), {
+      search: "frames=1&cues=25",
+      cues: (url) => ({ body: cuePage(url) }),
+    });
     await screen.findByText("cue 0");
-    await userEvent.click(screen.getByRole("link", { name: "Next 25 cues →" }));
+    await userEvent.click(screen.getByRole("link", { name: "Read on" }));
     await screen.findByText("cue 25");
 
     await navigate("/dashboard/videos/kCc8FmEb1nY?frames=1&cues=25&frame_offset=1");

@@ -6,19 +6,18 @@ import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";
 import type { FrameCard, VideoDetail } from "@/lib/dashboard/schemas";
-import { clock } from "@/lib/format";
 import { FrameOverlay } from "@/components/dashboard/FrameOverlay";
 import { notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
 import { Crumbs } from "@/components/dashboard/kit/table";
-import { DashLink, PageHead, Panel, Pending, Title } from "@/components/dashboard/kit/ui";
+import { DashLink, PageHead, Pending, Title } from "@/components/dashboard/kit/ui";
 import { ManagePanel } from "../Manage";
 import styles from "./detail.module.css";
-import { Frames, frameShot } from "./Frames";
+import { Frames, frameShot, keptOrd } from "./Frames";
 import { Head } from "./Head";
 import { JobHistory } from "./JobHistory";
 import { linkShot, shotOf } from "./link";
 import { Provenance, Stored } from "./Provenance";
-import { CUE_OFFSET_MAX, cueBound, FRAME_KEYS, markFrame, selectedOrd } from "./query";
+import { CUE_OFFSET_MAX, cueBound, FRAME_KEYS, markFrame, selectedOrd, STRIP_PAGE } from "./query";
 import { Timeline } from "./Timeline";
 import { Transcript } from "./Transcript";
 
@@ -30,6 +29,8 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
   // Only the strip's two bounds key the read: `select` and the transcript's
   // place are rewritten in place and must not re-read the video.
   const bounds = pick(params, FRAME_KEYS);
+  // The strip reads its widest page unless the URL sized it (§28.3).
+  if (!bounds.has("frames")) bounds.set("frames", String(STRIP_PAGE));
   const video = useResource(`video:${videoId}?${bounds}`, (signal) =>
     dashboard.video(videoId, bounds, signal),
   );
@@ -119,14 +120,19 @@ function Loaded({
 
   /** Mark a frame already on this strip page without navigating: scroll to it
    *  and focus its button, the control the next Enter opens. */
-  const selectFrame = useCallback((ord: number): boolean => {
-    const card = document.getElementById(`frame-${ord}`);
-    if (!card) return false;
-    markFrame(ord);
-    card.scrollIntoView({ block: "center", behavior: "smooth" });
-    card.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
-    return true;
-  }, []);
+  const selectFrame = useCallback(
+    (ord: number): boolean => {
+      // A duplicate is not drawn; the frame it duplicates stands for it.
+      const shown = keptOrd(frames.frames, ord) ?? ord;
+      const card = document.getElementById(`frame-${shown}`);
+      if (!card) return false;
+      markFrame(shown);
+      card.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+      card.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+      return true;
+    },
+    [frames.frames],
+  );
 
   const link = (target: EventTarget | null) => {
     if (root.current) linkShot(root.current, shotOf(target));
@@ -144,11 +150,13 @@ function Loaded({
       <Title>{video.title}</Title>
       <Crumbs section="videos" label="Videos" id={video.video_id} />
 
-      <Head data={data} tags={tags} />
+      <Head data={data} tags={tags} onTagged={setWritten} />
 
       <Timeline
         shots={shots.shots}
         capped={shots.capped}
+        kept={data.counts.keyframes_kept}
+        chapters={data.chapters}
         runtime={video.duration_s ?? 0}
         framePage={frames.limit}
         search={search}
@@ -156,14 +164,8 @@ function Loaded({
         onSelect={selectFrame}
       />
 
-      <Stored counts={data.counts} origins={data.cue_origins} />
-
-      <Provenance stages={data.stages} />
-
       <Frames
         frames={frames}
-        kept={data.counts.keyframes_kept}
-        search={search}
         selected={selected}
         videoId={video.video_id}
         pending={paging}
@@ -181,31 +183,13 @@ function Loaded({
         videoId={video.video_id}
       />
 
-      {data.chapters.length ? (
-        <Panel id="chapters" title="Chapters">
-          <ol className={styles.chapters}>
-            {data.chapters.map((chapter) => (
-              <li className={styles.chapter} key={`${chapter.start_s}-${chapter.title}`}>
-                {/* The chapter's own start, not the payload's led `link`: a
-                    boundary, not a quoted moment (§3.6). */}
-                <a
-                  className={styles.at}
-                  href={`https://youtu.be/${encodeURIComponent(video.video_id)}?t=${Math.floor(chapter.start_s)}`}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {clock(chapter.start_s)}
-                </a>
-                <span>{chapter.title}</span>
-              </li>
-            ))}
-          </ol>
-        </Panel>
-      ) : null}
+      <Provenance stages={data.stages} />
 
       <JobHistory history={data.job_history} />
 
-      <ManagePanel videoId={video.video_id} tags={tags} onWritten={setWritten} />
+      <Stored counts={data.counts} origins={data.cue_origins} transcript={data.transcript} />
+
+      <ManagePanel videoId={video.video_id} />
 
       <FrameOverlay onClose={closeFrame} shot={open ? frameShot(open, video.video_id) : null} />
     </div>
