@@ -4122,7 +4122,8 @@ trial's end date.
 Tom's direction for every console page: quiet when fine, loud when not; human
 labels; no narration; statistics on demand; each fact once; a reading width;
 controls weighted by use. DESIGN.md's dashboard section holds the visual
-rules; this section holds what each page shows. Payloads are unchanged.
+rules; this section holds what each page shows, and supersedes §24 where the
+two disagree. Payloads are unchanged but for one jobs-list sentence (§28.4).
 
 ### 28.1 The shared kit
 
