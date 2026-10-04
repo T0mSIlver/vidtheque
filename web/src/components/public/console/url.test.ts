@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSnapshot, serializeSnapshot, type Snapshot } from "./url";
+import { joinQuery, parseSnapshot, serializeSnapshot, type Snapshot } from "./url";
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -57,5 +57,13 @@ describe("the console URL", () => {
   ])("round-trips %j (ask enabled: %s)", (snapshot, askEnabled) => {
     const query = serializeSnapshot(snapshot, askEnabled);
     expect(parseSnapshot(params(query.replace(/^\?/, "")), askEnabled)).toEqual(snapshot);
+  });
+});
+
+describe("joinQuery", () => {
+  it("keeps the page's own filter in front of the snapshot", () => {
+    expect(joinQuery("/demo?edition=paris", "?q=kv")).toBe("/demo?edition=paris&q=kv");
+    expect(joinQuery("/demo?edition=paris", "")).toBe("/demo?edition=paris");
+    expect(joinQuery("/demo", "?ask=why")).toBe("/demo?ask=why");
   });
 });

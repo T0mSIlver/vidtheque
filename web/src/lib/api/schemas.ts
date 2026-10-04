@@ -135,6 +135,45 @@ export const Meta = z.object({
 });
 export type Meta = z.infer<typeof Meta>;
 
+// `GET /api/feed`: the sample profile's verdicts (demo-site.md §8.2).
+export const FeedMoment = z.object({
+  offset_s: z.number(),
+  url: httpUrl(),
+  why: z.string(),
+  excerpt: z.string().nullable(),
+  speaker: z.string().nullable(),
+});
+export type FeedMoment = z.infer<typeof FeedMoment>;
+
+export const FeedItem = z.object({
+  video_id: z.string(),
+  title: z.string(),
+  channel: z.string(),
+  duration_s: z.number(),
+  published_at: z.number().int().nullable(),
+  url: httpUrl(),
+  thumb: httpUrl().nullable(),
+  score: z.number().int(),
+  reason: z.string(),
+  summary: z.string(),
+  matches: z.array(z.object({ text: z.string(), direction: z.enum(["up", "down"]) })),
+  moments: z.array(FeedMoment),
+});
+export type FeedItem = z.infer<typeof FeedItem>;
+
+export const FeedResponse = z.object({
+  profile: z
+    .object({
+      name: z.string(),
+      entries: z.array(z.object({ text: z.string(), weight: z.number() })),
+    })
+    .nullable(),
+  items: z.array(FeedItem),
+  has_more: z.boolean(),
+  next_offset: z.number().int().nullable(),
+});
+export type FeedResponse = z.infer<typeof FeedResponse>;
+
 // `POST /api/ask` (demo-site.md §3, §3.5). The answer arrives whole, once;
 // what streams before it is the work, one event per tool call.
 export const Citation = z.object({

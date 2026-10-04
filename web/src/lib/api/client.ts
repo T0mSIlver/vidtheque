@@ -6,6 +6,7 @@ import {
   type ContentType,
   type ErrorEnvelope,
   EditionResponse,
+  FeedResponse,
   Meta,
   PartialErrorEnvelope,
   SearchResponse,
@@ -99,6 +100,12 @@ export function createClient(config: ClientConfig) {
       opts?: RequestOptions,
     ) {
       return get("/api/videos", params, VideosResponse, opts);
+    },
+    feed(
+      params: { tags?: string; min_score?: number; limit?: number; offset?: number } = {},
+      opts?: RequestOptions,
+    ) {
+      return get("/api/feed", params, FeedResponse, opts);
     },
     meta(opts?: RequestOptions) {
       return get("/api/meta", {}, Meta, opts);

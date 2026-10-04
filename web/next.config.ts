@@ -75,9 +75,14 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // The ledger became Corpus (dashboard.md §24); old links and bookmarks land.
+  // The ledger became Corpus (dashboard.md §24), and /paris became a filter on
+  // /demo (aie-paris-2026.md §4, 2026-10-04); old links and bookmarks land.
+  // /paris stays temporary: the edition may get a page of its own again.
   async redirects() {
-    return [{ source: "/dashboard/ledger", destination: "/dashboard/corpus", permanent: true }];
+    return [
+      { source: "/dashboard/ledger", destination: "/dashboard/corpus", permanent: true },
+      { source: "/paris", destination: "/demo?edition=paris", permanent: false },
+    ];
   },
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");

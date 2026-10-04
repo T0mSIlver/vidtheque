@@ -232,6 +232,12 @@ same corpus-wide behavior they have now.
 
 ## 4. The `/paris` page
 
+*Amended 2026-10-04 (Tom, #196):* `/paris` is a filter on `/demo` now.
+`next.config.ts` redirects it, with a temporary redirect, to
+`/demo?edition=paris`, which scopes the sample feed and Ask to
+`series:aie-paris-2026` and labels hits by talk as before. The schedule view
+(the programme) is retired. The rest of this section is the page as it was.
+
 `GET /paris` is a fourth route in the existing front end, not a fourth
 deployable. It reaches Next the way `/` and `/demo` do, and for the same
 reason: the edge names the paths that are **Python's** and everything else
