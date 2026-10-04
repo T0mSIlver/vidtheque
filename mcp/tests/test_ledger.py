@@ -97,6 +97,7 @@ def test_watch_time_only_lands_on_a_watch(conn) -> None:
         ([590.0], [(590.0, 600.0)], True),  # to the end of the video
         ([], [(0.0, 290.0)], False),
         ([], [(0.0, 150.0), (300.0, 450.0)], True),  # half of 600 s
+        ([], [(0.0, 150.0), (0.0, 150.0), (100.0, 200.0)], False),  # overlaps count once
         ([100.0], [], False),
     ],
 )

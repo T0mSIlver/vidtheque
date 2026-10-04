@@ -84,6 +84,15 @@ class WatchClockTest {
     }
 
     @Test
+    fun aReturnTheNetworkLostIsSentBeforeTheNextHandOff() {
+        store.write(HandOff(startedMs = 1L, signalId = 5, awayS = 42.0))
+        clock.handOff("vid", 10)
+        settle { store.read()?.signalId == 7L }
+        val sent = bodies()
+        assertTrue(sent.any { it.contains("/watched") && it.contains("\"signal_id\":5") && it.contains("\"watched_s\":42.0") })
+    }
+
+    @Test
     fun aStartWithNoHandOffSendsNothing() {
         clock.returned()
         settle { false }
