@@ -99,6 +99,8 @@ WRITE_ROUTES: tuple[str, ...] = (
     f"{ROOT}/following/{{slug}}/queue",
     f"{ROOT}/api/signals",
     f"{ROOT}/api/feedback",
+    f"{ROOT}/api/watched",
+    f"{ROOT}/api/shares",
     f"{ROOT}/api/profile",
     f"{ROOT}/api/profile/revert",
     f"{ROOT}/api/devices",

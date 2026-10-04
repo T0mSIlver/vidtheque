@@ -48,6 +48,8 @@ HTTP_STATUS: dict[str, int] = {
     "E_UNKNOWN_ENTRY": 404,
     # Dashboard-only: the feed's profile revert and video screen (dashboard.md §25).
     "E_UNKNOWN_EVENT": 404,
+    # Dashboard-only: a watch return for a signal that is not this owner's `watch` (§25.10).
+    "E_UNKNOWN_SIGNAL": 404,
     "E_NO_VERDICT": 404,
     "E_NOT_INDEXED": 409,
     "E_INDEXING": 409,

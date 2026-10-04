@@ -1,7 +1,7 @@
 """The feed's endpoints — companion.md §6, contract in dashboard.md §25.
 
-`feed`, `feed/facets`, `verdicts/{video_id}`, `signals`, `feedback`, `profile`,
-`profile/revert` and `devices`, for the web feed (#90) and the Android app (#91). They are owner
+`feed`, `feed/facets`, `verdicts/{video_id}`, `signals`, `feedback`, `watched`,
+`shares`, `valued-time`, `profile`, `profile/revert` and `devices`, for the web feed (#90) and the Android app (#91). They are owner
 routes: registered with the write side, so a read-only projection and
 `VIDTHEQUE_AUTH=none` 404 them, reads behind the read gate and writes behind
 `require_write`.
@@ -17,21 +17,27 @@ import json
 import math
 import re
 import sqlite3
-from typing import Any
+import time
+from datetime import datetime
+from typing import Any, Callable
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from ..auth.credential import credential
 from ..errors import HTTP_STATUS
+from ..pipeline.sources import source_ref_of
 from ..profile import feedback as feedback_store
+from ..profile import ledger as ledger_store
 from ..profile import signals as signals_store
 from ..profile import store as profile_store
 from ..text import clamp, deeplink
+from ..tools import indexing
 from ..verdicts import store as verdicts_store
 from ..verdicts import week as verdicts_week
 from .access import require_write
 from .api import NO_STORE
+from .read_models import tool_error
 
 OWNER_ID = 1
 
@@ -562,6 +568,85 @@ async def feedback(request: Request) -> Response:
     if done is None:
         return _from(_unknown_video(video_id))
     return _json({"video_id": video_id, "state": state})
+
+
+# ------------------------------------------------------- measuring the feed
+
+
+async def watched(request: Request) -> Response:
+    """`POST /dashboard/api/watched` — the time in the player after a `watch` hand-off."""
+    refusal = await require_write(request)
+    if refusal is not None:
+        return refusal
+    try:
+        body = await _body(request)
+        _only(body, ("signal_id", "watched_s"))
+        signal_id = _whole(body.get("signal_id"), "signal_id")
+        seconds = _number(body.get("watched_s"), "watched_s")
+        if not 0 <= seconds <= OFFSET_S_MAX:
+            raise _Refused("E_BAD_PARAM", f"watched_s={seconds} is out of range.", "pass seconds spent in the player.")
+    except _Refused as refused:
+        return _from(refused)
+    done = await request.app.state.assembled.db.write(
+        lambda conn: ledger_store.record_watched(conn, signal_id, seconds, owner_id=OWNER_ID)
+    )
+    if done is None:
+        return _refusal(
+            "E_UNKNOWN_SIGNAL",
+            f"signal {signal_id} is not a watch on this instance.",
+            "pass the signal_id that POST /dashboard/api/signals answered for the watch.",
+        )
+    return _json({"signal_id": done.signal_id, "watched_s": done.watched_s, "already": done.already})
+
+
+async def share(request: Request) -> Response:
+    """`POST /dashboard/api/shares` — a YouTube link shared to the app: index it, log the share."""
+    refusal = await require_write(request)
+    if refusal is not None:
+        return refusal
+    try:
+        body = await _body(request)
+        _only(body, ("url",))
+        url = body.get("url")
+        ref = source_ref_of(url) if isinstance(url, str) and len(url) <= 2048 else None
+        if ref is None:
+            raise _Refused("E_BAD_PARAM", "url is not a YouTube video link.", "share a youtu.be or youtube.com/watch link.")
+    except _Refused as refused:
+        return _from(refused)
+    source_id = ref[1]
+    deps = request.app.state.assembled.deps
+    result = await indexing.index_video(deps, urls=[f"https://youtu.be/{source_id}"])
+    error = tool_error(result)
+    # Already queued is fine: the share still counts, and the job will land.
+    if error is not None and error["code"] != "E_INDEXING":
+        return _refusal(error["code"], error["message"], error["next"] or "share it again later.")
+    payload = {} if error is not None else (result.structured_content or {})
+    client = await _client(request)
+
+    def write(conn: sqlite3.Connection) -> tuple[bool | None, str]:
+        ledger_store.record_share(conn, source_id, client=client, owner_id=OWNER_ID)
+        return ledger_store.miss_of(conn, source_id, int(time.time()), owner_id=OWNER_ID)
+
+    miss, why = await request.app.state.assembled.db.write(write)
+    return _json(
+        {
+            "video_id": source_id,
+            "job_id": payload.get("job_id"),
+            "indexed": source_id in payload.get("already_indexed", []),
+            "miss": miss,
+            "why": why,
+        }
+    )
+
+
+def _now() -> datetime:
+    return datetime.now().astimezone()
+
+
+async def valued_time(request: Request, clock: Callable[[], datetime] = _now) -> Response:
+    """`GET /dashboard/api/valued-time` — the weekly ledger (companion.md §3.3)."""
+    now = clock()
+    return _json(await request.app.state.assembled.db.read(lambda c: ledger_store.weeks(c, now, owner_id=OWNER_ID)))
 
 
 # ------------------------------------------------------------------ profile

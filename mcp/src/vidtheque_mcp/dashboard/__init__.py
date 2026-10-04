@@ -216,11 +216,14 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             ),
             Route(f"{ROOT}/api/signals", feed.signal, methods=["POST"]),
             Route(f"{ROOT}/api/feedback", feed.feedback, methods=["POST"]),
+            Route(f"{ROOT}/api/watched", feed.watched, methods=["POST"]),
+            Route(f"{ROOT}/api/shares", feed.share, methods=["POST"]),
             Route(f"{ROOT}/api/profile", guarded(feed.profile), methods=["GET"]),
             Route(f"{ROOT}/api/profile", feed.profile_ops, methods=["POST"]),
             Route(f"{ROOT}/api/profile/revert", feed.profile_revert, methods=["POST"]),
             Route(f"{ROOT}/api/devices", feed.devices, methods=["POST", "DELETE"]),
             Route(f"{ROOT}/api/costs", guarded(costs.costs), methods=["GET"]),
+            Route(f"{ROOT}/api/valued-time", guarded(feed.valued_time), methods=["GET"]),
         ]
         if write_side
         else []

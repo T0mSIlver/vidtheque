@@ -125,6 +125,14 @@ for a task logs `mcp_search` and `mcp_read` like any other client, under its
 OAuth client id. A client that can set headers sends `X-Vidtheque-Signals: off`
 when its reads say nothing about what the owner is working on.
 
+*Amended 2026-10-04 (#157):* there is no player in the app; Tom watches in his
+YouTube app. So a `watch` is the hand-off, and the app measures how long it
+stays away: when it comes back, it sends the time since the hand-off, which
+the server stores on that signal as `watched_s`, capped at what is left of the
+video from the offset and at the time the server saw go by (dashboard.md
+§25.10). It is an upper bound: a phone left in YouTube on another video still
+counts, up to the cap.
+
 The MCP signals are logged in the tool layer (`tools/base.py`), for every
 client, owner-scoped. A client can opt out per session with a header
 (`X-Vidtheque-Signals: off`). The triage agent's own calls are never signals.
@@ -269,6 +277,28 @@ week: of the verdicts scored 2–3, the share you opened, watched or asked
 about. If that number does not rise, the profile is not learning, and we will
 see it.
 
+*Amended 2026-10-04 (#157, which absorbed #94):* the measure is widened and
+starts now, rather than after a month, so the month mark (2026-11-04) has
+data. It is four numbers a week, Monday to Monday on the box's clock, on the
+app's profile screen and the console's Corpus page (the ledger's successor),
+read live from `GET /dashboard/api/valued-time` (dashboard.md §25.12):
+
+- **Hit rate**: of the videos scored 2–3 and published that week, the share
+  kept, meaning thumbed up or watched past half the moments. A moment is
+  watched when one stretch in the player starts at most 5 s after it and runs
+  a minute past it (or to the end); a video with no moment needs half its
+  length. Opens alone never count: opening the page or a bounce back from
+  YouTube is not a hit.
+- **Regret**: of the videos watched that week for a minute or more, the share
+  thumbed down after it. Target under 10%.
+- **Misses**: videos shared to the app from elsewhere (§6) that the feed did
+  not offer: scored 0–1, or from a channel no follow covered when it was
+  shared. A share waits, `pending`, until its verdict is written.
+- **Minutes asked against budget**: lands with the time budget (#156), on the
+  same payload.
+
+The first week that counts is 2026-10-12. Each figure says `capped` past 500
+videos a week instead of reading more.
 ### 3.4 Rank within the week
 
 *Added 2026-10-04 (#156).* The first backfill scored 65 of 100 videos 2, about
@@ -434,6 +464,11 @@ exchange is a few dozen lines of the app's own. It calls the same JSON endpoints
 no logic the server does not have. Built by hosted GitHub Actions and
 installed from GitHub releases as an APK. Play Store is a later decision.
 
+**Share target** (*added 2026-10-04, #157*): the app takes a YouTube video
+link shared from any app ("found it elsewhere"). It indexes the video, logs
+the share, and tells you whether the feed missed it (§3.3); it opens nothing.
+`POST /dashboard/api/shares` (dashboard.md §25.11).
+
 **Push**: the app registers its FCM token (`devices(id, token, created_at,
 last_seen)`). When a verdict meets the threshold (default 3,
 `VIDTHEQUE_NOTIFY_MIN_SCORE`), the server sends one notification: channel,
@@ -455,7 +490,8 @@ unregistered is deleted from `devices`.
 **Endpoints**: under the existing owner-only `/dashboard/api/*`, behind the
 existing credential order (bearer or session) and write guard, so no new
 prefix and no new guard: `feed`, `feed/facets`, `verdicts/{video_id}`, `signals` (POST),
-`feedback` (POST, 0016), `profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
+`feedback` (POST, 0016), `watched` and `shares` (POST, 0018), `valued-time` (GET),
+`profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
 `dashboard.md` gets their contract.
 
 ## 7. The console overhaul
@@ -499,5 +535,4 @@ Each line is a GitHub issue in the "Companion v1" milestone, linked from
    (§6).
 5. **Android**: the app, then push (§6).
 6. **Console**: the audit, then the cuts (§7).
-7. **Measure**: the weekly precision number (§3.3), once a month of verdicts
-   exists.
+7. **Measure**: the weekly ledger (§3.3), counting from 2026-10-12 (#157).

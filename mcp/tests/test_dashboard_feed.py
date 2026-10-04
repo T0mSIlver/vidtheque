@@ -117,10 +117,19 @@ def _rows(tmp_path: Path, sql: str) -> list[tuple]:
 # --------------------------------------------------------------------- access
 
 
-GETS = (f"{API}/feed", f"{API}/feed/facets", f"{API}/verdicts/kCc8FmEb1nY", f"{API}/profile", f"{API}/costs")
+GETS = (
+    f"{API}/feed",
+    f"{API}/feed/facets",
+    f"{API}/verdicts/kCc8FmEb1nY",
+    f"{API}/profile",
+    f"{API}/costs",
+    f"{API}/valued-time",
+)
 WRITES = (
     ("POST", f"{API}/signals"),
     ("POST", f"{API}/feedback"),
+    ("POST", f"{API}/watched"),
+    ("POST", f"{API}/shares"),
     ("POST", f"{API}/profile"),
     ("POST", f"{API}/profile/revert"),
     ("POST", f"{API}/devices"),
@@ -359,6 +368,75 @@ def test_a_search_from_the_feed_is_an_mcp_search_signal(client: TestClient, tmp_
         ("mcp_search", None, "eval harness", "app"),
         ("mcp_search", None, "x" * 500, "web"),
     ]
+
+
+def test_a_watch_return_sets_its_time_once(client: TestClient, tmp_path: Path) -> None:
+    sent = client.post(
+        f"{API}/signals", json={"kind": "watch", "video_id": "kCc8FmEb1nY", "offset_s": 0}, headers=BEARER
+    ).json()
+    back = client.post(f"{API}/watched", json={"signal_id": sent["signal_id"], "watched_s": 20}, headers=BEARER)
+    assert back.status_code == 200, back.text
+    assert back.json() == {"signal_id": sent["signal_id"], "watched_s": 20, "already": False}
+    again = client.post(f"{API}/watched", json={"signal_id": sent["signal_id"], "watched_s": 99}, headers=BEARER)
+    assert again.json()["already"] and again.json()["watched_s"] == 20
+    assert _rows(tmp_path, "SELECT kind, watched_s FROM signals") == [("watch", 20.0)]
+
+
+@pytest.mark.parametrize(
+    ("body", "status"),
+    [
+        ({"signal_id": 1}, 400),
+        ({"signal_id": "1", "watched_s": 3}, 400),
+        ({"signal_id": 1, "watched_s": -1}, 400),
+        ({"signal_id": 1, "watched_s": 3, "extra": 1}, 400),
+        ({"signal_id": 404, "watched_s": 3}, 404),
+    ],
+)
+def test_a_watch_return_refuses_a_malformed_body(client: TestClient, body: dict, status: int) -> None:
+    refused = client.post(f"{API}/watched", json=body, headers=BEARER)
+    assert refused.status_code == status, refused.text
+
+
+def test_a_share_logs_the_link_and_says_whether_the_feed_missed_it(
+    client: TestClient, tmp_path: Path
+) -> None:
+    # In the corpus and scored 1: a miss.
+    low = client.post(f"{API}/shares", json={"url": "https://youtu.be/skipme00001?si=abc"}, headers=BEARER)
+    assert low.status_code == 200, low.text
+    assert low.json() == {
+        "video_id": "skipme00001",
+        "job_id": None,
+        "indexed": True,
+        "miss": True,
+        "why": "scored 1",
+    }
+    # Not in the corpus: queued, and the miss waits for the verdict.
+    new = client.post(
+        f"{API}/shares", json={"url": "https://www.youtube.com/watch?v=aaaaaaaaaaa&t=3"}, headers=BEARER
+    ).json()
+    assert new["job_id"] and new["indexed"] is False and new["miss"] is None
+    assert _rows(tmp_path, "SELECT source_id, client FROM shares ORDER BY id") == [
+        ("skipme00001", "app"),
+        ("aaaaaaaaaaa", "app"),
+    ]
+    week = client.get(f"{API}/valued-time", headers=BEARER).json()["weeks"][0]
+    assert week["misses"] == {"count": 1, "pending": 1, "shared": 2, "capped": False}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{}, {"url": "https://example.com/watch?v=aaaaaaaaaaa"}, {"url": "https://youtube.com/@channel"}, {"url": 3}],
+)
+def test_a_share_refuses_anything_but_a_youtube_video(client: TestClient, tmp_path: Path, body: dict) -> None:
+    assert client.post(f"{API}/shares", json=body, headers=BEARER).status_code == 400
+    assert _rows(tmp_path, "SELECT COUNT(*) FROM shares") == [(0,)]
+
+
+def test_valued_time_answers_eight_weeks(client: TestClient) -> None:
+    body = client.get(f"{API}/valued-time", headers=BEARER).json()
+    assert body["regret_target"] == 0.1
+    assert len(body["weeks"]) == 8 and body["weeks"][0]["current"]
+    assert set(body["weeks"][0]) == {"start", "current", "hits", "regret", "misses"}
 
 
 def test_feedback_is_a_state_the_verdict_shows_and_a_second_call_takes_back(

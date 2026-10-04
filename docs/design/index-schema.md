@@ -1247,7 +1247,8 @@ CREATE TABLE signals (
   video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
   offset_s REAL,
   text     TEXT,                    -- the query, for mcp_search; at most 500 chars
-  client   TEXT                     -- the MCP client id, or NULL
+  client   TEXT,                    -- the MCP client id, or NULL
+  watched_s REAL CHECK (watched_s IS NULL OR watched_s >= 0)  -- 0018, watch only
 ) STRICT;
 ```
 
@@ -1261,6 +1262,10 @@ first. A revert is itself an event.
 Signals are kept 180 days: `record_signal` deletes older rows on each insert
 (an indexed range delete that usually finds nothing), and boot runs the same
 sweep. A deleted video takes its signals with it.
+
+`watched_s` (0018, #157) is the time in the player after a `watch` hand-off,
+set once when the app comes back (dashboard.md §25.10). NULL on every other
+kind and on a watch from before 0018 or whose return never reached the server.
 
 ### 1.13 `verdicts`
 
@@ -1428,6 +1433,26 @@ A rerank replaces the week's `week_ranks` rows in one transaction with its
 `week_rank_runs` row. A week is ranked again when its candidates, the
 fingerprint in `candidates`, differ from the last ranking, or that ranking
 failed; a failed run keeps the week's previous rows.
+### 1.19 `shares`
+
+Added by 0018 (#157, companion.md §3.3). One row per YouTube link shared to
+the app ("found it elsewhere"), read by the weekly ledger's misses.
+
+```sql
+CREATE TABLE shares (
+  id        INTEGER PRIMARY KEY,
+  owner_id  INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  at        INTEGER NOT NULL DEFAULT (unixepoch()),
+  source_id TEXT    NOT NULL CHECK (length(source_id) BETWEEN 1 AND 64),  -- the YouTube id
+  client    TEXT                                                          -- app or web
+) STRICT;
+CREATE INDEX shares_at ON shares(owner_id, at);
+```
+
+It keys on the YouTube id, not `videos.id`, because the shared video is
+usually not in the corpus yet. Whether a share was a miss is not stored: the
+ledger reads it from the video's verdict and the follows when it is asked
+(`profile/ledger.py`). Rows are kept 180 days, like `signals`, pruned on insert.
 
 ## 2. FTS5
 
