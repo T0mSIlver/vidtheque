@@ -3920,7 +3920,7 @@ how many there are, and how many candidates came out that day. `capped` is
 `true` when the week holds 40 candidates or more, the most it compares.
 
 `POST /dashboard/api/budget` takes `{"week_budget_min"}`, whole minutes from
-0 to 10,080, stores it (`owners.week_budget_min`, index-schema §1.18) and
+0 to 10,080, stores it (`owners.week_budget_min`, index-schema §1.19) and
 answers it back; anything else, or another field, is `400 E_BAD_PARAM`. The
 default is 210, 30 a day. It is in `WRITE_ROUTES`.
 
