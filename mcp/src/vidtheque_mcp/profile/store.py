@@ -130,7 +130,8 @@ def apply(
     for entry_id in ops.drop:
         _guard_owner_entry(live[entry_id], actor)
 
-    texts = {str(r["text"]).casefold(): r for r in live.values()}
+    # A text this batch drops is free again: re-adding it writes a new entry.
+    texts = {str(r["text"]).casefold(): r for i, r in live.items() if i not in ops.drop}
     for entry_id, weight in ops.reweight:
         done.event_ids.append(_set(conn, entry_id, actor, "reweight", reason, weight=weight))
     for entry_id in ops.drop:

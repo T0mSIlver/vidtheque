@@ -35,7 +35,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import re
 import subprocess
 import sys
@@ -204,7 +203,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--root", type=Path, default=Path("~/.claude/projects"))
     p.add_argument("--model", default="sonnet")
-    p.add_argument("--url", default=os.environ.get("VIDTHEQUE_MCP_URL", "http://127.0.0.1:8100/mcp"))
+    p.add_argument("--url", default="http://127.0.0.1:8100/mcp", help="the instance's MCP endpoint")
     p.add_argument("--token-file", type=Path, default=None, help="a file holding the bearer token")
     p.add_argument("--send", action="store_true", help="write to the profile; a dry run otherwise")
     p.add_argument("--show-input", action="store_true", help="print the text the model would read")
