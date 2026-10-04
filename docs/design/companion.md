@@ -179,12 +179,19 @@ One per video, written after indexing. Table
   1 that it comes up. The apps show them as chips, green up, red down.
 - **summary**: a digest of at most 60 words: names, numbers, claims and
   techniques, led by what matters given the profile.
-- **moments**: up to three, each `{cue_id, offset_s, why}`, `why` at most
-  12 words.
+- **moments**: up to three, each `{cue_id, offset_s, end_cue_id, end_s, why}`,
+  `why` at most 12 words. *Amended 2026-10-04 (#156):* a moment is a span. The
+  model names the last cue it covers, `end_cue_id`, and `end_s` is that cue's
+  end, read from `cues`, never from the model. The verdict reports the
+  moments' minutes against the video's, "6 of 42 min", overlaps counted once:
+  a 2 asks for minutes, and the feed has to know how many to fit them in a
+  week (§6). A verdict written before spans has no end and no total until it
+  is rescored; the backfill's `--rescore` rewrote the 100 newest.
 
 **Receipts, always:** every moment is checked against `cues` before the
 verdict is stored. A moment whose cue does not exist, or whose offset is not
-inside that cue, is dropped, never repaired. A summary with no surviving
+inside that cue, is dropped, never repaired. So is one whose end cue is not
+this video's or comes before its first cue. A summary with no surviving
 moment is still stored; the feed says it has none.
 
 ### 3.2 How it is written
@@ -218,7 +225,9 @@ a re-embed that leaves the transcript alone costs no model call. Verdicts are on
 when the model is configured (§4), and `VIDTHEQUE_VERDICTS=0` turns them off.
 The backfill is `vidtheque-mcp verdicts backfill --limit N`, newest first; run
 again, it continues where the last batch stopped, and `--video ID` reruns one
-(an id may start with `-`; `--video=ID` is the same).
+(an id may start with `-`; `--video=ID` is the same). `--rescore` queues the
+N newest videos that already have a verdict, to rewrite them under the current
+prompt; it does not continue, so a second run queues the same videos again.
 The triage agent reads through `video-summary` as `client=triage` with signals
 off.
 

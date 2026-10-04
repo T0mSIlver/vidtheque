@@ -286,7 +286,7 @@ async def feed(request: Request) -> Response:
         rows = list(
             conn.execute(
                 "SELECT v.public_id, v.title, v.channel_name, v.duration_s, v.published_at,"
-                " d.score, d.reason, d.explored, d.matches, d.created_at FROM verdicts d"
+                " d.score, d.reason, d.explored, d.matches, d.moments, d.created_at FROM verdicts d"
                 f" JOIN videos v ON v.id = d.video_id WHERE {matched} AND d.score BETWEEN ? AND ?"
                 f" ORDER BY {ORDERS[order]} LIMIT ? OFFSET ?",
                 (*binds, low, high, limit + 1, offset),
@@ -316,6 +316,7 @@ async def feed(request: Request) -> Response:
                     "reason": row["reason"],
                     "explored": bool(row["explored"]),
                     "matches": row_matches,
+                    "moments_s": verdicts_store.moments_s(verdicts_store.moments_of(row)),
                     "judged_at": int(row["created_at"]),
                 }
                 for row, row_matches in zip(rows[:limit], matches)
@@ -418,12 +419,15 @@ async def verdict(request: Request) -> Response:
                 {
                     "cue_id": m.cue_id,
                     "offset_s": m.offset_s,
+                    "end_cue_id": m.end_cue_id,
+                    "end_s": m.end_s,
                     "why": m.why,
                     "url": deeplink(video["public_id"], m.offset_s),
                 }
                 for m in kept
             ],
             "moments_dropped": len(dropped),
+            "moments_s": verdicts_store.moments_s(kept),
             "profile_rev": int(row["profile_rev"]),
             "model": row["model"],
             "judged_at": int(row["created_at"]),

@@ -1273,7 +1273,7 @@ CREATE TABLE verdicts (
   score       INTEGER NOT NULL CHECK (score BETWEEN 0 AND 3),
   reason      TEXT    NOT NULL,
   summary     TEXT    NOT NULL,
-  moments     TEXT    NOT NULL DEFAULT '[]',  -- JSON [{cue_id, offset_s, why}], ≤ 3
+  moments     TEXT    NOT NULL DEFAULT '[]',  -- JSON [{cue_id, offset_s, end_cue_id, end_s, why}], ≤ 3
   profile_rev INTEGER NOT NULL,               -- profile_events id that scored it; 0 = empty profile
   model       TEXT    NOT NULL,               -- '<backend>:<model>'
   created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -1286,7 +1286,10 @@ CREATE INDEX verdicts_recent ON verdicts(created_at DESC);
 ```
 
 Every stored moment passed the receipt check: its `cue_id` is a `cues` row of
-this video and `offset_s` lies in `[start_s, end_s]` of that cue. A moment that
+this video and `offset_s` lies in `[start_s, end_s]` of that cue; its
+`end_cue_id` is a cue of this video at or after the first, and `end_s` is that
+cue's `end_s`. A moment written before spans (#156) has neither end field and
+is checked at its start only. A moment that
 fails is dropped, never moved to a nearby cue. A reindex rewrites `cues`, so
 `mark_ready` queues a new verdict when the stored one has a moment whose receipt
 no longer holds, and when the video has none yet.
