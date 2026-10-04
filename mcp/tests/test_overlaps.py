@@ -270,6 +270,8 @@ def test_a_collection_marks_what_repeats_an_earlier_moment(data: Path, tmp_path:
         body = client.get(f"{API}/collections/{entries['evals']}", headers=BEARER).json()
         missing = client.get(f"{API}/collections/{entries['hype']}", headers=BEARER)
         junk = client.get(f"{API}/collections/abc", headers=BEARER)
+        # A digit to `str.isdigit`, not to `int`.
+        squared = client.get(f"{API}/collections/%C2%B2", headers=BEARER)
 
     first, second = body["moments"]
     assert first["video"]["video_id"] == "kCc8FmEb1nY" and first["repeat"] is None
@@ -285,7 +287,7 @@ def test_a_collection_marks_what_repeats_an_earlier_moment(data: Path, tmp_path:
     }
     assert body["moments_s"] == 240.0 and body["has_more"] is False
     # A negative entry has no collection; neither does a made-up id.
-    for refused in (missing, junk):
+    for refused in (missing, junk, squared):
         assert refused.status_code == 404
         assert refused.json()["error"] == "E_UNKNOWN_ENTRY"
 
