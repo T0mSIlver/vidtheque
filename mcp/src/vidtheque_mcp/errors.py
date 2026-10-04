@@ -52,6 +52,9 @@ HTTP_STATUS: dict[str, int] = {
     "E_UNKNOWN_SIGNAL": 404,
     "E_NO_VERDICT": 404,
     "E_NO_BRIEF": 404,
+    # Dashboard-only: discovery's picks and speaker (dashboard.md §27).
+    "E_UNKNOWN_PICK": 404,
+    "E_NO_CHANNEL": 409,
     "E_NOT_INDEXED": 409,
     "E_INDEXING": 409,
     "E_FEATURE_DISABLED": 409,

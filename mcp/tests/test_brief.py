@@ -192,6 +192,9 @@ def test_the_brief_reads_live_parts_and_refuses_what_it_should(client: TestClien
     # The brief's own week of the ledger, in valued-time's shape.
     [week] = brief["ledger"]["weeks"]
     assert week["current"] is True and week["start"] == brief["since"]
+    # Discovery's week rides along (dashboard.md §27.7); nothing was scouted here.
+    assert brief["outside"] == {"week": brief["week"], "picks": [], "speaker": None}
+    assert week["outside"] == {"shown": 0, "kept": 0, "rate": None}
     assert brief["picks"][0]["moments"][0]["url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
     sunk = {a["video_id"]: a["sunk_by"] for a in brief["audit"]}
     assert sunk["eMlx5fFNoYc"]["text"] == "Launch hype" and sunk["skip0"] is None

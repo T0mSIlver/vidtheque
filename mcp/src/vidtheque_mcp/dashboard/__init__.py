@@ -33,7 +33,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from ..public.api import api_routes
-from . import api, brief, costs, feed, writes
+from . import api, brief, costs, feed, outside, writes
 from .access import (
     WRITE_ROUTES,
     credential,
@@ -230,6 +230,17 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             Route(f"{ROOT}/api/brief", guarded(brief.brief), methods=["GET"]),
             Route(f"{ROOT}/api/brief/checkin", brief.checkin, methods=["POST"]),
             Route(f"{ROOT}/api/skips", brief.skip, methods=["POST"]),
+            # Discovery outside the follows (§27).
+            Route(f"{ROOT}/api/outside", guarded(outside.outside), methods=["GET"]),
+            Route(f"{ROOT}/api/outside/feedback", outside.feedback, methods=["POST"]),
+            Route(f"{ROOT}/api/outside/watched", outside.watched, methods=["POST"]),
+            Route(f"{ROOT}/api/outside/follow", outside.follow, methods=["POST"]),
+            Route(f"{ROOT}/api/outside/speaker", outside.speaker, methods=["POST"]),
+            Route(
+                f"{ROOT}/api/outside/{{pick_id}}",
+                guarded(outside.outside_pick),
+                methods=["GET"],
+            ),
         ]
         if write_side
         else []
