@@ -1454,6 +1454,51 @@ usually not in the corpus yet. Whether a share was a miss is not stored: the
 ledger reads it from the video's verdict and the follows when it is asked
 (`profile/ledger.py`). Rows are kept 180 days, like `signals`, pruned on insert.
 
+### 1.20 `briefs`, `checkins`, `skip_verdicts`
+
+Added by 0019 (companion.md §6.1). The weekly brief, the owner's 1–5 check-in
+on it, and the owner's word on skipped videos.
+
+```sql
+CREATE TABLE briefs (
+  id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  week       TEXT    NOT NULL,          -- the Monday the week starts, YYYY-MM-DD, local
+  since_at   INTEGER NOT NULL, until_at INTEGER NOT NULL,
+  body       TEXT    NOT NULL DEFAULT '{}',  -- the frozen part, JSON
+  model      TEXT,                      -- NULL when no model wrote a part of it
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  pushed_at  INTEGER,
+  UNIQUE (owner_id, week)
+) STRICT;
+
+CREATE TABLE checkins (
+  owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  week     TEXT    NOT NULL,
+  rating   INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  missing  TEXT    CHECK (missing IS NULL OR length(missing) <= 500),
+  at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (owner_id, week)
+) STRICT;
+
+CREATE TABLE skip_verdicts (
+  owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  answer   TEXT    NOT NULL CHECK (answer IN ('right','wrong')),
+  source   TEXT    NOT NULL CHECK (source IN ('audit','row')),
+  score    INTEGER NOT NULL CHECK (score BETWEEN 0 AND 3),  -- the verdict's score when answered
+  at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (owner_id, video_id)
+) STRICT;
+CREATE INDEX skip_verdicts_at ON skip_verdicts(owner_id, at);
+```
+
+A week is #156's calendar week, keyed by its Monday. `body` holds what the
+brief keeps as it was on Sunday: `picks` and `audit` (public video ids),
+`said` and `said_note`; the rest of the page is read live. A `wrong` skip
+("I'd watch this") also sets the video's `feedback` to `up` (§1.17), which is
+the signal the nightly update reads; the row here is what tells a skip audit
+from a thumb.
+
 ## 2. FTS5
 
 Three external-content tables: `cues_fts`, `ocr_frames_fts`, `videos_fts`. The
