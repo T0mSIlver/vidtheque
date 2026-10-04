@@ -51,6 +51,7 @@ HTTP_STATUS: dict[str, int] = {
     # Dashboard-only: a watch return for a signal that is not this owner's `watch` (§25.10).
     "E_UNKNOWN_SIGNAL": 404,
     "E_NO_VERDICT": 404,
+    "E_NO_BRIEF": 404,
     "E_NOT_INDEXED": 409,
     "E_INDEXING": 409,
     "E_FEATURE_DISABLED": 409,

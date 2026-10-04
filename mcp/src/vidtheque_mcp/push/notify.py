@@ -70,6 +70,23 @@ class Notifier:
         if due is None:
             return 0
         data, tokens = due
+        reached = await self._send_all(data, tokens)
+        if reached:
+            await self.db.write(
+                lambda c: c.execute(
+                    "UPDATE verdicts SET notified_at = ? WHERE video_id = ?", (int(self.clock()), video_id)
+                )
+            )
+        return reached
+
+    async def brief(self, week: str, line: str) -> int:
+        """Sunday's one push: the week's brief is ready (companion.md §6.1)."""
+        tokens = await self.db.read(
+            lambda c: [r["token"] for r in c.execute("SELECT token FROM devices ORDER BY last_seen DESC")]
+        )
+        return await self._send_all({"kind": "brief", "week": week, "line": line[:REASON_CHARS]}, tokens)
+
+    async def _send_all(self, data: dict[str, str], tokens: list[str]) -> int:
         reached = 0
         gone: list[str] = []
         for token in tokens:
@@ -83,13 +100,10 @@ class Notifier:
             elif outcome is Delivery.GONE:
                 gone.append(token)
 
-        def record(c: sqlite3.Connection) -> None:
-            c.executemany("DELETE FROM devices WHERE token = ?", [(t,) for t in gone])
-            if reached:
-                c.execute("UPDATE verdicts SET notified_at = ? WHERE video_id = ?", (int(self.clock()), video_id))
-
-        await self.db.write(record)
         if gone:
+            await self.db.write(
+                lambda c: c.executemany("DELETE FROM devices WHERE token = ?", [(t,) for t in gone])
+            )
             log.info("push: forgot %d device(s) FCM no longer knows", len(gone))
         return reached
 

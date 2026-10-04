@@ -62,6 +62,8 @@ from .public.runs import Runs
 from .server import build_mcp_server
 from .tools import Deps
 from .profile.nightly import build_nightly
+from .brief.weekly import Weekly, build_weekly
+from .push.notify import PushSettings, build_notifier
 from .verdicts.stage import build_verdicts
 
 logger = logging.getLogger(__name__)
@@ -103,6 +105,19 @@ def build_app(
         public_http=public_http,
         worker_status_http=worker_status_http,
     ).app
+
+
+def _weekly_brief(db: Database) -> tuple["Weekly | None", list[httpx.AsyncClient]]:
+    """The weekly brief and the HTTP clients it owns: its model's, and its push's."""
+    clients: list[httpx.AsyncClient] = []
+    notifier = None
+    if PushSettings.from_env().credentials:
+        clients.append(httpx.AsyncClient())
+        notifier = build_notifier(db, clients[0])
+    weekly, model_http = build_weekly(db, notifier)
+    if model_http is not None:
+        clients.append(model_http)
+    return weekly, clients
 
 
 def _tighten_for_public(settings: Settings, public: PublicSettings) -> Settings:
@@ -189,6 +204,10 @@ def assemble(
     nightly, nightly_http = (
         build_nightly(db) if run_pipeline and not public.enabled else (None, None)
     )
+    # The weekly brief (companion.md §6.1) rides it too, with its own push.
+    weekly, weekly_http = (
+        _weekly_brief(db) if run_pipeline and not public.enabled else (None, [])
+    )
     follow_checks = run_pipeline and pipeline_settings.follow_checks
 
     async def before_claim() -> None:
@@ -196,8 +215,10 @@ def assemble(
             await enqueue_due(db, enabled=True)
         if nightly is not None:
             await nightly.tick()
+        if weekly is not None:
+            await weekly.tick()
 
-    if follow_checks or nightly is not None:
+    if follow_checks or nightly is not None or weekly is not None:
         runner.before_claim = before_claim
     deps = Deps(
         settings=settings,
@@ -280,6 +301,8 @@ def assemble(
                     await runner.stop()
                 if nightly is not None:
                     await nightly.aclose()
+                if weekly is not None:
+                    await weekly.aclose()
                 # Before the HTTP clients the runs are still talking through.
                 if ask_runs is not None:
                     await ask_runs.close()
@@ -288,6 +311,8 @@ def assemble(
                     await llm_http.aclose()
                 if nightly_http is not None:
                     await nightly_http.aclose()
+                for weekly_client in weekly_http:
+                    await weekly_client.aclose()
                 if http is not None:
                     await http.aclose()
                 if status_http is not None and status_http is not http:

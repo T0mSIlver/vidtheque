@@ -104,6 +104,8 @@ WRITE_ROUTES: tuple[str, ...] = (
     f"{ROOT}/api/profile",
     f"{ROOT}/api/profile/revert",
     f"{ROOT}/api/devices",
+    f"{ROOT}/api/brief/checkin",
+    f"{ROOT}/api/skips",
 )
 
 
