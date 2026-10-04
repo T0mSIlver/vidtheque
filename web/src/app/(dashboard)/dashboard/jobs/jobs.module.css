@@ -118,7 +118,12 @@
 }
 
 .colJob {
-  min-width: 16rem;
+  min-width: 18rem;
+}
+
+.cellItems,
+.cellWhen {
+  white-space: nowrap;
 }
 
 .colState {
@@ -126,6 +131,14 @@
   flex-wrap: wrap;
   gap: var(--s1);
   align-items: center;
+}
+
+.rowMeta {
+  composes: t-cell from global;
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
 }
 
 .rowMore {
@@ -256,47 +269,6 @@
   overflow-wrap: anywhere;
 }
 
-.digest {
-  margin-top: var(--s2);
-}
-
-.digest > summary {
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: var(--w-mono-label);
-  line-height: 1.4;
-  letter-spacing: 0.19em;
-  text-transform: uppercase;
-  font-variant-ligatures: none;
-  display: inline-block;
-  padding-bottom: 2px;
-  color: var(--fg2);
-  border-bottom: 1px solid var(--seam2);
-  cursor: pointer;
-  list-style: none;
-}
-
-.digest > summary::-webkit-details-marker {
-  display: none;
-}
-
-.digest > summary::before {
-  content: "+ ";
-}
-
-.digest[open] > summary::before {
-  content: "\2212 ";
-}
-
-.digest > summary:hover {
-  color: var(--fg);
-  border-bottom-color: var(--gold-44);
-}
-
-.digestCount {
-  color: var(--fg);
-}
-
 .minirow {
   composes: t-cell from global;
   display: flex;
@@ -327,11 +299,8 @@
   list-style: none;
 }
 
-/* On a phone each row is a block and each cell wears its column's name. */
-.jobs {
-  composes: stacked from "@/components/dashboard/kit/table.module.css";
-}
-
+/* On a phone a job is a block: its name, then one wrapped line of state,
+   items, wall clock and finish time. The items table keeps its labels. */
 .items {
   composes: stacked from "@/components/dashboard/kit/table.module.css";
 }
@@ -349,9 +318,36 @@
     border-bottom: 1px solid var(--seam);
   }
 
-  /* Reset `text-align` so a `.num` label does not hug its value. */
   .jobs tbody th,
-  .jobs tbody td,
+  .jobs tbody td {
+    display: inline-flex;
+    align-items: center;
+    height: auto;
+    padding: 2px var(--s3) 2px 0;
+    border: 0;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .jobs tbody th {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    padding-bottom: var(--s1);
+  }
+
+  .jobs tbody td:empty {
+    display: none;
+  }
+
+  .cellItems,
+  .cellClock,
+  .cellWhen {
+    color: var(--fg2);
+  }
+
+  /* Reset `text-align` so a `.num` label does not hug its value. */
   .items tbody th,
   .items tbody td {
     display: flex;
@@ -362,13 +358,11 @@
     text-align: left;
   }
 
-  .jobs tbody th,
   .items tbody th {
     flex-direction: column;
     gap: 0;
   }
 
-  .jobs tbody td::before,
   .items tbody td::before {
     content: attr(data-label);
   }
@@ -378,7 +372,66 @@
   }
 }
 
-/* The counts by state, one row under the filter band they open. */
-.byState {
-  margin: var(--s4) 0 var(--s5);
+/* ------------------------------------------------------------- the tabs */
+
+/* The state filter: words with their counts, the current one underlined in
+   gold like a sorted column. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s6);
+  margin-bottom: var(--s2);
+  border-bottom: 1px solid var(--seam);
+}
+
+.tab {
+  composes: t-cell from global;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-height: 2.5rem;
+  padding: var(--s2) 0;
+  color: var(--fg2);
+  text-decoration: none;
+  box-shadow: inset 0 -1px 0 transparent;
+}
+
+.tab:hover {
+  color: var(--fg);
+}
+
+.tab[aria-current="page"] {
+  color: var(--fg);
+  box-shadow: inset 0 -2px 0 var(--gold);
+}
+
+.tabCount {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg2);
+}
+
+.liveCount {
+  display: block;
+  margin-top: 2px;
+  color: var(--fg2);
+}
+
+/* One job's three durations, one line that wraps by figure. */
+.timeLine {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s6);
+  list-style: none;
+  color: var(--fg2);
+}
+
+.figure {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  color: var(--fg);
 }

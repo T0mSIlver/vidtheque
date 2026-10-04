@@ -58,7 +58,7 @@ const DEFERRED_JOB = {
   basis: BASIS(1),
   // Nothing has been fetched, so there is no title to print and the row says so
   // with the count it does have. The sentence is `read_models.job_contents`'.
-  contents: { title: null, more: 0, channel: null, note: "1 item(s), none fetched yet" },
+  contents: { title: null, more: 0, channel: null, note: "1 item, none fetched yet" },
 };
 
 export const RUNNING_JOB = {
@@ -291,15 +291,6 @@ export const FOCUSED_JOB_DETAIL = { ...OWNER_JOB_DETAIL, focus: DONE_ITEM, stage
 /** The same seven rows with nothing to attribute them to — a table about no
  *  video, which is the panel `job.html` did not draw. */
 export const UNFOCUSED_JOB_DETAIL = { ...OWNER_JOB_DETAIL, focus: null, stages: STAGES };
-
-/** A job with no items at all: the figure-note is the fact, not five zeroes. */
-export const EMPTY_JOB_DETAIL = {
-  ...OWNER_JOB_DETAIL,
-  job: { ...FINISHED_JOB, n_items: 0, n_done: 0, n_failed: 0, degraded: 0 },
-  items: [],
-  counts: {},
-  error_counts: {},
-};
 
 export const RUNNING_JOB_DETAIL = {
   now: NOW,

@@ -5,25 +5,15 @@ import { useTicking } from "@/components/ui/RetryIn";
 import { dashboard, DashboardError } from "@/lib/dashboard/client";
 import { isRateLimited, useResource } from "@/lib/dashboard/resource";
 import type { JobDetail } from "@/lib/dashboard/schemas";
-import { count, duration } from "@/lib/format";
+import { duration } from "@/lib/format";
 import { Notice, notice, ReadFailure, Refusal } from "@/components/dashboard/kit/notice";
 import { Crumbs } from "@/components/dashboard/kit/table";
-import {
-  Fact,
-  Figure,
-  PageHead,
-  Panel,
-  Pending,
-  Sep,
-  Title,
-  ui,
-  Unbroken,
-} from "@/components/dashboard/kit/ui";
+import { Page, PageHead, Panel, Pending, Title } from "@/components/dashboard/kit/ui";
 import { refusalOf, useWriteSide } from "@/components/dashboard/kit/write";
 import { useSession } from "@/components/dashboard/session";
 import { CancelControl } from "../CancelControl";
 import styles from "../jobs.module.css";
-import { countsOf, JobStates, livePoll, Progress, tallyOf, WallClock } from "../parts";
+import { countsOf, JobStates, KINDS, livePoll, Progress, WallClock } from "../parts";
 import { retryable, RetryControl } from "../RetryControl";
 import { Degraded, Events, Items, Stages } from "./panels";
 
@@ -36,14 +26,9 @@ export function JobDetailView({ jobId }: { jobId: string }) {
     pollMs: livePoll,
   });
   const moving = Boolean(job.data?.live) && (job.error === undefined || isRateLimited(job.error));
-  const [watched, setWatched] = useState<string | null>(null);
-  // Did this view watch the job run? The final-record note is owed only then.
-  if (job.data?.live && !job.isStale && watched !== jobId) setWatched(jobId);
 
   if (job.data) {
-    return (
-      <Loaded data={job.data} polling={moving} stopped={job.error} wasLive={watched === jobId} />
-    );
+    return <Loaded data={job.data} polling={moving} stopped={job.error} />;
   }
 
   const refusal = job.error;
@@ -80,12 +65,10 @@ function Loaded({
   data,
   stopped,
   polling,
-  wasLive,
 }: {
   data: JobDetail;
   stopped: unknown;
   polling: boolean;
-  wasLive: boolean;
 }) {
   const { job } = data;
   const { rendered } = useWriteSide();
@@ -94,7 +77,7 @@ function Loaded({
   const redacted = data.redacted ?? readonly;
 
   return (
-    <>
+    <Page>
       <Title>{retriedFrom ? `Retry from ${retriedFrom}` : `Job ${job.job_id}`}</Title>
       <Crumbs section="jobs" label="Jobs" id={job.job_id} />
 
@@ -104,43 +87,32 @@ function Loaded({
             Job <code>{job.job_id}</code>
           </>
         }
+        note={
+          <>
+            {KINDS[job.kind] ?? job.kind}, {countsOf(job)}, priority {job.priority}
+          </>
+        }
       >
         <span className={styles.headstates}>
           <JobStates job={job} codeFirst moving={polling} />
         </span>
       </PageHead>
 
-      <p className={ui.meta}>
-        <Unbroken>
-          <span>{job.kind}</span>
-        </Unbroken>
-        <Sep />{" "}
-        <Unbroken>
-          <Fact label="priority" value={String(job.priority)} />
-        </Unbroken>
-        <Sep />{" "}
-        <Unbroken>
-          <span className={ui.mono}>{countsOf(job)}</span>
-        </Unbroken>
-      </p>
-
-      <p className={styles.progressline}>
-        <Progress job={job} tickMs={data.poll_ms} wide />
-        {stopped ? (
-          <span className={styles.staleNote}>
-            the live view stopped: {refusalOf(stopped).message}
-          </span>
-        ) : !data.live && wasLive ? (
-          // The poll replaces the whole payload, so this page is the record.
-          <span className={styles.staleNote}>
-            this job has finished, so this is the final record
-          </span>
-        ) : null}
-      </p>
+      {/* A bar only while it moves: a finished job's bar is always full. */}
+      {job.live || stopped ? (
+        <p className={styles.progressline}>
+          {job.live ? <Progress job={job} tickMs={data.poll_ms} wide /> : null}
+          {stopped ? (
+            <span className={styles.staleNote}>
+              The live view stopped: {refusalOf(stopped).message}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
 
       {/* Neither control re-reads the page: the tick shows a cancel, and a retry
           makes a different job that its receipt links to. */}
-      {rendered ? (
+      {rendered && (job.live || retryable(job)) ? (
         <div className={styles.controls}>
           {job.live ? <CancelControl job={job} label="Cancel this job" /> : null}
           {retryable(job) ? (
@@ -157,7 +129,7 @@ function Loaded({
       <Stages data={data} />
       <Degraded data={data} />
       <Events events={data.events} redacted={redacted} />
-    </>
+    </Page>
   );
 }
 
@@ -169,18 +141,13 @@ function Deferred({ job, moving }: { job: JobDetail["job"]; moving: boolean }) {
   return (
     <Notice
       id="deferred"
-      title="Waiting, not stuck"
+      title={`Waiting to retry, ${duration(left)} left`}
       detail={
-        <>
-          The job is <code>queued</code> with a <code>not_before</code> in the future, so{" "}
-          <code>claim_next</code> will not pick it up for another <strong>{duration(left)}</strong>.
-          {job.error_code ? (
-            <>
-              {" "}
-              The backoff was set after <code>{job.error_code}</code>.
-            </>
-          ) : null}
-        </>
+        job.error_code ? (
+          <>
+            The retry was set after <code>{job.error_code}</code>.
+          </>
+        ) : null
       }
     />
   );
@@ -209,26 +176,25 @@ function JobError({ job, redacted }: { job: JobDetail["job"]; redacted: boolean 
  *  the wall clock and the difference is time spent waiting. */
 function Cost({ data, polling }: { data: JobDetail; polling: boolean }) {
   const { job } = data;
-  const end = job.finished_at ? "finished" : "now";
   return (
-    <Panel id="clocks" title="What it cost">
-      <dl className={ui.figures}>
-        <Figure label="wall clock" notes={[`created → ${end}`]}>
-          <WallClock seconds={job.wall_s} live={job.live && polling} />
-        </Figure>
-        <Figure label="on the runner" notes={[`first claim → ${end}`]}>
-          {duration(job.ran_s)}
-        </Figure>
-        <Figure label="queued for" notes={["created → first claim"]}>
-          {duration(job.waited_s)}
-        </Figure>
-        <Figure label="items" notes={[itemNote(data)]}>
-          {count(job.n_items)}
-        </Figure>
-      </dl>
+    <Panel id="clocks" title="Time">
+      <ul className={styles.timeLine}>
+        <li>
+          <span className={styles.figure}>
+            <WallClock seconds={job.wall_s} live={job.live && polling} />
+          </span>{" "}
+          wall clock
+        </li>
+        <li>
+          <span className={styles.figure}>{duration(job.ran_s)}</span> running
+        </li>
+        <li>
+          <span className={styles.figure}>{duration(job.waited_s)}</span> queued
+        </li>
+      </ul>
       {data.error_counts && Object.keys(data.error_counts).length ? (
         <p className={notice.panelNote}>
-          <span className={styles.label}>item error codes</span>{" "}
+          Item errors:{" "}
           {Object.entries(data.error_counts).map(([code, n], index) => (
             <span key={code}>
               {index ? ", " : null}
@@ -239,13 +205,4 @@ function Cost({ data, polling }: { data: JobDetail; polling: boolean }) {
       ) : null}
     </Panel>
   );
-}
-
-/** The states the items are in (`counts`), `none` for no items, or the card's
- *  tally on an instance that predates `counts`. */
-function itemNote(data: JobDetail): string {
-  if (!data.counts) return tallyOf(data.job);
-  const entries = Object.entries(data.counts);
-  if (!entries.length) return "none";
-  return entries.map(([state, n]) => `${n} ${state}`).join(" · ");
 }
