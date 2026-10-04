@@ -370,7 +370,8 @@ def _week_param(request: Request, now: float) -> str:
         return current
     week = raw.strip()
     try:
-        valid = _WEEK.fullmatch(week) is not None and date.fromisoformat(week).weekday() == 0
+        # From 1970 on: a local midnight before the epoch can fall outside what a timestamp holds.
+        valid = _WEEK.fullmatch(week) is not None and week >= "1970" and date.fromisoformat(week).weekday() == 0
     except ValueError:
         valid = False
     if not valid:
