@@ -1,7 +1,6 @@
--- vidtheque migration 0017 — the week's ranking and the owner's time budget
--- (companion.md §3.4, #156).
+-- vidtheque migration 0017 — the week's ranking (companion.md §3.4, #156).
 --
--- Additive: two new tables and one column on `owners`.
+-- Additive: two new tables.
 --
 -- `week_ranks` is the latest ranking of a week's 2+ verdicts: one row per
 -- ranked video, `rank` 1 the best, `top` the at most five that show as 3.
@@ -11,9 +10,6 @@
 -- `week_rank_runs` is one row per week: the candidate set it last ranked
 -- (`candidates`, a JSON list of [video_id, verdict created_at]), so a week
 -- whose set has moved since is ranked again, and how that went.
---
--- `owners.week_budget_min` is the minutes a week the feed fits (§6): 210 by
--- default, 30 a day.
 
 CREATE TABLE week_ranks (
   video_id  INTEGER PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
@@ -32,6 +28,3 @@ CREATE TABLE week_rank_runs (
   model      TEXT,
   ran_at     INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
-
-ALTER TABLE owners ADD COLUMN week_budget_min INTEGER NOT NULL DEFAULT 210
-  CHECK (week_budget_min BETWEEN 0 AND 10080);

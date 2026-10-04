@@ -1401,9 +1401,9 @@ writes none. A nightly update deletes the rows it leaves with `state` and
 `seen` both `none`; a take-back never deletes, so a night still marks the row it read. Taps
 from before 0016 stay events only; nothing is backfilled.
 
-### 1.18 `week_ranks`, `week_rank_runs` and the week's budget
+### 1.18 `week_ranks` and `week_rank_runs`
 
-Added by 0017 (companion.md §3.4, #156). Additive: two tables and a column.
+Added by 0017 (companion.md §3.4, #156). Additive: two tables.
 
 ```sql
 CREATE TABLE week_ranks (
@@ -1422,16 +1422,12 @@ CREATE TABLE week_rank_runs (
   model      TEXT,
   ran_at     INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
-
-ALTER TABLE owners ADD COLUMN week_budget_min INTEGER NOT NULL DEFAULT 210
-  CHECK (week_budget_min BETWEEN 0 AND 10080);
 ```
 
 A rerank replaces the week's `week_ranks` rows in one transaction with its
 `week_rank_runs` row. A week is ranked again when its candidates, the
 fingerprint in `candidates`, differ from the last ranking, or that ranking
-failed; a failed run keeps the week's previous rows. `week_budget_min` is the
-minutes a week the feed fits (companion.md §6).
+failed; a failed run keeps the week's previous rows.
 
 ## 2. FTS5
 
