@@ -220,6 +220,12 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             Route(f"{ROOT}/api/feedback", feed.feedback, methods=["POST"]),
             Route(f"{ROOT}/api/watched", feed.watched, methods=["POST"]),
             Route(f"{ROOT}/api/shares", feed.share, methods=["POST"]),
+            Route(f"{ROOT}/api/collections", guarded(feed.collections), methods=["GET"]),
+            Route(
+                f"{ROOT}/api/collections/{{entry_id}}",
+                guarded(feed.collection),
+                methods=["GET"],
+            ),
             Route(f"{ROOT}/api/profile", guarded(feed.profile), methods=["GET"]),
             Route(f"{ROOT}/api/profile", feed.profile_ops, methods=["POST"]),
             Route(f"{ROOT}/api/profile/revert", feed.profile_revert, methods=["POST"]),

@@ -323,6 +323,20 @@ negative entries, since without them the rescore is the same prompt. A rescore
 of 2 or more replaces the verdict with `explored = 1`; a lower one leaves the
 first verdict and costs the one extra call. The roll is injected, so tests pick it.
 
+As built (0023), skip what you have seen (#171): Tom watches in his patched
+YouTube app, not in a player of ours, so vidtheque cannot skip a stretch
+during playback; it moves the link instead. After the probes, the seen videos
+they hit most (at most 3) are compared with this one chunk by chunk, up to 240
+chunks a side, spread evenly past that. A chunk within the same 0.25 of one of
+theirs is repeated; runs of repeated chunks merge across one unrepeated chunk,
+and a run of at least 2 chunks (about 75 s) is stored on the verdict as a span:
+where it starts and ends here, the seen video, and where it starts there (at
+most 8). The video page lists each span with the video it repeats, and a
+moment whose start a span covers (or one starting within 15 s of it, a
+chunk's coarseness) links to the span's end; a moment repeated all through
+keeps its start and says so. A verdict written before 0023 has no spans until
+it is rescored.
+
 As built (0014), the digest: Tom's first read of the 0010 verdicts (2026-10-03)
 found the summaries long and generic, and the reason, a comma-separated run of
 entries with arrows, hard to skim. The prompt now carries the writing rules
@@ -524,8 +538,13 @@ Two surfaces, each answering one question. Nothing appears on both.
     video when he wants to.
   - **Video**: summary, moments (each a `youtu.be/ID?t=` link), thumbs up and
     down, mute, **Ask Claude**.
+    *Amended 2026-10-04 (#171):* the stretches it repeats from videos you
+    already saw, each naming that video, and moment links that start after
+    them (§3.2).
   - **Profile**: entries, history with revert, **Ask Claude to build my
     profile**, the notification threshold.
+    *Amended 2026-10-04 (#171):* each wanted entry with moments shows its
+    collection, "4 moments, 19 min", which opens it (§6.3).
 - **Search** (*amended 2026-10-04, #127*), a side page on both, apart from the
   feed's own title, channel and date search: the same search the MCP `search`
   tool runs, over every channel. A hit is the video, its channel and date, and
@@ -593,7 +612,7 @@ existing credential order (bearer or session) and write guard, so no new
 prefix and no new guard: `feed`, `feed/facets`, `verdicts/{video_id}`, `signals` (POST),
 `feedback` (POST, 0016), `watched` and `shares` (POST, 0018), `valued-time` (GET),
 `profile` (GET, POST ops, POST revert), `devices` (POST, DELETE),
-`week` and `budget` (POST) (#156).
+`week` and `budget` (POST) (#156), `collections` and `collections/{entry_id}` (#171).
 `dashboard.md` gets their contract.
 
 ### 6.1 The weekly brief
@@ -714,6 +733,27 @@ rate beside the followed one.
 
 `VIDTHEQUE_SCOUT=0` turns scouting and speaker suggestions off; both need the
 companion model (§4). Trial follows end whether scouting is on or not.
+
+### 6.3 Moment collections
+
+*Added 2026-10-04 (#171):* the best moments across videos, by profile entry,
+so a topic can be caught up on in one sitting. A collection belongs to a live
+entry of positive weight. It holds the moments of the verdicts of 2 or more
+that match the entry `up`, best first: the entry central to the video
+(strength 2) before one that only comes up, then the higher score, then the
+newer video; a video's moments stay together, in order. It leaves out a
+moment with no span (its length is unknown), one whose receipt a reindex
+broke, and every moment of a video thumbed down or muted. It is capped at 10
+moments and says when more matched; the newest 2,000 verdicts are read.
+
+The profile screen shows each collection's count and minutes ("Coding agent
+evals: 4 moments, 19 min", a video's overlapping moments counted once), and
+opens it. The collection screen lists the moments, each with its video, its
+`why` and its minutes, and walks them from the first: a moment that says what
+an earlier one of another video said (one chunk within 0.25 is enough, since
+moments are short) names that one, and its link starts after the repeat, by
+§3.2's rule. Like the feed, it is a list that ends; it plays nothing (§8).
+Endpoints: dashboard.md §25.14.
 
 ## 7. The console overhaul
 

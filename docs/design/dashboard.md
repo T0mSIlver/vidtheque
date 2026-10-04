@@ -3722,6 +3722,17 @@ one not judged yet. *Amended 2026-10-04 (#127):* `E_NO_VERDICT` carries
 `video`, the row fields, beside the envelope, so a page opened from search
 draws the video it has no verdict for.
 
+*Amended 2026-10-04 (#171):* `overlaps` lists the stretches the video repeats
+from videos the owner saw (companion.md §3.2), in order, each
+`{video: {video_id, title, channel}, start_s, end_s, seen_s, url}`: this
+video's `start_s`–`end_s` says what `video` says from `seen_s`, and `url`
+opens `video` there. A repeat of a video no longer in the corpus is left out.
+A moment gains `start_s`, where its `url` now starts: `offset_s`, or the end
+of a repeat that covers its start, or `offset_s` again when repeats cover all
+of it. `repeat` is `null`, or the first repeat the moment touches as
+`{video_id, title, channel, whole}`, `whole` true when it is repeated all
+through.
+
 ### 25.4 `POST /dashboard/api/signals`, `POST /dashboard/api/feedback`
 
 `{"kind", "video_id", "offset_s"}`, recorded through `record_signal`
@@ -3928,6 +3939,35 @@ how many there are, and how many candidates came out that day. `capped` is
 0 to 10,080, stores it (`owners.week_budget_min`, index-schema §1.19) and
 answers it back; anything else, or another field, is `400 E_BAD_PARAM`. The
 default is 210, 30 a day. It is in `WRITE_ROUTES`.
+
+### 25.14 `GET /dashboard/api/collections`, `GET /dashboard/api/collections/{entry_id}` (2026-10-04, #171)
+
+Moment collections (companion.md §6.3), for the profile screen and the
+collection screen.
+
+```json
+{"collections": [{"entry_id": 15, "text": "Coding agent evals", "moments": 4,
+                  "moments_s": 1140.0, "videos": 3, "has_more": false}]}
+```
+
+One per live entry of positive weight that has a moment, in the profile's
+order. `moments_s` counts a video's overlapping moments once; `has_more` is
+`true` when more than the 10 moments shown matched.
+
+`GET /dashboard/api/collections/{entry_id}`:
+
+```json
+{"entry": {"entry_id": 15, "text": "Coding agent evals"},
+ "moments": [{"video": {…the row fields…}, "why": "…", "offset_s": 30.0, "end_s": 150.0,
+              "start_s": 105.0, "url": "https://youtu.be/zduSFxRajkE?t=103",
+              "repeat": {"item": 0, "video_id": "kCc8FmEb1nY", "title": "…", "whole": false}}],
+ "moments_s": 1140.0, "has_more": false}
+```
+
+`moments` best first; `start_s`, `url` and `whole` as on the video screen
+(§25.3), and `repeat` names the earlier moment, by its index in `moments`, that
+this one repeats. An `entry_id` that is not a live entry of positive weight is
+`404 E_UNKNOWN_ENTRY`.
 
 ## 26. The weekly brief's endpoints (2026-10-04)
 

@@ -277,6 +277,7 @@ class VerdictStage:
                 profile_rev=inputs.rev,
                 model=self.label,
                 explored=explored,
+                overlaps=inputs.spans,
             )
             return dropped
 
@@ -336,6 +337,7 @@ class VerdictStage:
                 ],
                 TRANSCRIPT_CHARS,
             )
+            seen = novelty.seen(c, video_id)
             return Inputs(
                 entries=[
                     (int(e["id"]), float(e["weight"]), str(e["text"]))
@@ -343,7 +345,8 @@ class VerdictStage:
                 ],
                 rev=profile_store.revision(c),
                 summary=summary_text,
-                seen=novelty.prompt_lines(novelty.seen_overlap(c, video_id)),
+                seen=novelty.prompt_lines(seen.overlaps),
+                spans=seen.spans,
                 transcript=transcript,
             )
 
@@ -358,6 +361,7 @@ class Inputs:
     rev: int
     summary: str
     seen: str
+    spans: list[novelty.Span]
     transcript: str
 
     @property
