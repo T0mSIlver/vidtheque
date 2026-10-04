@@ -4116,3 +4116,19 @@ carries `outside` beside `hits` for each week: `{"shown", "kept", "rate"}`,
 the week's shown picks and the share thumbed up or watched past half their
 moments. `corpus-summary include_follows` and the Following page print a
 trial's end date.
+
+## 28. The console redesign (2026-10-04, #182)
+
+Tom's direction for every console page: quiet when fine, loud when not; human
+labels; no narration; statistics on demand; each fact once; a reading width;
+controls weighted by use. DESIGN.md's dashboard section holds the visual
+rules; this section holds what each page shows. Payloads are unchanged.
+
+### 28.1 The shared kit
+
+`kit/ui` gains `Page` (the body on a centred 60rem column), `Wide` (a block
+allowed past it, for a table that needs the room) and `AllClear` (the one
+line a section shows when nothing needs acting on). A `Notice` with tone
+`bad` or `warn` is the page's alert, at the top; a neutral one is an empty
+state. `Fold` is the details disclosure. `PageHead` has no rule under it.
+Panel headings, table heads and figure labels are sans and sentence case.

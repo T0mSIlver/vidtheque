@@ -1,19 +1,30 @@
-/* A notice is a band under a rule, not a card. It is neutral unless a tone is
-   opted into: an empty list or a deployment that does not index has not
-   failed. */
+/* A notice is neutral unless a tone is opted into: an empty list or a
+   deployment that does not index has not failed. A toned notice is an alert:
+   a tinted band at the top of the page, where it cannot be scrolled past. */
 
 .notice {
   margin-top: var(--s6);
   padding: var(--s3) 0 var(--s4);
-  border-top: 2px solid var(--seam2);
+  border-top: 1px solid var(--seam2);
 }
 
-.notice[data-tone="bad"] {
-  border-top-color: var(--tone-bad);
+.notice[data-tone="bad"],
+.notice[data-tone="warn"] {
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--tone-bad-line);
+  background: var(--tone-bad-bg);
 }
 
 .notice[data-tone="warn"] {
-  border-top-color: var(--tone-warn);
+  border-color: var(--tone-warn-line);
+  background: var(--tone-warn-bg);
+}
+
+/* Alerts stacked at the top of a page sit close together. */
+.notice[data-tone] + .notice[data-tone="bad"],
+.notice[data-tone] + .notice[data-tone="warn"] {
+  margin-top: var(--s2);
 }
 
 .title {
@@ -27,6 +38,12 @@
 
 .notice[data-tone="warn"] .title {
   color: var(--tone-warn);
+}
+
+/* On a tinted ground the second line takes the ink, not the grey. */
+.notice[data-tone="bad"] .detail,
+.notice[data-tone="warn"] .detail {
+  color: var(--fg);
 }
 
 .detail {

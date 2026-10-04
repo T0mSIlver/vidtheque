@@ -1,7 +1,6 @@
 "use client";
 
 import { useId, useState, type ReactNode } from "react";
-import controls from "./controls.module.css";
 import styles from "./fold.module.css";
 
 /**
@@ -34,7 +33,7 @@ export function Fold({
     <div className={phone ? styles.phone : styles.fold} data-open={open ? "" : undefined}>
       <button
         type="button"
-        className={`${controls.ghostlink} ${styles.toggle}`}
+        className={styles.toggle}
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen(!open)}
