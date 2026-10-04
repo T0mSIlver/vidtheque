@@ -1352,11 +1352,14 @@ def job_contents(
         verb = "checked" if card["state"] == "done" else "check of"
         return {"title": None, "more": 0, "channel": None, "note": f"{verb} {follow}"}
     if row is None or not row["first_title"]:
+        # "none fetched yet" promises a fetch; a finished job will not make one.
+        items = f"{n_items} item" if n_items == 1 else f"{n_items} items"
+        live = card["state"] in ("queued", "running")
         return {
             "title": None,
             "more": 0,
             "channel": None,
-            "note": f"{n_items} item(s), none fetched yet",
+            "note": f"{items}, none fetched yet" if live else items,
         }
     return {
         "title": str(row["first_title"]),

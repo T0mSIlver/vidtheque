@@ -1725,7 +1725,7 @@ def test_the_jobs_list_says_what_each_row_holds(tmp_path: Path) -> None:
         "title": None,
         "more": 0,
         "channel": None,
-        "note": "1 item(s), none fetched yet",
+        "note": "1 item, none fetched yet",
     }
 
 
