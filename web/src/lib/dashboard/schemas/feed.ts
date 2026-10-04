@@ -144,6 +144,9 @@ export const ProfileEntry = z.object({
   /** In [-1, 1]; negative is "less of this". */
   weight: z.number(),
   source: z.string(),
+  /** A project lapses at `expires_at` unless written again (#159). */
+  kind: z.enum(["topic", "project"]).default("topic"),
+  expires_at: epoch().nullable().default(null),
   created_at: epoch(),
   evidence: z.string().nullable(),
 });

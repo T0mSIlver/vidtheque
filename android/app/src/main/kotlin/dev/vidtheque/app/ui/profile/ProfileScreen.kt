@@ -115,7 +115,7 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
         onBuild = {
             // As on the video screen: the Claude app keeps `q`; copy only when nothing opens the link.
             if (!context.openLink(claudeUri(PROFILE_PROMPT))) {
-                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Build my profile", PROFILE_PROMPT))
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Profile interview", PROFILE_PROMPT))
                 scope.launch { snackbar.showSnackbar("Prompt copied. $NO_APP") }
             }
         },
@@ -179,12 +179,12 @@ fun ProfileContent(
                     contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MediumContainerHeight),
                 ) {
                     Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                    Text("Ask Claude to build my profile", style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
+                    Text("Ask Claude to interview me", style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
                 }
             }
             item {
                 Text(
-                    "Claude saves the list with the profile tool when vidtheque is one of its connectors.",
+                    "Five questions, once in a while. Claude saves the answers with the profile tool when vidtheque is one of its connectors.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -229,7 +229,7 @@ private fun Entry(entry: ProfileEntry, busy: Boolean, onDrop: () -> Unit) {
             Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(entry.text, style = entryStyle())
                 Text(
-                    listOfNotNull("by ${source(entry.source)}", entry.createdAt?.let { dated(it) }).joinToString(" · "),
+                    listOfNotNull("by ${source(entry.source)}", entry.createdAt?.let { dated(it) }, entry.expiresAt?.let { lapses(it) }).joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -317,6 +317,12 @@ private fun Moved(event: ProfileEvent, modifier: Modifier) {
 }
 
 /** Who wrote it, in the reader's words: the actors are the server's (companion.md §2.1). */
+/** "project, 12 days left": a project lapses unless written again (#159). */
+private fun lapses(expiresAt: Long, now: Long = System.currentTimeMillis() / 1000): String {
+    val days = maxOf(0L, (expiresAt - now + 86_399) / 86_400)
+    return "project, $days ${if (days == 1L) "day" else "days"} left"
+}
+
 private fun source(actor: String): String = when (actor) {
     "owner" -> "you"
     "app" -> "you, in the app"

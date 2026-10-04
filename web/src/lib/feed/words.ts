@@ -18,7 +18,13 @@ export function claudeUrl(prompt: string): string {
   return `https://claude.ai/new?q=${encodeURIComponent(prompt)}`;
 }
 
-/** Names the corpus and the video, and leaves the question to you. */
+/** What Claude saves from an Ask Claude conversation (#159). */
+export const PROFILE_NOTE =
+  "If our conversation shows a topic I care about or am tired of, save it with the " +
+  "vidtheque profile tool: a topic of 2-4 words, a weight from -1 to 1 and a one-line " +
+  "reason. Topics only: no companies, people, pay or job details.";
+
+/** Names the corpus and the video, leaves the question to you, and has Claude save what it learns. */
 export function videoPrompt(video: {
   video_id: string;
   title: string;
@@ -29,19 +35,27 @@ export function videoPrompt(video: {
     `I have a question about a video in my vidtheque corpus: "${video.title}"${by}, ` +
     `video id ${video.video_id}. Read it with the vidtheque tools (video-summary first, ` +
     `then get-segment-context where you need the detail) and cite the youtu.be links ` +
-    `with their timestamps.\n\nMy question: `
+    `with their timestamps. ${PROFILE_NOTE}\n\nMy question: `
   );
 }
 
-/** "Ask Claude to build my profile" (§2.2). */
+/** The on-demand interview (§2.2). */
 export const PROFILE_PROMPT =
-  "Help me build my interest profile in vidtheque. It is a short list of interests in " +
-  "plain words, each with a weight from -1 to 1 (negative means less of this), and it " +
-  "decides which new videos from the channels I follow are worth my time. Start from " +
-  "what you already know about me and my work. If that is not enough, interview me " +
-  "with a few short questions first. Show me the list, then save it with the vidtheque " +
-  "profile tool: call it bare to see what is there, add what is missing, and do not " +
-  "drop entries I wrote.";
+  "Interview me to build my interest profile in vidtheque, which decides which new videos " +
+  "from the channels I follow are worth my time. Ask me these five questions one at a time, " +
+  "and keep each answer short: 1. What am I building right now? 2. What do I want to learn " +
+  "next? 3. What do I already know well enough to skip the basics of? 4. What am I tired of " +
+  "hearing about? 5. What kind of video is worth my time? Then show me the list you would " +
+  "save: topics of 2-4 words, each weighted from -1 (less of this) to 1, and what I am " +
+  'building as kind "project". Topics only: no companies, people, pay or job details. ' +
+  "Once I agree, save it with the vidtheque profile tool: call it bare to see what is there, " +
+  "add what is missing, and do not drop entries I wrote.";
+
+/** "project, 12 days left": a project lapses unless written again (#159). */
+export function lapses(expiresAt: number, now = Date.now() / 1000): string {
+  const days = Math.max(0, Math.ceil((expiresAt - now) / 86_400));
+  return `project, ${days} ${days === 1 ? "day" : "days"} left`;
+}
 
 /** The weight a pasted line gets when it names none. */
 export const DEFAULT_WEIGHT = 0.5;
