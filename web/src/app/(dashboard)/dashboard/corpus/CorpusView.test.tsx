@@ -11,13 +11,37 @@ vi.mock("next/navigation", async () => (await import("@/test/next")).navigationM
 // What is in the corpus: the counts, the state words with their filters, the
 // lists, and what the projection drops.
 
-function mount(corpus: Answer, session: unknown = OWNER_SESSION) {
+function mount(corpus: Answer, session: unknown = OWNER_SESSION, ledger?: Answer) {
   return mountDashboard(<CorpusView />, {
     path: "/dashboard/corpus",
     session,
-    routes: { "/dashboard/api/corpus": corpus },
+    routes: {
+      "/dashboard/api/corpus": corpus,
+      ...(ledger ? { "/dashboard/api/valued-time": ledger } : {}),
+    },
   });
 }
+
+const week = (
+  start: number,
+  current: boolean,
+  kept: number,
+  offered: number,
+  down: number,
+  watched: number,
+) => ({
+  start,
+  current,
+  hits: { kept, offered, rate: offered ? kept / offered : null, capped: false },
+  regret: { down, watched, rate: watched ? down / watched : null, capped: false },
+  misses: { count: 2, pending: 1, shared: 4, capped: false },
+});
+
+const LEDGER = {
+  regret_target: 0.1,
+  // Mondays 00:00 at UTC+2, the box's clock.
+  weeks: [week(1_791_756_000, true, 3, 7, 1, 6), week(1_791_151_200, false, 0, 0, 0, 0)],
+};
 
 describe("the corpus page", () => {
   it("carries the corpus band, stamped once", async () => {
@@ -104,6 +128,26 @@ describe("the corpus page", () => {
     });
 
     expect(await screen.findByText(/The largest 3/)).toBeInTheDocument();
+  });
+
+  it("shows the weekly ledger against YouTube, regret past its target flagged", async () => {
+    await mount({ body: OWNER_CORPUS }, OWNER_SESSION, { body: LEDGER });
+
+    const now = (await screen.findByText("this week")).closest("tr")!;
+    expect(now).toHaveTextContent("43%3 / 717%1 / 62 (+1 not judged)");
+    expect(screen.getByText("17%")).toHaveClass(/warn/);
+    // An empty week is a dash, never 0%; dated by the box's Monday.
+    expect(screen.getByText("from 2026-10-05").closest("tr")).toHaveTextContent("—0 / 0—0 / 0");
+  });
+
+  it("has no ledger where the instance has no feed", async () => {
+    await mount({ body: OWNER_CORPUS }, OWNER_SESSION, {
+      status: 404,
+      body: { error: "E_NOT_FOUND" },
+    });
+
+    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
+    expect(screen.queryByText("Against YouTube")).not.toBeInTheDocument();
   });
 
   it("keeps the corpus and drops the box in the projection", async () => {

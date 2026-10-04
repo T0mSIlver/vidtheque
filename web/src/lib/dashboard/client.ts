@@ -28,6 +28,7 @@ import {
   ReindexOutcome,
   RetryOutcome,
   SearchResponse,
+  ValuedTime,
   Session,
   SignalRecorded,
   FeedbackStored,
@@ -263,6 +264,10 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     /** What the model calls cost (§25.8); `404` where there is no write side. */
     costs(signal?: AbortSignal) {
       return get(`${ROOT}/api/costs`, Costs, { signal });
+    },
+    /** The weekly ledger (§25.12); `404` where there is no write side. */
+    valuedTime(signal?: AbortSignal) {
+      return get(`${ROOT}/api/valued-time`, ValuedTime, { signal });
     },
     /** One band of verdicts, filtered and sorted by `query` (§25.2). */
     feed(query: URLSearchParams, signal?: AbortSignal) {
