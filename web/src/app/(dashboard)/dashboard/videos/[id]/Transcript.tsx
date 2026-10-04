@@ -27,9 +27,9 @@ interface Cues {
   next: number;
   hasMore: boolean;
   busy: boolean;
-  error: unknown;
-  /** The last batch was prepended, so the box goes back to its top. */
+  /** The last batch was prepended: the reader goes to its first line. */
   rewound: boolean;
+  error: unknown;
 }
 
 type Action =
@@ -68,31 +68,44 @@ function reduce(state: Cues, action: Action): Cues {
   }
 }
 
-/** A paragraph ends at a new speaker, a pause, or past a reading length. */
+/** A paragraph closes at a new speaker, or after a sentence's end once it is
+ *  long enough or a pause follows (§28.7). */
 const PAUSE_S = 2;
 const PARA_S = 60;
 const PARA_CHARS = 600;
+/** A run-on sentence still breaks somewhere. */
+const RUN_ON_CHARS = 3 * PARA_CHARS;
+
+/** A full stop, question or exclamation mark, or ellipsis, before any closing
+ *  quote or bracket. */
+const SENTENCE_END = /[.!?…]["'”’)\]]*$/;
+
+export const endsSentence = (text: string) => SENTENCE_END.test(text.trim());
 
 export interface Paragraph {
   cues: Cue[];
   speaker: string | null;
 }
 
-/** Consecutive cues as paragraphs a person can skim (§28.7): a cue is a
- *  sentence or less, so one per line read as a list. */
+/** Consecutive cues as paragraphs a person can skim (§28.7). A cue is a
+ *  caption line, not a sentence, so a paragraph closes only at a sentence end.
+ *  A transcript with no sentence end at all (auto captions) has no such place,
+ *  and closes at a pause or a reading length instead. */
 export function paragraphsOf(cues: Cue[]): Paragraph[] {
+  const punctuated = cues.some((cue) => endsSentence(cue.text));
   const paragraphs: Paragraph[] = [];
   let open: Paragraph | null = null;
   let chars = 0;
   for (const cue of cues) {
     const last = open?.cues[open.cues.length - 1];
-    const fresh =
-      !open ||
-      !last ||
-      cue.speaker !== open.speaker ||
-      cue.start_s - last.end_s >= PAUSE_S ||
-      cue.start_s - open.cues[0].start_s >= PARA_S ||
-      chars >= PARA_CHARS;
+    let fresh = !open || !last || cue.speaker !== open.speaker;
+    if (open && last && !fresh) {
+      const long = last.end_s - open.cues[0].start_s >= PARA_S || chars >= PARA_CHARS;
+      const pause = cue.start_s - last.end_s >= PAUSE_S;
+      fresh = punctuated
+        ? (endsSentence(last.text) && (long || pause)) || chars >= RUN_ON_CHARS
+        : long || pause;
+    }
     if (fresh) {
       open = { cues: [cue], speaker: cue.speaker };
       paragraphs.push(open);
@@ -110,8 +123,8 @@ const plain = (event: MouseEvent) =>
 
 /**
  * The transcript, a batch at a time from the endpoint the payload names (§20).
- * Nearing the end of the box appends the next batch; Earlier prepends, for a
- * panel seeded mid-transcript. The place is written back to the URL, so a
+ * It flows in the page, last on it: nearing its end appends the next batch;
+ * Earlier prepends, for a panel seeded mid-transcript. The place is written back to the URL, so a
  * position is a link somebody can send.
  */
 export function Transcript({
@@ -145,7 +158,10 @@ export function Transcript({
     rewound: false,
   }));
   const request = useRef<AbortController | null>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const top = useRef<HTMLDivElement>(null);
+  const end = useRef<HTMLDivElement>(null);
+  // The transcript's end is within a screen of the viewport.
+  const [near, setNear] = useState(false);
 
   const read = useCallback(
     (offset: number, back: boolean) => {
@@ -176,19 +192,26 @@ export function Transcript({
   }, [state.cues, state.first, size]);
 
   useLayoutEffect(() => {
-    if (state.rewound && box.current) box.current.scrollTop = 0;
+    if (state.rewound) top.current?.scrollIntoView?.({ block: "start" });
   }, [state.cues, state.rewound]);
 
-  // A batch that does not fill the box leaves nothing to scroll: read on. A
-  // box with no height has not been laid out, and is left to its link.
   useEffect(() => {
-    const element = box.current;
-    if (!element || state.busy || !state.hasMore || state.error) return;
-    if (element.clientHeight > 0 && element.scrollHeight <= element.clientHeight * 2) {
-      dispatch({ type: "ask" });
-      read(state.next, false);
-    }
-  }, [state.cues, state.busy, state.hasMore, state.error, state.next, read]);
+    const element = end.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setNear(entry.isIntersecting), {
+      rootMargin: "0px 0px 100% 0px",
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [total]);
+
+  // The page reads on while its end is near, so the next batch is arriving
+  // before the reader gets there; one that leaves the end near reads again.
+  useEffect(() => {
+    if (!near || state.busy || !state.hasMore || state.error) return;
+    dispatch({ type: "ask" });
+    read(state.next, false);
+  }, [near, state.busy, state.hasMore, state.error, state.next, read]);
 
   function loadMore() {
     dispatch({ type: "ask" });
@@ -198,14 +221,6 @@ export function Transcript({
   function loadEarlier(offset: number) {
     dispatch({ type: "ask" });
     read(offset, true);
-  }
-
-  // One boxful short of the end, so the next batch is arriving before the
-  // scroll would stop.
-  function onScroll() {
-    const element = box.current;
-    if (!element || state.busy || !state.hasMore || state.error) return;
-    if (element.scrollTop + element.clientHeight * 2 >= element.scrollHeight) loadMore();
   }
 
   const { cues, first, busy, error, hasMore } = state;
@@ -261,13 +276,13 @@ export function Transcript({
           </DashLink>
         </nav>
       ) : null}
-      <div className={styles.cuebox} onScroll={onScroll} ref={box} tabIndex={0}>
+      <div className={styles.cues} ref={top}>
         {paragraphsOf(cues).map((paragraph) => (
           <Para key={paragraph.cues[0].start_s} paragraph={paragraph} videoId={videoId} />
         ))}
         {busy ? <p className={styles.cueload}>loading</p> : null}
         {/* A real link at the server's offset, for a browser that never
-            scrolls the box; the scroll reads the same batch in place. */}
+            scrolls; scrolling near it reads the same batch in place. */}
         {hasMore && !busy ? (
           <DashLink
             className={`${controls.ghostlink} ${styles.cuemore}`}
@@ -281,6 +296,7 @@ export function Transcript({
             Read on
           </DashLink>
         ) : null}
+        <div aria-hidden="true" ref={end} />
       </div>
       {error ? (
         <p className={styles.panelNote}>
