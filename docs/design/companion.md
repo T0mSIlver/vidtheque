@@ -293,7 +293,9 @@ read live from `GET /dashboard/api/valued-time` (dashboard.md §25.12):
   thumbed down after it. Target under 10%.
 - **Misses**: videos shared to the app from elsewhere (§6) that the feed did
   not offer: scored 0–1, or from a channel no follow covered when it was
-  shared. A share waits, `pending`, until its verdict is written.
+  shared. A share waits, `pending`, until its verdict is written. A skip the
+  owner answers "I'd watch this" in the weekly brief (#158, `skip_verdicts`)
+  is a miss too; a video both shared and answered counts once.
 - **Minutes asked against budget**: lands with the time budget (#156), on the
   same payload.
 
