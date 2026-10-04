@@ -81,7 +81,7 @@ class FakeSource:
         if self.block_on and what.startswith(self.block_on):
             raise RateLimited("Sign in to confirm you're not a bot")
 
-    def search(self, query: str, max_items: int, *, newest: bool = False) -> list[SearchHit]:
+    def search(self, query: str, max_items: int, *, this_month: bool = False) -> list[SearchHit]:
         self._ask(f"search:{query}")
         return self.hits.get(query, [])[:max_items]
 

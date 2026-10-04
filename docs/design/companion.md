@@ -649,9 +649,9 @@ one migration (0022, index-schema §1.22), all server-side capped.
 
 **Topic scouting.** Once a night, from `VIDTHEQUE_SCOUT_HOUR` (default 5,
 local), the scout takes the three live profile entries with the highest
-positive weight and runs one YouTube search for each, newest uploads first
-(the results page's upload-date sort; the pinned yt-dlp has no
-`ytsearchdate`), 8 results, flat: one request, no per-video call. It takes
+positive weight and runs one YouTube search for each, limited to uploads of
+the last month (the results page's own filter; its sort by date returned
+year-old videos when tried), 8 results, flat: one request, no per-video call. It takes
 the first result per entry that is new to it, not in the corpus, not from a
 followed channel, and 5 to 120 minutes long, then fetches its metadata and one
 caption track: two requests, no audio, no GPU, nothing written to `videos`.

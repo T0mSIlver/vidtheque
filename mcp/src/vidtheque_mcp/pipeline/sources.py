@@ -805,16 +805,17 @@ class YtDlpSource:
             ]
         return playlist_entries(info, max_items)
 
-    def search(self, query: str, max_items: int, *, newest: bool = False) -> list[SearchHit]:
+    def search(self, query: str, max_items: int, *, this_month: bool = False) -> list[SearchHit]:
         """One flat search request, no per-video calls (companion.md §6.2).
 
-        ``newest`` sorts by upload date through the results page's own filter
-        (``sp=CAI%3D``): the installed yt-dlp has no ``ytsearchdate`` prefix.
+        ``this_month`` is the results page's own "uploaded this month" filter:
+        the sort-by-date parameter returned year-old videos when tried
+        (2026-10-04), and the pinned yt-dlp has no ``ytsearchdate`` prefix.
         """
         n = max(1, max_items)
         target = (
-            f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp=CAI%3D"
-            if newest
+            f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp=EgIIBA%253D%253D"
+            if this_month
             else f"ytsearch{n}:{query}"
         )
         opts = self._base_opts() | {
