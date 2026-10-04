@@ -81,6 +81,20 @@ describe("WeekView", () => {
     await waitFor(() => expect(view.calls("/dashboard/api/week").length).toBeGreaterThan(1));
   });
 
+  it("refuses an emptied budget box instead of saving zero", async () => {
+    const view = await mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Change" }));
+    await userEvent.clear(screen.getByRole("spinbutton", { name: /Minutes a day/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/Not saved/)).toBeInTheDocument();
+    expect(view.calls("/dashboard/api/budget", "POST")).toEqual([]);
+  });
+
+  it("says when the week holds more than it compares", async () => {
+    await mount({ "/dashboard/api/week": { body: { ...WEEK, capped: true } } });
+    expect(await screen.findByText(/more verdicts than the 40 it compares/)).toBeInTheDocument();
+  });
+
   it("says so when a past week held nothing worth the time", async () => {
     await mount(
       {
