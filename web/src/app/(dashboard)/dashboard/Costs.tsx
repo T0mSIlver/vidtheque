@@ -1,23 +1,37 @@
 "use client";
 
-import { dashboard, ROOT } from "@/lib/dashboard/client";
+import { dashboard } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
-import type { CostWindow, Costs } from "@/lib/dashboard/schemas";
-import { at, count, iso, usd } from "@/lib/format";
+import type { Costs } from "@/lib/dashboard/schemas";
+import { count, DASH, usd } from "@/lib/format";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import { table } from "@/components/dashboard/kit/table";
-import { DashLink, Figure, Panel, ui } from "@/components/dashboard/kit/ui";
+import { Panel, ui } from "@/components/dashboard/kit/ui";
+import styles from "./health.module.css";
 
-// What the model calls cost (dashboard.md §25.8), at list price: on a monthly
-// plan it is what they would cost pay-as-you-go (companion.md §4.1).
+// What the model calls cost (dashboard.md §25.8, §28.2), at list price: on a
+// monthly plan it is what they would cost pay-as-you-go (companion.md §4.1).
+// One line on Health; the purposes on demand.
 
 const read = (signal: AbortSignal) => dashboard.costs(signal);
 
-const WINDOWS: [keyof Costs["windows"], string][] = [
-  ["today", "today"],
-  ["7d", "7 days"],
-  ["30d", "30 days"],
-  ["month", "this month"],
-];
+// `llm_calls.purpose` (companion.md §4.1) in words.
+const PURPOSES: Record<string, string> = {
+  verdict: "Verdicts",
+  verdict_explore: "Exploration rescores",
+  scout_verdict: "Scout verdicts",
+  week_rank: "Week ranking",
+  weekly_brief: "Weekly brief",
+  nightly_update: "Nightly update",
+  github_projects: "GitHub projects",
+  speaker_names: "Speaker names",
+  unknown: "Unnamed caller",
+};
+
+const purpose = (key: string) => PURPOSES[key] ?? key.replaceAll("_", " ");
+
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const tokens = (n: number | null) => (n === null ? DASH : compact.format(n));
 
 export function CostsPanel() {
   const costs = useResource("costs", read);
@@ -28,119 +42,71 @@ export function CostsPanel() {
   return <Loaded data={data} />;
 }
 
-function calls(window: CostWindow) {
-  const notes = [<>{count(window.calls)} call(s)</>];
-  if (window.unpriced_calls) {
-    notes.push(<span className={ui.warn}>{count(window.unpriced_calls)} with no known cost</span>);
-  }
-  return notes;
-}
-
 function Loaded({ data }: { data: Costs }) {
-  const month = data.windows["30d"];
+  const { windows } = data;
+  const unpriced = windows["30d"].unpriced_calls;
   return (
-    <>
-      <Panel id="costs" title="Model cost" aside={<span className={ui.note}>list price, USD</span>}>
-        <dl className={`${ui.figures} ${ui.figuresTight}`}>
-          {WINDOWS.map(([key, label]) => (
-            <Figure label={label} key={key} notes={calls(data.windows[key])}>
-              {usd(data.windows[key].cost_micro_usd)}
-            </Figure>
-          ))}
-          <Figure
-            label="per verdict"
-            notes={[<>over {count(month.verdicts)} verdict(s) in 30 days</>]}
-          >
-            {usd(month.per_verdict_micro_usd)}
-          </Figure>
-        </dl>
-      </Panel>
-
-      <div className={ui.split}>
-        <Panel id="cost-purpose" title="By purpose, 30 days">
-          <div className={table.tablewrap}>
-            <table className={table.grid}>
-              <thead>
-                <tr>
-                  <th scope="col">purpose</th>
-                  <th scope="col" className={table.num}>
-                    calls
-                  </th>
-                  <th scope="col" className={table.num}>
-                    tokens in / out
-                  </th>
-                  <th scope="col" className={table.num}>
-                    cost
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.by_purpose.items.map((row) => (
-                  <tr key={row.purpose}>
-                    <th scope="row">
-                      <code>{row.purpose}</code>
-                    </th>
-                    <td className={table.num}>{count(row.calls)}</td>
-                    <td className={table.num}>
-                      {count(row.prompt_tokens)} / {count(row.completion_tokens)}
-                    </td>
-                    <td className={`${table.num} ${ui.nowrap}`}>{usd(row.cost_micro_usd)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-
-        {data.top.items.length ? (
-          <Panel id="cost-top" title="Most expensive calls, 30 days">
-            <div className={table.tablewrap}>
-              <table className={table.grid}>
-                <thead>
-                  <tr>
-                    <th scope="col">call</th>
-                    <th scope="col">video</th>
-                    <th scope="col" className={table.num}>
-                      tokens in / out
-                    </th>
-                    <th scope="col" className={table.num}>
-                      cost
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.top.items.map((call, index) => (
-                    <tr key={`${call.at}-${index}`}>
-                      <th scope="row">
-                        <time dateTime={iso(call.at)}>{at(call.at)}</time>{" "}
-                        <code>{call.purpose}</code>
-                        {call.outcome !== "ok" ? (
-                          <>
-                            {" "}
-                            <span className={ui.warn}>{call.outcome}</span>
-                          </>
-                        ) : null}
-                      </th>
-                      <td>
-                        {call.video_id ? (
-                          <DashLink href={`${ROOT}/videos/${encodeURIComponent(call.video_id)}`}>
-                            {call.title ?? call.video_id}
-                          </DashLink>
-                        ) : null}
-                      </td>
-                      <td className={table.num}>
-                        <span className={ui.nowrap}>{count(call.prompt_tokens)} /</span>{" "}
-                        <span className={ui.nowrap}>{count(call.completion_tokens)}</span>
-                      </td>
-                      <td className={`${table.num} ${ui.nowrap}`}>{usd(call.cost_micro_usd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
+    <Panel
+      id="costs"
+      title="Model cost"
+      aside={<span className={ui.panelAside}>at list price</span>}
+    >
+      <ul className={styles.costLine}>
+        <li>
+          <span className={styles.money}>{usd(windows.today.cost_micro_usd)}</span> today
+        </li>
+        <li>
+          <span className={styles.money}>{usd(windows.month.cost_micro_usd)}</span> this month
+        </li>
+        <li>
+          <span className={styles.money}>{usd(windows["30d"].cost_micro_usd)}</span> in 30 days
+        </li>
+        {windows["30d"].verdicts ? (
+          <li>
+            <span className={styles.money}>{usd(windows["30d"].per_verdict_micro_usd)}</span> a
+            verdict
+          </li>
         ) : null}
-      </div>
-    </>
+      </ul>
+      {unpriced ? (
+        <p className={`${styles.costNote} ${ui.warn}`}>
+          {count(unpriced)} {unpriced === 1 ? "call" : "calls"} in 30 days with no known price, left
+          out of these sums.
+        </p>
+      ) : null}
+      <Fold label="the breakdown">
+        <div className={table.tablewrap}>
+          <table className={table.grid}>
+            <caption className={ui.srOnly}>Cost by purpose over 30 days</caption>
+            <thead>
+              <tr>
+                <th scope="col">purpose, 30 days</th>
+                <th scope="col" className={table.num}>
+                  calls
+                </th>
+                <th scope="col" className={table.num}>
+                  tokens in / out
+                </th>
+                <th scope="col" className={table.num}>
+                  cost
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.by_purpose.items.map((row) => (
+                <tr key={row.purpose}>
+                  <th scope="row">{purpose(row.purpose)}</th>
+                  <td className={table.num}>{count(row.calls)}</td>
+                  <td className={`${table.num} ${ui.nowrap}`}>
+                    {tokens(row.prompt_tokens)} / {tokens(row.completion_tokens)}
+                  </td>
+                  <td className={table.num}>{usd(row.cost_micro_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Fold>
+    </Panel>
   );
 }

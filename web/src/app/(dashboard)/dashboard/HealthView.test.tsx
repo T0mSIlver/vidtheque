@@ -93,118 +93,114 @@ describe("the health page", () => {
 
       expect(screen.getByRole("heading", { name: "Health" })).toBeInTheDocument();
       expect(screen.getByText("reading…")).toBeInTheDocument();
-      expect(await screen.findByText("The queue")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Queue" })).toBeInTheDocument();
       expect(screen.queryByText("reading…")).not.toBeInTheDocument();
     });
 
-    it("prints corpus-summary's own state word and the last index clock", async () => {
+    it("says the index's state in words, with the last index clock", async () => {
       await mount({ body: OWNER_HEALTH });
 
-      expect(await screen.findByText("indexing")).toBeInTheDocument();
+      expect(await screen.findByText(/Indexing now, last video indexed/)).toBeInTheDocument();
       expect(screen.getByText("2025-06-15 15:06")).toBeInTheDocument();
-      // The health check reads in UTC minutes like every other clock
-      // (§24.6); the attribute keeps the instant.
-      expect(screen.getByText("2026-09-05 16:34")).toHaveAttribute(
-        "datetime",
-        "2026-09-05T16:34:40Z",
-      );
+      expect(screen.queryByText("data_status")).not.toBeInTheDocument();
     });
 
-    it("shows the queue and the gaps as sentences with numbers in them", async () => {
+    it("lists only the queue lines that are not zero", async () => {
       await mount({ body: OWNER_HEALTH });
 
-      expect(await screen.findByText(/job\(s\) queued or running/)).toBeInTheDocument();
-      expect(screen.getByText("1 of them waiting on a backoff")).toBeInTheDocument();
-      expect(screen.getByText(/job\(s\) failed in the last 24 hours/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/video\(s\) have a transcript but no on-screen text/),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/waiting to embed their transcript/)).toBeInTheDocument();
-      // What is in the corpus is Corpus's page (§24): no band, no lists.
-      expect(screen.queryByText("transcript cues")).not.toBeInTheDocument();
-      expect(screen.queryByText("Recently indexed")).not.toBeInTheDocument();
-      expect(screen.queryByText("Storage")).not.toBeInTheDocument();
+      expect(await screen.findByText(/jobs queued or running/)).toBeInTheDocument();
+      expect(screen.getByText(/1 waiting on a retry/)).toBeInTheDocument();
+      expect(screen.getByText(/video has a transcript but no on-screen text/)).toBeInTheDocument();
+      expect(screen.getByText("video mid-pipeline")).toBeInTheDocument();
+      // Both backlogs are zero.
+      expect(screen.queryByText(/to embed the/)).not.toBeInTheDocument();
+      expect(screen.queryByText("Queue empty, nothing missing.")).not.toBeInTheDocument();
     });
 
-    // A failed video is counted on Corpus; Health says there is one and links
-    // there, so the number has one home.
-    it("points at Corpus for failed videos instead of counting them", async () => {
-      await mount({ body: { ...OWNER_HEALTH, gaps: { ...OWNER_HEALTH.gaps, has_failed: true } } });
-
-      expect(await screen.findByText("counts the videos marked failed")).toBeInTheDocument();
-      expect(
-        screen.getAllByRole("link", { name: "Corpus" }).map((link) => link.getAttribute("href")),
-      ).toContain("/dashboard/corpus#states");
-    });
-
-    it("drops the gaps panel when nothing is missing", async () => {
+    it("says the queue is empty in one line when nothing is waiting", async () => {
       await mount({
         body: {
           ...OWNER_HEALTH,
           gaps: { transcript_no_ocr: 0, indexing: 0, has_failed: false },
+          jobs: { ...OWNER_HEALTH.jobs, active: 0, deferred: 0 },
         },
       });
 
-      expect(await screen.findByText("The queue")).toBeInTheDocument();
-      expect(screen.queryByText("What is missing")).not.toBeInTheDocument();
+      expect(await screen.findByText("Queue empty, nothing missing.")).toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/\b0 (jobs?|videos?)\b/);
     });
 
-    it("shows the box: the models it was built with and the worker", async () => {
+    // Failures are what the page is for: an alert at the top, linking to the
+    // filtered list, and not a second count in the queue.
+    it("puts failed jobs and failed videos at the top as alerts", async () => {
+      await mount({ body: { ...OWNER_HEALTH, gaps: { ...OWNER_HEALTH.gaps, has_failed: true } } });
+
+      const jobs = await screen.findByRole("region", { name: "1 job failed in the last 24 hours" });
+      expect(jobs).toHaveAttribute("data-tone", "warn");
+      expect(screen.getByRole("link", { name: "Show failed jobs" })).toHaveAttribute(
+        "href",
+        "/dashboard/jobs?state=failed",
+      );
+      expect(screen.getByRole("link", { name: "Show failed videos" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos?index_state=failed",
+      );
+      expect(screen.queryByText(/failed in the last 24 hours/, { selector: "li *" })).toBeNull();
+    });
+
+    it("shows the models it was built with, and the worker's state", async () => {
       await mount({ body: OWNER_HEALTH });
 
       expect(await screen.findByText("large-v3")).toBeInTheDocument();
-      expect(screen.getByText("2048")).toBeInTheDocument();
-      // The worker's state is a word in its tone, and its sentence is the
-      // footnote rather than the reading.
-      expect(screen.getByText("unavailable")).toBeInTheDocument();
+      // The dimension is gone: the model name is the fact.
+      expect(screen.queryByText("2048")).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "The worker is not answering" })).toHaveAttribute(
+        "data-tone",
+        "bad",
+      );
       expect(screen.getByText("The worker did not answer its status check.")).toBeInTheDocument();
-      // The fifth state is the deployment's, and it comes from this payload.
       expect(screen.getByText("allowed")).toBeInTheDocument();
     });
 
     // The flag is on this payload because the two things drawn from it are on
-    // this page (§19). A session saying otherwise does not get a vote: it is
-    // read for other reasons and lands whenever it lands, and a banner that
-    // appears a moment after the page is a banner the reader watches arrive.
-    it("draws the write state and the drift banner from the payload, not the session", async () => {
+    // this page (§19): a session saying otherwise does not get a vote.
+    it("draws the write state and the drift alert from the payload, not the session", async () => {
       await mount({ body: { ...OWNER_HEALTH, writes_allowed: false } }, OWNER_SESSION);
 
+      const band = await screen.findByRole("region", {
+        name: "The corpus and the worker disagree",
+      });
+      expect(band).toHaveAttribute("data-tone", "bad");
       expect(
-        await screen.findByRole("heading", { name: "The corpus and the worker disagree" }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/Indexing is refused, so no video can mix embedding spaces/),
+        screen.getByText(/indexing is refused so no video mixes embedding spaces/),
       ).toBeInTheDocument();
       expect(screen.getByText("refused")).toBeInTheDocument();
       expect(screen.queryByText("allowed")).not.toBeInTheDocument();
-      // The one band on this page that opts into the failure tone, as
-      // `overview.html`'s `notice notice-bad` did.
-      const band = screen.getByRole("region", { name: "The corpus and the worker disagree" });
-      expect(band).toHaveAttribute("data-tone", "bad");
     });
   });
 
   describe("the model's cost", () => {
-    it("prints each window, the cost per verdict and the most expensive calls", async () => {
+    it("is one line, with the purposes behind a toggle", async () => {
       await mount({ body: OWNER_HEALTH }, OWNER_SESSION, "/dashboard", { body: COSTS });
 
       expect(await screen.findByRole("heading", { name: "Model cost" })).toBeInTheDocument();
       expect(screen.getByText("$0.0164")).toBeInTheDocument();
       // Two calls had no price: said, never summed as free.
-      expect(screen.getAllByText("2 with no known cost")).toHaveLength(2);
-      expect(screen.getByText("$0.0410")).toBeInTheDocument();
-      expect(screen.getByText("nightly_update")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Deep dive" })).toHaveAttribute(
-        "href",
-        "/dashboard/videos/kCc8FmEb1nY",
+      expect(screen.getByText(/2 calls in 30 days with no known price/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Show the breakdown" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
       );
-      expect(screen.getByText("invalid_output")).toBeInTheDocument();
+      expect(screen.getByText("Nightly update")).toBeInTheDocument();
+      expect(screen.getByText("410K / 52K")).toBeInTheDocument();
+      // The ten costliest calls are no longer listed.
+      expect(screen.queryByText("Deep dive")).not.toBeInTheDocument();
     });
 
     it("is no panel where nothing was called or the route is absent", async () => {
       const idle = { ...COSTS, windows: { ...COSTS.windows, "30d": costWindow(0, null) } };
       await mount({ body: OWNER_HEALTH }, OWNER_SESSION, "/dashboard", { body: idle });
-      expect(await screen.findByText("The queue")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Queue" })).toBeInTheDocument();
       expect(screen.queryByRole("heading", { name: "Model cost" })).not.toBeInTheDocument();
     });
   });
@@ -213,22 +209,15 @@ describe("the health page", () => {
     it("keeps the queue and drops the box, with no nulls on screen", async () => {
       await mount({ body: DEMO_HEALTH }, DEMO_SESSION);
 
-      expect(await screen.findByText(/job\(s\) queued or running/)).toBeInTheDocument();
-
-      // The box is absent rather than blank: no model tables, no worker
-      // state, no indexing state.
+      expect(await screen.findByText(/jobs queued or running/)).toBeInTheDocument();
       expect(screen.queryByText("large-v3")).not.toBeInTheDocument();
       expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
       expect(screen.queryByText("allowed")).not.toBeInTheDocument();
       expect(screen.queryByText("refused")).not.toBeInTheDocument();
-
-      // And nothing rendered the absence itself.
       expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
     });
 
-    // §2.4: the *reason* is written for whoever set the env; the *effect* is
-    // what changes a visitor's reading of the results, so the projection keeps
-    // the effect and loses the sentence.
+    // §2.4: the projection keeps the effect and loses the operator's reason.
     it("tells a visitor search is answering from full-text, and not why", async () => {
       await mount(
         {
@@ -246,7 +235,7 @@ describe("the health page", () => {
       expect(
         await screen.findByRole("heading", { name: "Vector search is off on this instance" }),
       ).toBeInTheDocument();
-      expect(screen.getByText(/Search still answers from full-text/)).toBeInTheDocument();
+      expect(screen.getByText("Search answers from full-text only.")).toBeInTheDocument();
       expect(
         screen.queryByRole("heading", { name: "The corpus and the worker disagree" }),
       ).not.toBeInTheDocument();
