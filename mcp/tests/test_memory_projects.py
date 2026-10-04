@@ -1,6 +1,6 @@
-"""The routine that turns Claude's project memory into profile projects (#159).
+"""What may leave as a project topic (#159): the memory routine and the shared checks.
 
-What it may send is the trust boundary: these pin the filters, not the model.
+The trust boundary: these pin the filters, not the model.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from vidtheque_mcp.profile import topics
+
 _SPEC = importlib.util.spec_from_file_location(
     "memory_projects", Path(__file__).parents[2] / "scripts" / "memory_projects.py"
 )
@@ -21,7 +23,7 @@ mp = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = mp  # dataclasses look their module up
 _SPEC.loader.exec_module(mp)
 
-TERMS = mp.DENY_TERMS | {"acme corp"}
+TERMS = topics.DENY_TERMS | {"acme corp"}
 
 
 def memory(root: Path, project: str, files: dict[str, str], age_days: float = 0) -> None:
@@ -61,7 +63,7 @@ def test_collect_skips_denied_and_stale_projects_and_files_unread(tmp_path: Path
     ],
 )
 def test_check_refuses_what_must_not_leave(text: str, why: str) -> None:
-    checked = mp.check([text, ".NET file storage", "llama.cpp on a 3090"], TERMS)
+    checked = topics.check([text, ".NET file storage", "llama.cpp on a 3090"], TERMS)
     assert checked.refused == [(text, why)]
     assert checked.kept == [".NET file storage", "llama.cpp on a 3090"]
 
@@ -70,6 +72,6 @@ def test_fit_refreshes_known_projects_and_adds_only_what_fits() -> None:
     live = [{"text": f"p{i}", "kind": "project"} for i in range(9)] + [
         {"text": "Local inference", "kind": "topic"}
     ]
-    send, out = mp.fit(["P0", "Local inference", "new one", "new two"], live)
+    send, out = topics.fit(["P0", "Local inference", "new one", "new two"], live)
     assert send == ["P0", "new one"]
     assert out == [("Local inference", "already a topic"), ("new two", "no room for another project")]
