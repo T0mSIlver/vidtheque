@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
-import dev.vidtheque.app.data.Week
+import dev.vidtheque.app.data.FittedWeek
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +18,7 @@ import javax.inject.Inject
 /** [asked] is the week shown, null for the current one; [week] the last one read. */
 data class WeekUi(
     val asked: String? = null,
-    val week: Week? = null,
+    val week: FittedWeek? = null,
     val refreshing: Boolean = false,
     val error: String? = null,
     val budgetFailed: Boolean = false,

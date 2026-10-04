@@ -52,7 +52,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.vidtheque.app.data.FeedItem
-import dev.vidtheque.app.data.Week
+import dev.vidtheque.app.data.FittedWeek
 import dev.vidtheque.app.ui.feed.Hero
 import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Row
@@ -126,7 +126,7 @@ fun weekIndex(ui: WeekUi, videoId: String): Int? =
     ui.week?.items?.indexOfFirst { it.videoId == videoId }?.takeIf { it >= 0 }?.let { it + 1 }
 
 @Composable
-private fun Head(week: Week, budgetFailed: Boolean, onWeek: (String?) -> Unit, onBudget: (Int) -> Unit) {
+private fun Head(week: FittedWeek, budgetFailed: Boolean, onWeek: (String?) -> Unit, onBudget: (Int) -> Unit) {
     var editing by remember { mutableStateOf(false) }
     val perDay = Math.round(week.budgetMin / 7.0).toInt()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -149,7 +149,7 @@ private fun Head(week: Week, budgetFailed: Boolean, onWeek: (String?) -> Unit, o
 
 /** What each day asks, a bar a day; the line is a day's share of the budget. Uploads come in bursts. */
 @Composable
-private fun Days(week: Week) {
+private fun Days(week: FittedWeek) {
     val daily = week.budgetMin * 60.0 / 7
     val most = maxOf(daily, week.days.maxOfOrNull { it.asksS } ?: 0.0, 1.0)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -203,7 +203,7 @@ private fun BudgetDialog(perDay: Int, onDismiss: () -> Unit, onSave: (Int) -> Un
 
 /** The stop: the list ends here and says so, with every other video one tap away. */
 @Composable
-private fun End(week: Week, current: Boolean, onShowAll: () -> Unit) {
+private fun End(week: FittedWeek, current: Boolean, onShowAll: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(

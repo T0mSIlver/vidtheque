@@ -59,9 +59,9 @@ data class WeekDay(val day: String, @SerialName("asks_s") val asksS: Double = 0.
 @Serializable
 data class WeekRest(val count: Int = 0, @SerialName("asks_s") val asksS: Double = 0.0)
 
-/** The week's ranked verdicts fitted to the owner's minutes (dashboard.md §25.10). */
+/** The week's ranked verdicts fitted to the owner's minutes (dashboard.md §25.13). */
 @Serializable
-data class Week(
+data class FittedWeek(
     val week: String,
     val previous: String,
     val next: String? = null,
@@ -322,7 +322,7 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     suspend fun facets(): FeedFacets = json.decodeFromString(get("$root/feed/facets?band=all"))
 
     /** The current week without [week], else the week starting that Monday. */
-    suspend fun week(week: String? = null): Week = json.decodeFromString(get("$root/week" + (week?.let { "?week=$it" } ?: "")))
+    suspend fun week(week: String? = null): FittedWeek = json.decodeFromString(get("$root/week" + (week?.let { "?week=$it" } ?: "")))
 
     suspend fun budget(weekMinutes: Int) {
         post("$root/budget", buildJsonObject { put("week_budget_min", weekMinutes) })
