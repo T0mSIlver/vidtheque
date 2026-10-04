@@ -7,7 +7,7 @@ import { Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 
 /** What the pipeline stored for this video, folded: a figure per count and
- *  no sentence under any of them (§28.3). */
+ *  no sentence under any of them (§29.3). */
 export function Stored({
   counts,
   origins,

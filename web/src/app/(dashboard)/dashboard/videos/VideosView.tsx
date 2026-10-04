@@ -225,7 +225,7 @@ function Row({ row }: { row: LibraryRow }) {
 }
 
 /** Quiet when fine: a ready video with every leg is the word `ready`, muted.
- *  Anything else is its pill, then each missing leg by name (§28.2). */
+ *  Anything else is its pill, then each missing leg by name (§29.2). */
 function Index({ row }: { row: LibraryRow }) {
   const missing = COVERAGE.filter(([key]) => !row.coverage[key]);
   if (row.index_state === "ready" && !missing.length) {

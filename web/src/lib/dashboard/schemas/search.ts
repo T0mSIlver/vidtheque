@@ -9,12 +9,12 @@ export { ContentType, Hit, SearchResponse } from "@/lib/schemas/search";
 export { badges, type Badge } from "@/lib/schemas/evidence";
 
 /** `GET /dashboard/api/readiness`: Health's readiness block alone, asked
- *  while a search is slow (§28.1). */
+ *  while a search is slow (§29.1). */
 export const ReadinessRead = z.object({ readiness: Readiness });
 export type ReadinessRead = z.infer<typeof ReadinessRead>;
 
 /** `GET /dashboard/api/channels`: every channel name, most videos first,
- *  capped with `has_more` (§28.1). */
+ *  capped with `has_more` (§29.1). */
 export const Channels = z.object({
   channels: z.object({
     rows: z.array(z.object({ channel: z.string(), videos: count() })),

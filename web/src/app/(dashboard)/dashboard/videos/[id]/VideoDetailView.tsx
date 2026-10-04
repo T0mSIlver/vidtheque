@@ -29,7 +29,7 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
   // Only the strip's two bounds key the read: `select` and the transcript's
   // place are rewritten in place and must not re-read the video.
   const bounds = pick(params, FRAME_KEYS);
-  // The strip reads its widest page unless the URL sized it (§28.3).
+  // The strip reads its widest page unless the URL sized it (§29.3).
   if (!bounds.has("frames")) bounds.set("frames", String(STRIP_PAGE));
   const video = useResource(`video:${videoId}?${bounds}`, (signal) =>
     dashboard.video(videoId, bounds, signal),

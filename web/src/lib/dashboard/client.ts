@@ -262,11 +262,11 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     jobs(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/jobs${suffix(query)}`, Jobs, { signal });
     },
-    /** The worker's model state, asked while a search is slow (§28.1). */
+    /** The worker's model state, asked while a search is slow (§29.1). */
     readiness(signal?: AbortSignal) {
       return get(`${ROOT}/api/readiness`, ReadinessRead, { signal });
     },
-    /** Every channel name, for the channel pickers (§28.1). */
+    /** Every channel name, for the channel pickers (§29.1). */
     channels(signal?: AbortSignal) {
       return get(`${ROOT}/api/channels`, Channels, { signal });
     },

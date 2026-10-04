@@ -41,7 +41,7 @@ const CONTENT_WORDS: Record<ContentType, string> = {
   frame: "frames",
 };
 
-/** How long a search runs before the page asks the worker why (§28.1). */
+/** How long a search runs before the page asks the worker why (§29.1). */
 const SLOW_MS = 1500;
 const ASK_EVERY_MS = 3000;
 
