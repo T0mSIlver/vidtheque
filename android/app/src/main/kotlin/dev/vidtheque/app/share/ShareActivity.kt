@@ -47,7 +47,7 @@ class ShareActivity : ComponentActivity() {
             } catch (e: ApiException) {
                 e.message ?: "The instance refused it."
             } catch (e: IOException) {
-                "The instance did not answer."
+                if (api.base.isEmpty()) "Sign in to your vidtheque instance first." else "The instance did not answer."
             }
             done(line)
         }

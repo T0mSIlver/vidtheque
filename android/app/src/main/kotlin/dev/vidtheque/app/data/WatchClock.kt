@@ -23,6 +23,8 @@ data class HandOff(
     val awayS: Double? = null,
     val pickId: Long = 0,
     val offsetS: Int = 0,
+    /** Its ids are that instance's; another one must never receive them. */
+    val instance: String = "",
 ) {
     val sendable: Boolean get() = signalId != 0L || pickId != 0L
 }
@@ -46,6 +48,7 @@ class PrefsHandOffStore @Inject constructor(@ApplicationContext context: Context
             away.takeIf { it >= 0 }?.toDouble(),
             prefs.getLong("pick", 0),
             prefs.getInt("offset", 0),
+            prefs.getString("instance", "") ?: "",
         )
     }
 
@@ -53,7 +56,7 @@ class PrefsHandOffStore @Inject constructor(@ApplicationContext context: Context
         val edit = prefs.edit().clear()
         if (handOff != null) {
             edit.putLong("started", handOff.startedMs).putLong("signal", handOff.signalId)
-                .putLong("pick", handOff.pickId).putInt("offset", handOff.offsetS)
+                .putLong("pick", handOff.pickId).putInt("offset", handOff.offsetS).putString("instance", handOff.instance)
             handOff.awayS?.let { edit.putFloat("away", it.toFloat()) }
         }
         edit.commit()
@@ -75,8 +78,9 @@ class WatchClock @Inject constructor(
     /** Call once the link was handed to an app: it sends `watch` and starts the clock. */
     fun handOff(videoId: String, offsetS: Int) {
         val started = clock.nowMs()
+        val base = api.base
         val unsent = synchronized(this) {
-            store.read().also { store.write(HandOff(started)) }
+            store.read().also { store.write(HandOff(started, instance = base)) }
         }?.takeIf { it.sendable && it.awayS != null }
         // A return the network lost last time goes out now rather than being overwritten.
         unsent?.let { scope.launch { runCatching { send(it) } } }
@@ -84,21 +88,24 @@ class WatchClock @Inject constructor(
             val id = runCatching { api.watch(videoId, offsetS) }.getOrNull() ?: return@launch
             synchronized(this@WatchClock) {
                 // Back already, or another hand-off since: this one's return is no longer ours to send.
-                if (store.read()?.startedMs == started) store.write(HandOff(started, id))
+                if (store.read()?.startedMs == started) store.write(HandOff(started, id, instance = base))
             }
         }
     }
 
     /** The same for a pick from outside the follows (dashboard.md §27.4): no signal, the pick's own record. */
     fun handOffOutside(pickId: Long, offsetS: Int) {
-        val handOff = HandOff(clock.nowMs(), pickId = pickId, offsetS = offsetS)
+        val handOff = HandOff(clock.nowMs(), pickId = pickId, offsetS = offsetS, instance = api.base)
         val unsent = synchronized(this) {
             store.read().also { store.write(handOff) }
         }?.takeIf { it.sendable && it.awayS != null }
         unsent?.let { scope.launch { runCatching { send(it) } } }
     }
 
+    /** A record from another instance than this one's (a switch, a lapsed session) is dropped unsent. */
     private suspend fun send(handOff: HandOff) {
+        api.restored()
+        if (handOff.instance.isEmpty() || handOff.instance != api.base) return
         if (handOff.pickId != 0L) api.outsideWatched(handOff.pickId, handOff.offsetS, handOff.awayS!!)
         else api.watched(handOff.signalId, handOff.awayS!!)
     }

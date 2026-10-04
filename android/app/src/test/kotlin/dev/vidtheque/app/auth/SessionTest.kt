@@ -148,13 +148,24 @@ class SessionTest {
         assertEquals("refresh-2", store.tokens?.refresh)
     }
 
+    @Test fun aTokenGoesOnlyToTheInstanceThatIssuedIt() = runTest {
+        val session = session()
+        val pending = session.begin(fake.base)
+        session.complete(redirect(pending), pending)
+
+        // A call that left for another instance before a switch gets no token, first try or retry.
+        assertNull(session.accessToken("https://other.example/dashboard/api/feed"))
+        assertNull(session.afterUnauthorized("stale", "https://other.example/dashboard/api/feed"))
+        assertEquals("access-1", session.accessToken("${fake.base}/dashboard/api/feed"))
+    }
+
     @Test fun anExpiredTokenIsRefreshedBeforeTheCall() = runTest {
         val session = session()
         val pending = session.begin(fake.base)
         session.complete(redirect(pending), pending)
         now += 3_600_000
 
-        assertEquals("access-2", session.accessToken())
+        assertEquals("access-2", session.accessToken("${fake.base}/dashboard/api/feed"))
     }
 
     @Test fun aRevokedRefreshTokenSignsOut() = runTest {
@@ -164,7 +175,7 @@ class SessionTest {
         fake.liveRefresh = "revoked"
         now += 3_600_000
 
-        assertNull(session.accessToken())
+        assertNull(session.accessToken("${fake.base}/dashboard/api/feed"))
         assertEquals(SessionState.SignedOut, session.state.value)
         assertNull(store.tokens)
     }

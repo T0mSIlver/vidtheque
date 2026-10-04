@@ -57,7 +57,12 @@ class OAuthClient @Inject constructor(private val http: OkHttpClient) {
 
     /** An instance from before the app scheme refuses it at /authorize, in the browser; say so here instead. */
     suspend fun checkClient(base: String) {
-        val doc = runCatching { json.decodeFromString<ClientDocument>(get(Instance.clientId(base))) }.getOrNull()
+        val doc = try {
+            json.decodeFromString<ClientDocument>(get(Instance.clientId(base)))
+        } catch (e: Exception) {
+            if (e is IOException || e is kotlinx.coroutines.CancellationException) throw e
+            null
+        }
         if (doc == null || Instance.REDIRECT_URI !in doc.redirectUris) {
             throw OAuthException("old_instance", "${Instance.hostOf(base)} runs a vidtheque too old for this app. Update it, then sign in again.")
         }
@@ -98,7 +103,9 @@ class OAuthClient @Inject constructor(private val http: OkHttpClient) {
     suspend fun revoke(meta: ServerMetadata, base: String, token: String) {
         val endpoint = meta.revocationEndpoint ?: return
         runCatching {
-            call(Request.Builder().url(endpoint).post(FormBody.Builder().add("token", token).add("client_id", Instance.clientId(base)).build()).build())
+            // The SDK's revocation handler 400s a form without client_secret, even a public client's.
+            val form = FormBody.Builder().add("token", token).add("client_id", Instance.clientId(base)).add("client_secret", "").build()
+            call(Request.Builder().url(endpoint).post(form).build())
         }
     }
 

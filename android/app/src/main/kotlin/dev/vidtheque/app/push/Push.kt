@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +34,12 @@ class Push @Inject constructor(@ApplicationContext private val context: Context,
 
     /** Only the server holding that project's key can send to its tokens (companion.md §6). */
     val available: Boolean get() = built && instance.base == BuildConfig.PUSH_INSTANCE
+
+    /** For a message FCM delivers: a cold start knows the instance only once the session is read. */
+    suspend fun forThisSession(): Boolean {
+        withTimeoutOrNull(5_000) { instance.awaitRestored() }
+        return available
+    }
 
     val on: Flow<Boolean> = context.pushPrefs.data.map { it[ON] == true }
 
@@ -56,7 +63,7 @@ class Push @Inject constructor(@ApplicationContext private val context: Context,
 
     /** FCM rotated the token: re-register it if this phone is on. */
     suspend fun tokenRotated(token: String) {
-        if (on.first()) api.registerDevice(token)
+        if (available && on.first()) api.registerDevice(token)
     }
 
     companion object {
