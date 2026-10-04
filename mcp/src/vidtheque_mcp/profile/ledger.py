@@ -279,6 +279,39 @@ def _outside(conn: sqlite3.Connection, start: int, owner_id: int) -> dict[str, A
     return picks.week_rate(conn, datetime.fromtimestamp(start).astimezone().date().isoformat(), owner_id)
 
 
+def _picks(conn: sqlite3.Connection, start: int, owner_id: int) -> dict[str, Any]:
+    """Claude's picks made that week and the share kept (companion.md §6.4)."""
+    from ..verdicts import picks  # picks reads `kept` from here
+
+    return picks.week_rate(conn, datetime.fromtimestamp(start).astimezone().date().isoformat())
+
+
+def _top(conn: sqlite3.Connection, start: int, owner_id: int) -> dict[str, Any]:
+    """The pipeline's top tier, the week's 3s (§3.4), and the share kept: what
+    Claude's picks are measured against."""
+    from ..verdicts import week as verdicts_week
+
+    week = datetime.fromtimestamp(start).astimezone().date().isoformat()
+    top = [r.candidate for r in verdicts_week.view(conn, week) if r.top]
+    if not top:
+        return {"kept": 0, "offered": 0, "rate": None}
+    states = {
+        int(r[0]): r[1]
+        for r in conn.execute(
+            "SELECT video_id, state FROM feedback WHERE owner_id = ? AND video_id IN (SELECT value FROM json_each(?))",
+            (owner_id, json.dumps([c.video_id for c in top])),
+        )
+    }
+    spans = _coverage(conn, [c.video_id for c in top], owner_id)
+    hits = sum(
+        1
+        for c in top
+        if states.get(c.video_id) == "up"
+        or kept([(m.offset_s, m.end_s) for m in c.moments], c.duration_s, spans.get(c.video_id, []))
+    )
+    return {"kept": hits, "offered": len(top), "rate": _rate(hits, len(top))}
+
+
 def _rate(part: int, whole: int) -> float | None:
     return round(part / whole, 3) if whole else None
 
@@ -296,6 +329,8 @@ def weeks(conn: sqlite3.Connection, now: datetime, *, owner_id: int = 1) -> dict
                 "regret": _regret(conn, start, end, owner_id),
                 "misses": _misses(conn, start, end, owner_id),
                 "outside": _outside(conn, start, owner_id),
+                "top": _top(conn, start, owner_id),
+                "picks": _picks(conn, start, owner_id),
             }
             for i, (start, end) in enumerate(zip(starts, ends))
         ],

@@ -440,7 +440,7 @@ def test_valued_time_answers_eight_weeks(client: TestClient) -> None:
     body = client.get(f"{API}/valued-time", headers=BEARER).json()
     assert body["regret_target"] == 0.1
     assert len(body["weeks"]) == 8 and body["weeks"][0]["current"]
-    assert set(body["weeks"][0]) == {"start", "current", "hits", "regret", "misses", "outside"}
+    assert set(body["weeks"][0]) == {"start", "current", "hits", "regret", "misses", "outside", "top", "picks"}
 
 
 def test_feedback_is_a_state_the_verdict_shows_and_a_second_call_takes_back(

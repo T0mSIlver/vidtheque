@@ -63,7 +63,7 @@ in them are made up.
 
 ## 2. The surface at a glance
 
-Twelve tools. Kebab-case, following screenpipe (their original Python server
+Thirteen tools. Kebab-case, following screenpipe (their original Python server
 shipped `search-content` in 2024-12 and the name/params are unchanged 20 months
 later).
 
@@ -91,6 +91,12 @@ interest profile is written by whichever agent knows the owner, and one tool
 with three edit operations is the smallest surface that lets it edit rather
 than rewrite.
 
+**The thirteenth is `recommend`, added 2026-10-04** (§4.13, companion.md
+§6.4, #200): an experiment in whether an agent that knows the owner picks
+better than the verdicts' scores. The read it starts from (the last days'
+verdicts and what became of its earlier picks) is the same tool called bare,
+as `profile` is, rather than a fourteenth.
+
 | # | Tool | One-line purpose | readOnly | idempotent |
 |---|---|---|---|---|
 | 1 | `search` | Cross-video search over transcripts, on-screen text and frame imagery, with timestamped deep links. | ✅ | ✅ |
@@ -105,6 +111,7 @@ than rewrite.
 | 9 | `tag-video` | Add/remove namespaced tags on an indexed video. | ❌ | ✅ |
 | 10 | `follow-channel` | Follow/unfollow a channel or playlist, or pause, resume and check one. | ❌ | ✅ |
 | 11 | `profile` | Read the interest profile, or add, drop and reweight its entries. | ❌ | ❌ |
+| 12 | `recommend` | An agent's own picks on top of the verdicts, at most 5 a day; bare, what it picks from. Owner-only. | ❌ | ❌ |
 
 Three resources: `vidtheque://corpus`, `vidtheque://context`, `vidtheque://guide`.
 
@@ -612,6 +619,7 @@ in §4.11 and `public/readonly.py`.
 | `E_UNKNOWN_FRAME` | 404 | bad `frame_id` | valid ordinal range for that video |
 | `E_UNKNOWN_JOB` | 404 | bad `job_id` | "call `job-status` with no id for recent jobs" |
 | `E_UNKNOWN_ENTRY` | 404 | `profile` `drop`/`reweight` names an id that is not a live entry | "call `profile` with no arguments for the current ids" |
+| `E_PICK_LIMIT` | 409 | `recommend` past today's 5 picks | "keep the best; picking one again replaces it" |
 | `E_PROFILE_GUARD` | 409 | `profile` would drop an owner-written entry, or go past 40 live entries | "reweight it instead" / "drop an entry in the same call" |
 | `E_UNKNOWN_FOLLOW` | 404 | `follow-channel` handle (slug, source URL or title fragment) resolves to nothing | "`corpus-summary include_follows=true` to see what is followed" |
 | `E_NOT_INDEXED` | 409 | video row exists, pipeline never ran | `index-video force_reindex=true` |
@@ -2691,6 +2699,68 @@ that succeed are recorded. A client turns this off per request with the header
 `X-Vidtheque-Signals: off`; a public deployment records nothing; an in-process
 caller sets `CallContext(signals=False)` (the triage agent's calls are never
 signals).
+
+### 4.13 `recommend`
+
+Added 2026-10-04 (#200, companion.md §6.4). The pipeline writes a cheap
+verdict on every video; `recommend` lets an agent that knows the owner, the
+daily Claude routine, add its own picks on top. The feed shows them first and
+the ledger counts them apart, so their hit rate can be held against the
+pipeline's top tier.
+
+```
+recommend(
+  video_id: str | None = None,
+  reason:   str | None = None,          # one line, at most 200 characters
+  moments:  list[{start_s: float, end_s: float, why: str}] | None = None,  # at most 3; why ≤ 120
+  days:     int = 2,                    # bare only: 1–7
+  limit:    int = 30,                   # bare only: 1–60
+  offset:   int = 0,                    # bare only
+)
+```
+
+**With `video_id` and `reason`** it stores today's pick of that video: one
+row per video per local day, `source` `claude`. Picking the same video again
+the same day replaces the pick and does not count; a sixth new pick in a day
+is `E_PICK_LIMIT` and writes nothing. The video must be indexed
+(`E_UNKNOWN_VIDEO`, `E_NOT_INDEXED`).
+
+**Receipts, as verdicts have them (companion.md §3.1):** each moment's
+`start_s` must fall inside a cue of this video and its `end_s` inside the same
+cue or a later one; the moment then ends where that cue ends, and passes the
+verdicts' own `check_receipts`. A span that misses is dropped and named in a
+`note:`, never moved to a nearby cue; the pick is stored with the moments that
+held.
+
+**The privacy rule (companion.md §2.1) holds here too.** A reason or a `why`
+that hits the deny list (job, interview, salary, recruiter and the like) is
+`E_BAD_PARAM`, so nothing about a job search reaches the server by accident.
+The caller is told the rest: the reason is about the video, never about the
+owner's employer, the people they know or their pay.
+
+**Called bare** it returns what the agent picks from, read-only:
+
+- the verdicts written in the last `days` of videos published in the last 30
+  days (a rescore of an old talk stays out), best score then newest first:
+  id, score, publication date, length, channel, title, reason, summary,
+  moments in seconds, and the owner's thumb when there is one. Double-capped:
+  `limit` rows and 24,000 characters, `has_more` and `next_offset` past
+  either.
+- the agent's picks of the last 14 days, newest first, each with the owner's
+  thumb (`up`, `down`, `muted`, `none`), `kept` (thumbed up, or watched past
+  half the pick's moments, §3.3's hit) and `opened` (opened, watched or asked
+  about since the pick).
+- how many of today's 5 are spent.
+
+**Annotations:** `{title: "Pick videos for the owner", readOnlyHint: false,
+idempotentHint: false, openWorldHint: false}`. A write tool, so a read-only
+public deployment does not register it, and its bare read, which carries the
+owner's verdicts and thumbs, goes with it. No call to it is a signal.
+
+**Errors:** `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED`, `E_PICK_LIMIT`, and
+`E_BAD_PARAM` for a missing reason, `reason` or `moments` without a
+`video_id`, more than 3 moments, a span that ends before it starts, an
+over-long or denied text, or `days`, `limit`, `offset` out of range.
 
 ---
 

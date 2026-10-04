@@ -1,6 +1,6 @@
 """Tool and resource registration against the MCP server.
 
-Twelve tools, kebab-case, each carrying the annotations from tool-surface §3.9.
+Thirteen tools, kebab-case, each carrying the annotations from tool-surface §3.9.
 Every handler returns a ``CallToolResult`` directly so it controls its own
 content blocks (text, and for ``get-frames`` the opt-in ``ImageContent``) and
 its ``structuredContent`` — conformant clients read the latter without spending
@@ -21,6 +21,7 @@ from . import follows as follows_tool
 from . import frames as frames_tool
 from . import indexing, library, params, resources, search
 from . import profile as profile_tool
+from . import recommend as recommend_tool
 from . import transcript as transcript_tool
 
 from .base import CALL_CONTEXT, CallContext, Deps, record_tool_signal
@@ -369,6 +370,18 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
             deps, add=add, drop=drop, reweight=reweight, reason=reason
         )
 
+    async def recommend_tool_fn(
+        video_id: str | None = None,
+        reason: str | None = None,
+        moments: list[recommend_tool.PickMoment] | None = None,
+        days: int = recommend_tool.picks.DAYS_DEFAULT,
+        limit: int = recommend_tool.picks.LIMIT_DEFAULT,
+        offset: int = 0,
+    ) -> CallToolResult:
+        return await recommend_tool.recommend(
+            deps, video_id=video_id, reason=reason, moments=moments, days=days, limit=limit, offset=offset
+        )
+
     registry: list[tuple[str, Any]] = [
         ("search", search_tool),
         ("list-videos", list_videos_tool),
@@ -382,6 +395,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
         ("tag-video", tag_video_tool),
         ("follow-channel", follow_channel_tool),
         ("profile", profile_tool_fn),
+        ("recommend", recommend_tool_fn),
     ]
     for name, fn in registry:
         if name in hidden:

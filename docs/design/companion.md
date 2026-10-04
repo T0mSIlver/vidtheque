@@ -391,6 +391,14 @@ read live from `GET /dashboard/api/valued-time` (dashboard.md §25.12):
 
 The first week that counts is 2026-10-12. Each figure says `capped` past 500
 videos a week instead of reading more.
+
+*Amended 2026-10-04 (#200):* two more figures a week, so Claude's picks
+(§6.4) can be held against the pipeline. **Picks**: of the videos Claude
+picked that week (by the day it picked them), the share kept, by the hit
+rule above, read against the pick's moments, or its verdict's when it named
+none. **Top**: the same rule over the week's top tier, its 3s (§3.4), the
+pipeline's own best guess. The experiment works if picks keep a higher share
+than the top tier over the same weeks.
 ### 3.4 Rank within the week
 
 *Added 2026-10-04 (#156).* The first backfill scored 65 of 100 videos 2, about
@@ -537,7 +545,8 @@ Two surfaces, each answering one question. Nothing appears on both.
 
 - **The feed** (new, phone-first, web and Android): *what should I watch?*
   Three screens and nothing else (and, since #158, the weekly brief, §6.1;
-  since #170, an outside pick's page, §6.2):
+  since #170, an outside pick's page, §6.2; since #200, Claude's picks
+  atop the week, §6.4):
   - **Feed**: verdicts, newest first, scores 2–3 on top, 0–1 collapsed into
     "skipped (n)". A row is the channel, title, score, reason and duration.
     *Amended 2026-10-04 (#146, #128):* a search on title and channel, a
@@ -778,6 +787,38 @@ an earlier one of another video said (one chunk within 0.25 is enough, since
 moments are short) names that one, and its link starts after the repeat, by
 §3.2's rule. Like the feed, it is a list that ends; it plays nothing (§8).
 Endpoints: dashboard.md §25.14.
+
+### 6.4 Claude's picks
+
+*Added 2026-10-04 (#200, Tom).* An experiment: does a Claude routine that
+has the owner's memory pick better than the pipeline? The pipeline stays as
+it is: GLM writes a verdict on every video, and the feed, the ledger and push
+read those. Claude adds picks on top.
+
+- **The tool.** `recommend` (tool-surface §4.13), owner-only: a video, a
+  one-line reason, and up to three moments held to the verdicts' receipt
+  check (§3.1). One pick per video a day, `source` `claude`, at most 5 a day,
+  server-side. Called bare it lists the last days' verdicts in compact form
+  and what the owner did with Claude's earlier picks. Table: index-schema
+  §1.23.
+- **The feed.** "Claude's picks" opens the week (§6), above the fitted
+  list, each pick with Claude's reason. A pick is outside the budget, like
+  the outside band, and is never pushed. Thumbs on a picked video are the
+  video's own (§2.3); a pick has no state of its own.
+- **The ledger** counts picks as their own source beside the top tier
+  (§3.3).
+- **The routine** is a daily scheduled Claude Code task on the dev box, where
+  Claude's memory is, on Sonnet 5.5, never a cloud routine. It reaches the
+  private instance through the owner's connector with
+  `X-Vidtheque-Signals: off`, so its reads are not the owner's signals
+  (§2.3). Its skill (`tools/claude-picks/SKILL.md`) reads the new verdicts
+  first, holds them against what Claude knows of the owner, reads the
+  transcripts of the two or three most promising only, then picks. It learns
+  from the thumbs on its earlier picks and keeps what it learns in its own
+  notes on the dev box, never in the vidtheque profile.
+- **Privacy** is §2.1's rule: the reason is about the video, never about the
+  owner's employer, the people they know, pay or a job search. The skill is
+  told so, and the server refuses a reason or a `why` that hits the deny list.
 
 ## 7. The console overhaul
 

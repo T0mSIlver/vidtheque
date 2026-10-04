@@ -3913,6 +3913,11 @@ Each cohort reads at most 500 videos a week and says `capped` past that. No
 parameters. The time budget (#156) adds its minutes asked against budget to
 each week.
 
+*Amended 2026-10-04 (#200):* each week also carries `top`, the week's 3s
+(companion.md §3.4) as `{kept, offered, rate}`, and `picks`, Claude's picks
+made that week as `{source: "claude", picked, kept, rate}`, a video picked on
+two days counted once. Both use the hit rule above (companion.md §3.3).
+
 ### 25.13 `GET /dashboard/api/week`, `POST /dashboard/api/budget` (2026-10-04, #156)
 
 The week the feed fits to the owner's time (companion.md §3.4, §6).
@@ -3940,6 +3945,21 @@ none. `asks_s` at the top is their total, never above `budget_min × 60`.
 the week's seven local days: what the fitted rows published that day ask,
 how many there are, and how many candidates came out that day. `capped` is
 `true` when the week holds 40 candidates or more, the most it compares.
+
+*Amended 2026-10-04 (#200):* `picks` lists Claude's picks made that week
+(companion.md §6.4), newest first, a video picked twice shown once:
+
+```json
+"picks": [{"video_id": "zduSFxRajkE", "title": "…", "channel": "…",
+           "duration_s": 3600.0, "published_at": 1791700000, "source": "claude",
+           "day": "2026-10-04", "reason": "…", "score": 3,
+           "moments": [{"offset_s": 11.0, "end_s": 16.0, "why": "…"}],
+           "moments_s": 5.0}]
+```
+
+`score` is the video's verdict, `null` when it has none. `moments` are the
+pick's, or its verdict's when the pick named none; `moments_s` is null when
+there are none. Picks are outside `budget_min`, `asks_s` and `days`.
 
 `POST /dashboard/api/budget` takes `{"week_budget_min"}`, whole minutes from
 0 to 10,080, stores it (`owners.week_budget_min`, index-schema §1.19) and
