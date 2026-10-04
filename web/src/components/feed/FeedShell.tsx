@@ -31,7 +31,7 @@ export function FeedShell({ children }: { children: ReactNode }) {
             <Link
               className={styles.navlink}
               href={FEED}
-              aria-current={path === FEED ? "page" : undefined}
+              aria-current={path === FEED || path === `${FEED}/all` ? "page" : undefined}
             >
               Feed
             </Link>

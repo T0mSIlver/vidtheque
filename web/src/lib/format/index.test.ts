@@ -11,6 +11,7 @@ import {
   hms,
   hours,
   iso,
+  minutes,
   receiptParts,
   usd,
 } from "./index";
@@ -21,6 +22,14 @@ import {
 // is the absent state — Python printed `-` from a filter that could not be
 // reached with `None`, and the React pages render against a public projection
 // where a clock genuinely is `null`.
+
+describe("minutes", () => {
+  it("reads as minutes, then hours and minutes", () => {
+    expect(minutes(0)).toBe("0 min");
+    expect(minutes(2090)).toBe("35 min");
+    expect(minutes(7500)).toBe("2 h 05");
+  });
+});
 
 describe("asked", () => {
   it("is the moments' minutes against the video's", () => {

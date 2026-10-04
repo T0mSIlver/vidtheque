@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { FeedView } from "./FeedView";
+import { WeekView } from "./WeekView";
 
-// A data-free shell; the browser reads `/dashboard/api/feed` (dashboard.md §25.2).
+// A data-free shell; the browser reads `/dashboard/api/week` (dashboard.md §25.10).
 export const metadata: Metadata = { title: "Feed" };
 
 export default function FeedPage() {
-  return <FeedView />;
+  return <WeekView />;
 }

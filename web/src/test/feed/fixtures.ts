@@ -240,3 +240,31 @@ export const BRIEF = {
     ],
   },
 };
+
+/** The week fitted to 210 minutes (dashboard.md §25.13). */
+export const WEEK = {
+  week: "2026-09-28",
+  previous: "2026-09-21",
+  next: null,
+  budget_min: 210,
+  asks_s: 3900.0,
+  items: [
+    {
+      ...TOP.items[1],
+      tier: 3,
+      week: "2026-09-28",
+      week_rank: 1,
+      asks_s: 3600.0,
+      duration_s: 3600.0,
+    },
+    { ...TOP.items[0], tier: 2, week: "2026-09-28", week_rank: 2, asks_s: 300.0 },
+  ],
+  days: ["28", "29", "30", "01", "02", "03", "04"].map((d, i) => ({
+    day: i < 3 ? `2026-09-${d}` : `2026-10-${d}`,
+    asks_s: i === 2 ? 3900.0 : 0,
+    fitted: i === 2 ? 2 : 0,
+    candidates: i === 2 ? 4 : 0,
+  })),
+  rest: { count: 2, asks_s: 5400.0 },
+  capped: false,
+};

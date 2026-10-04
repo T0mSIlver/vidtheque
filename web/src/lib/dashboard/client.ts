@@ -11,6 +11,7 @@ import {
   Corpus,
   Costs,
   CuePage,
+  BudgetStored,
   Feed,
   FeedFacets,
   FollowCreated,
@@ -41,6 +42,7 @@ import {
   SignedIn,
   TagsOutcome,
   Verdict,
+  Week,
   VideoDetail,
 } from "./schemas";
 
@@ -280,6 +282,14 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     /** The channels and profile entries the feed's filters offer (§25.2). */
     feedFacets(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/feed/facets${suffix(query)}`, FeedFacets, { signal });
+    },
+    /** The week fitted to the budget; the current one without `week` (§25.10). */
+    week(week: string | null, signal?: AbortSignal) {
+      const query = new URLSearchParams(week ? { week } : {});
+      return get(`${ROOT}/api/week${suffix(query)}`, Week, { signal });
+    },
+    budget(weekBudgetMin: number) {
+      return postJson(`${ROOT}/api/budget`, { week_budget_min: weekBudgetMin }, BudgetStored);
     },
     verdict(videoId: string, signal?: AbortSignal) {
       return get(`${ROOT}/api/verdicts/${encodeURIComponent(videoId)}`, Verdict, { signal });
