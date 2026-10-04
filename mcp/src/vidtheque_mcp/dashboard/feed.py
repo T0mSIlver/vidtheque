@@ -47,8 +47,9 @@ OFFSET_MAX = 10_000
 # "skipped (n)" is a count, so it is bounded like every other expensive path.
 SKIPPED_COUNT_CAP = 1000
 TITLE_CHARS = 200
-# `top` is what the feed shows; `skipped` is the list behind "skipped (n)".
-BANDS = {"top": (2, 3), "skipped": (0, 1)}
+# `top` and `skipped` split the verdicts at 2; `all` is every one, the list
+# behind "Show all" (companion.md §6).
+BANDS = {"top": (2, 3), "skipped": (0, 1), "all": (0, 3)}
 # Undated videos come last in either order; the id keeps offset pages stable.
 ORDERS = {
     "newest": "v.published_at IS NULL, v.published_at DESC, d.video_id DESC",
@@ -251,7 +252,7 @@ def _place(score: int, published_at: int | None, ranked: verdicts_week.Ranked | 
 def _band(request: Request) -> str:
     band = request.query_params.get("band", "top")
     if band not in BANDS:
-        raise _Refused("E_BAD_PARAM", f"band={band!r} is not a feed band.", "use band=top or band=skipped.")
+        raise _Refused("E_BAD_PARAM", f"band={band!r} is not a feed band.", "use band=top, band=skipped or band=all.")
     return band
 
 
