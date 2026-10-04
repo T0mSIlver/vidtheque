@@ -47,6 +47,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import dev.vidtheque.app.ui.brief.BriefUi
 import dev.vidtheque.app.ui.signin.SignInScreen
+import dev.vidtheque.app.data.CollectionEntry
+import dev.vidtheque.app.data.CollectionMoment
+import dev.vidtheque.app.data.CollectionRepeat
+import dev.vidtheque.app.data.CollectionSummary
+import dev.vidtheque.app.data.MomentCollection
+import dev.vidtheque.app.data.Overlap
+import dev.vidtheque.app.data.Repeat
+import dev.vidtheque.app.data.SeenVideo
+import dev.vidtheque.app.data.Verdict
+import dev.vidtheque.app.data.VideoRow
+import dev.vidtheque.app.ui.VideoKey
+import dev.vidtheque.app.ui.collection.CollectionContent
+import dev.vidtheque.app.ui.collection.CollectionUi
+import dev.vidtheque.app.ui.video.VideoContent
+import dev.vidtheque.app.ui.video.VideoUi
 import dev.vidtheque.app.ui.theme.VidthequeTheme
 import org.junit.Rule
 import org.junit.Test
@@ -116,6 +131,96 @@ class ScreenshotTest {
             }
         }
         compose.onRoot().captureRoboImage("screenshots/valued-time.png")
+    }
+
+    // Tall, so "Seen before" under the moments is in the shot.
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h1500dp-xxhdpi")
+    fun videoRepeats() {
+        val video = VideoRow("kCc8FmEb1nY", "Let's build GPT: from scratch, in code, spelled out.", "Andrej Karpathy", 6972.0, 1674000000)
+        val brrr = SeenVideo("zduSFxRajkE", "Making LLMs go brrr", "GPU MODE")
+        val verdict = Verdict(
+            video = video,
+            score = 2,
+            reason = "Builds the attention block you asked about, from an empty file.",
+            matches = listOf(Match(15, "Coding agent evals", "up", 2)),
+            summary = "Karpathy builds a character-level transformer: tokenizer, self-attention, then the KV cache that makes sampling linear.",
+            moments = listOf(
+                Moment(41, 842.5, "the self-attention block", "https://youtu.be/kCc8FmEb1nY?t=940", 1214.5, 942.5, Repeat(brrr.videoId, brrr.title, brrr.channel)),
+                Moment(77, 2400.0, "why the cache makes sampling linear", "https://youtu.be/kCc8FmEb1nY?t=2398", 2520.0, 2400.0, Repeat(brrr.videoId, brrr.title, brrr.channel, whole = true)),
+                Moment(90, 4100.0, "sampling with temperature", "https://youtu.be/kCc8FmEb1nY?t=4098", 4250.0, 4100.0),
+            ),
+            overlaps = listOf(
+                Overlap(brrr, 800.0, 942.5, 125.0, "https://youtu.be/zduSFxRajkE?t=123"),
+                Overlap(brrr, 2380.0, 2540.0, 610.0, "https://youtu.be/zduSFxRajkE?t=608"),
+            ),
+            momentsS = 643.0,
+        )
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                VideoContent(
+                    key = VideoKey(video.videoId, video.title, video.channel!!),
+                    ui = VideoUi(verdict = verdict),
+                    still = { _, modifier -> Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant)) },
+                    snackbar = SnackbarHostState(),
+                    onBack = {}, onRetry = {}, onSignal = {}, onMoment = {}, onAsk = {},
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/video-repeats.png")
+    }
+
+    @Test
+    fun collection() {
+        val gpt = VideoRow("kCc8FmEb1nY", "Let's build GPT: from scratch, in code, spelled out.", "Andrej Karpathy", 6972.0, 1674000000)
+        val brrr = VideoRow("zduSFxRajkE", "Making LLMs go brrr", "GPU MODE", 3600.0, 1708000000)
+        val evals = VideoRow("eMlx5fFNoYc", "How we evaluate coding agents", "Latent Space", 2700.0, 1790000000)
+        val collection = MomentCollection(
+            CollectionEntry(15, "Coding agent evals"),
+            listOf(
+                CollectionMoment(evals, "the harness: a sandbox per task, graded by tests", 312.0, 690.0, 312.0, "https://youtu.be/eMlx5fFNoYc?t=310"),
+                CollectionMoment(gpt, "an eval loop on held-out text", 842.5, 1214.5, 842.5, "https://youtu.be/kCc8FmEb1nY?t=840"),
+                CollectionMoment(brrr, "pass@k against wall-clock, after a recap of the harness", 30.0, 420.0, 105.0, "https://youtu.be/zduSFxRajkE?t=103", CollectionRepeat(0, evals.videoId, evals.title)),
+                CollectionMoment(brrr, "the same harness, said again", 1500.0, 1560.0, 1500.0, "https://youtu.be/zduSFxRajkE?t=1498", CollectionRepeat(0, evals.videoId, evals.title, whole = true)),
+            ),
+            momentsS = 1180.0,
+        )
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                CollectionContent(
+                    text = "Coding agent evals",
+                    ui = CollectionUi(collection),
+                    snackbar = SnackbarHostState(),
+                    onBack = {}, onRetry = {}, onOpen = {}, onMoment = {},
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/collection.png")
+    }
+
+    @Test
+    fun profileCollections() {
+        val profile = Profile(
+            12,
+            40,
+            listOf(
+                ProfileEntry(15, "Coding agent evals", 0.9, "nightly"),
+                ProfileEntry(3, "Local inference", 0.6, "owner"),
+                ProfileEntry(7, "Model launch hype", -0.8, "owner"),
+            ),
+            History(emptyList(), false),
+        )
+        val collections = mapOf(15L to CollectionSummary(15, "Coding agent evals", 4, 1180.0, 3))
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                ProfileContent(
+                    ui = ProfileUi(profile = profile, collections = collections),
+                    snackbar = SnackbarHostState(),
+                    onBack = {}, onSignOut = {}, onRetry = {}, onDrop = {}, onRevert = {}, onOlder = {}, onBuild = {},
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/profile-collections.png")
     }
 
     @Test

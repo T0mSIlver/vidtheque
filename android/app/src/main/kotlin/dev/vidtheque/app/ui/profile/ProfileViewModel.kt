@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
+import dev.vidtheque.app.data.CollectionSummary
 import dev.vidtheque.app.data.Profile
 import dev.vidtheque.app.data.ProfileEvent
 import dev.vidtheque.app.push.Push
@@ -20,6 +21,8 @@ import javax.inject.Inject
 
 data class ProfileUi(
     val profile: Profile? = null,
+    /** Each wanted entry's moments by entry id (companion.md §6.2); the profile draws without them. */
+    val collections: Map<Long, CollectionSummary> = emptyMap(),
     /** Every history page read so far; a write starts over from the first. */
     val events: List<ProfileEvent> = emptyList(),
     val nextBefore: Long? = null,
@@ -45,6 +48,14 @@ class ProfileViewModel @Inject constructor(private val api: Api, private val pus
 
     fun load() = run { api.profile() }
 
+    /** Apart from the profile: a collection that fails to load costs only its link. */
+    private fun collect() {
+        viewModelScope.launch {
+            val found = runCatching { api.collections().collections }.getOrNull() ?: return@launch
+            _ui.update { ui -> ui.copy(collections = found.associateBy { it.entryId }) }
+        }
+    }
+
     fun older() {
         val before = _ui.value.nextBefore ?: return
         exclusive {
@@ -57,12 +68,14 @@ class ProfileViewModel @Inject constructor(private val api: Api, private val pus
 
     fun revert(eventId: Long) = run { api.revert(eventId) }
 
-    /** Every write answers the whole profile, so the screen redraws from the server's word. */
+    /** Every write answers the whole profile, so the screen redraws from the server's word,
+     *  and the collections, which follow the entries, are read again. */
     private fun run(call: suspend () -> Profile) = exclusive {
         val profile = call()
         _ui.update {
             it.copy(profile = profile, events = profile.history.events, nextBefore = profile.history.nextBefore.takeIf { profile.history.hasMore })
         }
+        collect()
     }
 
     private fun exclusive(block: suspend () -> Unit) {

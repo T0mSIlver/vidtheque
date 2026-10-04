@@ -51,6 +51,7 @@ import dev.vidtheque.app.ui.brief.BriefScreen
 import dev.vidtheque.app.ui.outside.OutsideBand
 import dev.vidtheque.app.ui.outside.OutsideScreen
 import dev.vidtheque.app.ui.outside.OutsideViewModel
+import dev.vidtheque.app.ui.collection.CollectionScreen
 import dev.vidtheque.app.ui.feed.FeedScreen
 import dev.vidtheque.app.data.FeedItem
 import dev.vidtheque.app.ui.feed.FeedViewModel
@@ -90,6 +91,10 @@ data object ProfileKey : NavKey
 
 @Serializable
 data object SearchKey : NavKey
+
+/** One entry's moments; [text] draws the title while they load. */
+@Serializable
+data class CollectionKey(val entryId: Long, val text: String = "") : NavKey
 
 @Serializable
 data object BriefKey : NavKey
@@ -262,7 +267,12 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                         )
                     }
                     entry<OutsideKey> { key -> OutsideScreen(key.pick, onBack = { stack.removeLastOrNull() }) }
-                    entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
+                    entry<ProfileKey> {
+                        ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut, onCollection = { id, text -> stack.add(CollectionKey(id, text)) })
+                    }
+                    entry<CollectionKey> { key ->
+                        CollectionScreen(key.entryId, key.text, onBack = { stack.removeLastOrNull() }, onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty(), alone = true)) })
+                    }
                     entry<VideoKey>(metadata = containerOnly) { key ->
                         // The list the video was opened from: the pager swipes through it and
                         // nothing else, so the week's fitted list never takes in the rest.
@@ -279,6 +289,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                         VideoScreen(
                             key,
                             onBack = { stack.removeLastOrNull() },
+                            onOpenVideo = { stack.add(it) },
                             still = plainStill,
                             card = sharedPage,
                             pages = pages,
