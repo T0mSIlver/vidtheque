@@ -275,7 +275,7 @@ function BandPage({
         </li>
       ) : null}
       {items.map((item) => (
-        <Row key={item.video_id} item={item} skipped={band === "skipped"} />
+        <Row key={item.video_id} item={item} />
       ))}
       {onMore && pagination.has_more && next !== null ? (
         <li className={styles.rowNote}>
@@ -288,7 +288,9 @@ function BandPage({
   );
 }
 
-function Row({ item, skipped }: { item: FeedItem; skipped: boolean }) {
+function Row({ item }: { item: FeedItem }) {
+  // A skipped verdict says what sank it and takes an "I'd watch this" (§6.1).
+  const skipped = item.score <= 1;
   return (
     <li>
       <Link className={styles.row} href={`${FEED}/${encodeURIComponent(item.video_id)}`}>
