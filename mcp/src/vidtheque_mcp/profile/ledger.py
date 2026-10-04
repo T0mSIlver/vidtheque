@@ -272,6 +272,13 @@ def _skipped_wrong(conn: sqlite3.Connection, start: int, end: int, owner_id: int
     }
 
 
+def _outside(conn: sqlite3.Connection, start: int, owner_id: int) -> dict[str, Any]:
+    """Discovery's picks shown that week and the share kept (companion.md §6.2)."""
+    from ..discover import picks  # picks reads `kept` from here
+
+    return picks.week_rate(conn, datetime.fromtimestamp(start).astimezone().date().isoformat(), owner_id)
+
+
 def _rate(part: int, whole: int) -> float | None:
     return round(part / whole, 3) if whole else None
 
@@ -288,6 +295,7 @@ def weeks(conn: sqlite3.Connection, now: datetime, *, owner_id: int = 1) -> dict
                 "hits": _hits(conn, start, end, owner_id),
                 "regret": _regret(conn, start, end, owner_id),
                 "misses": _misses(conn, start, end, owner_id),
+                "outside": _outside(conn, start, owner_id),
             }
             for i, (start, end) in enumerate(zip(starts, ends))
         ],

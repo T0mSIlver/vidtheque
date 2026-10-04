@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from ..discover import picks as discover_picks
 from ..profile import ledger
 from ..text import deeplink
 from ..verdicts import store as verdicts_store
@@ -306,6 +307,8 @@ def assemble(conn: sqlite3.Connection, row: sqlite3.Row, now: int, owner_id: int
         "audit": [a for a in (_audit(conn, vid, owner_id) for vid in body.get("audit", [])) if a is not None],
         "checkin": dict(checkin) if checkin else None,
         "ledger": _ledger(conn, row, now, owner_id),
+        # Discovery's week (companion.md §6.2), read when asked.
+        "outside": discover_picks.week_payload(conn, week, owner_id),
     }
 
 
