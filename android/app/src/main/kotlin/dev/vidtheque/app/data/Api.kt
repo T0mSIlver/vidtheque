@@ -118,6 +118,9 @@ data class ProfileEntry(
     val text: String,
     val weight: Double,
     val source: String,
+    val kind: String = "topic",
+    // A project lapses here unless written again (#159).
+    @SerialName("expires_at") val expiresAt: Long? = null,
     @SerialName("created_at") val createdAt: Long? = null,
     val evidence: String? = null,
 )

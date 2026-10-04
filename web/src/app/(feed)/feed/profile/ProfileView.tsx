@@ -8,7 +8,7 @@ import { dashboard } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Profile, ProfileEntry, ProfileEvent } from "@/lib/dashboard/schemas";
 import { at, iso } from "@/lib/format";
-import { claudeUrl, parsePasted, PROFILE_PROMPT, signed } from "@/lib/feed/words";
+import { claudeUrl, lapses, parsePasted, PROFILE_PROMPT, signed } from "@/lib/feed/words";
 
 // The interest profile: what scores the next verdict, who changed it and why,
 // and a way back from any change (companion.md §2).
@@ -112,6 +112,9 @@ function Entry({ entry, onChanged }: { entry: ProfileEntry; onChanged: () => voi
         {entry.text}
         <span className={styles.evidence}>
           {entry.source}
+          {entry.kind === "project" && entry.expires_at !== null
+            ? ` · ${lapses(entry.expires_at)}`
+            : ""}
           {entry.evidence ? ` · ${entry.evidence}` : ""}
         </span>
         {drop.status === "failed" ? (
@@ -143,7 +146,7 @@ function BuildWithClaude() {
         target="_blank"
         rel="noopener noreferrer"
       >
-        Ask Claude to build my profile
+        Ask Claude to interview me
       </a>
       <button
         className={styles.copy}
@@ -158,8 +161,8 @@ function BuildWithClaude() {
         {copied ? "Copied" : "Copy prompt"}
       </button>
       <p className={styles.quiet}>
-        Claude saves the list with the <code>profile</code> tool when vidtheque is one of its
-        connectors. Without one, paste its answer below.
+        Five questions, once in a while. Claude saves the answers with the <code>profile</code> tool
+        when vidtheque is one of its connectors. Without one, paste its answer below.
       </p>
     </div>
   );

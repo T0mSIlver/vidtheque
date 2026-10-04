@@ -75,9 +75,9 @@ describe("ProfileView", () => {
     );
   });
 
-  it("opens Claude with the build prompt", async () => {
+  it("opens Claude with the interview prompt", async () => {
     await mount();
-    const ask = await screen.findByRole("link", { name: "Ask Claude to build my profile" });
+    const ask = await screen.findByRole("link", { name: "Ask Claude to interview me" });
     const q = new URL(ask.getAttribute("href")!).searchParams.get("q")!;
     expect(q).toContain("vidtheque profile tool");
   });
