@@ -84,7 +84,7 @@ export function BriefView({ week }: { week: string | null }) {
       <Checkin week={b.week} stored={b.checkin} />
 
       <details className={styles.more}>
-        <summary>What speakers said · {b.said.length}</summary>
+        <summary className={styles.moreSummary}>What speakers said · {b.said.length}</summary>
         {b.said.length === 0 ? <p className={styles.quiet}>{saidNote(b.said_note)}</p> : null}
         {b.said.map((topic) => (
           <div key={topic.entry_id}>
@@ -114,7 +114,7 @@ export function BriefView({ week }: { week: string | null }) {
       </details>
 
       <details className={styles.more}>
-        <summary>
+        <summary className={styles.moreSummary}>
           Channels ·{" "}
           {flagged.length ? `${flagged.length} to review` : `${b.channels.length} followed`}
         </summary>
@@ -126,7 +126,9 @@ export function BriefView({ week }: { week: string | null }) {
       </details>
 
       <details className={styles.more}>
-        <summary>Profile changes · {b.profile_changes.length}</summary>
+        <summary className={styles.moreSummary}>
+          Profile changes · {b.profile_changes.length}
+        </summary>
         {b.profile_changes.length === 0 ? (
           <p className={styles.quiet}>The nightly update changed nothing this week.</p>
         ) : (
@@ -139,7 +141,7 @@ export function BriefView({ week }: { week: string | null }) {
       </details>
 
       <details className={styles.more}>
-        <summary>Skip audit · {b.audit.length}</summary>
+        <summary className={styles.moreSummary}>Skip audit · {b.audit.length}</summary>
         <p className={styles.quiet}>Would you have watched these skipped videos?</p>
         <ul className={styles.rows}>
           {b.audit.map((video) => (
