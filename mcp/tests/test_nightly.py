@@ -11,12 +11,14 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx2 as httpx
 import pytest
 
 from vidtheque_mcp.app import Assembled
 from vidtheque_mcp.llm import LLMUnavailable
 from vidtheque_mcp.profile import nightly as nightly_mod
 from vidtheque_mcp.profile import feedback, signals, store
+from vidtheque_mcp.profile.github import GitHubSettings
 from vidtheque_mcp.profile.nightly import Nightly
 
 DAY = datetime(2026, 10, 3, 5, 0, tzinfo=timezone.utc)
@@ -331,3 +333,93 @@ async def test_a_lapsed_project_retires_even_on_a_night_with_no_signals(assemble
         lambda c: c.execute("SELECT retired_at FROM profile_entries").fetchone()[0]
     )
     assert retired is not None
+
+
+# ---------------------------------------------------------- GitHub projects
+
+
+def repo(name: str, days_ago: float, **extra: Any) -> dict[str, Any]:
+    pushed = (DAY - timedelta(days=days_ago)).isoformat().replace("+00:00", "Z")
+    return {
+        "name": name, "owner": {"login": "T0mSIlver"}, "fork": False, "archived": False,
+        "pushed_at": pushed, "language": "Kotlin", "topics": [], "description": None, **extra,
+    }
+
+
+def github_api(repos: list[dict[str, Any]], seen: list[Any], status: int = 200) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status, json=repos if status == 200 else {"message": "boom"})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def with_github(parts: Assembled, model: FakeModel, http: httpx.AsyncClient, token: str | None = None) -> Nightly:
+    return Nightly(
+        parts.db, model, "api:fake", hour=4, clock=Clock(DAY),
+        github_settings=GitHubSettings("T0mSIlver", token), http=http,
+    )
+
+
+async def projects(parts: Assembled) -> dict[str, str]:
+    rows = await parts.db.read(store.entries)
+    return {r["text"]: r["source"] for r in rows if r["kind"] == "project"}
+
+
+async def test_github_projects_come_from_active_repos_and_pass_the_checks(assembled: Assembled) -> None:
+    seen: list[Any] = []
+    http = github_api(
+        [
+            repo("vidtheque", 1, description="Timestamped knowledge from videos"),
+            repo("job-search", 2, description="applications tracker"),
+            repo("forked", 1, fork=True),
+            repo("old-thing", 45),
+            repo("theirs", 1, owner={"login": "someone"}),
+        ],
+        seen,
+    )
+    model = FakeModel(
+        {"projects": [{"text": "Android app in Kotlin"}, {"text": "Cloudflare tunnels"},
+                      {"text": "Interview prep tools"}]}
+    )
+
+    outcome = await with_github(assembled, model, http).run_once()
+
+    assert outcome is not None and outcome.state == "idle"  # no signals: one model call, GitHub's
+    [request] = seen
+    assert request.url.path == "/users/T0mSIlver/repos" and "authorization" not in request.headers
+    [prompt] = model.prompts
+    assert "vidtheque" in prompt
+    assert not any(name in prompt for name in ("job-search", "forked", "old-thing", "theirs"))
+    assert model.labels == [{"purpose": "github_projects"}]
+    assert await projects(assembled) == {"Android app in Kotlin": "nightly"}
+
+
+async def test_a_token_lists_private_repos_and_an_active_repo_keeps_its_project(
+    assembled: Assembled,
+) -> None:
+    month_ago = int((DAY - timedelta(days=29)).timestamp())
+    await assembled.db.write(
+        lambda c: store.apply(
+            c, store.Ops(add=[("Android app in Kotlin", 0.5, "project")]), actor="nightly", now=month_ago
+        )
+    )
+    seen: list[Any] = []
+    model = FakeModel({"projects": [{"text": "Android app in Kotlin"}]})
+
+    await with_github(assembled, model, github_api([repo("app", 1)], seen), token="t-1").run_once()
+
+    assert seen[0].url.path == "/user/repos" and seen[0].headers["authorization"] == "Bearer t-1"
+    assert "- Android app in Kotlin" in model.prompts[0]  # offered for reuse
+    [row] = await assembled.db.read(store.entries)
+    assert row["expires_at"] == int(DAY.timestamp()) + store.PROJECT_TTL_S
+
+
+async def test_a_github_failure_costs_only_its_pass(assembled: Assembled) -> None:
+    month_ago = int((DAY - timedelta(days=31)).timestamp())
+    await assembled.db.write(
+        lambda c: store.apply(c, store.Ops(add=[("Old project", 0.5, "project")]), actor="agent", now=month_ago)
+    )
+    outcome = await with_github(assembled, FakeModel(), github_api([], [], status=500)).run_once()
+    assert outcome is not None and outcome.state == "idle"
+    assert await projects(assembled) == {}  # the expiry pass still ran

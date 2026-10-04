@@ -1374,7 +1374,7 @@ CREATE TABLE llm_calls (
   id                INTEGER PRIMARY KEY,
   owner_id          INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
   at                INTEGER NOT NULL,                -- unix seconds, when the call started
-  purpose           TEXT    NOT NULL,                -- verdict, verdict_explore, nightly_update, unknown
+  purpose           TEXT    NOT NULL,                -- verdict, verdict_explore, nightly_update, github_projects, unknown
   video_id          INTEGER REFERENCES videos(id) ON DELETE SET NULL,
   backend           TEXT    NOT NULL,                -- api, claude-code, codex
   model             TEXT,

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,7 +28,7 @@ import httpx2 as httpx
 
 from ..config import ConfigError, _bool_env, _int_env
 from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
-from . import feedback, store
+from . import feedback, github, store
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +130,12 @@ class Nightly:
         hour: int = 4,
         owner_id: int = 1,
         clock: Callable[[], datetime] | None = None,
+        github_settings: github.GitHubSettings | None = None,
+        http: httpx.AsyncClient | None = None,
     ) -> None:
         self.db = db
+        self.github = github_settings
+        self.http = http
         self.model = model
         self.label = label
         self.hour = hour
@@ -179,7 +184,9 @@ class Nightly:
         claim = await self.db.write(lambda c: claim_day(c, day, at, self.owner_id))
         if claim is None:
             return None
-        # Lapsed projects retire first, whatever the day's signals: no model involved.
+        if self.github is not None and self.http is not None:
+            await self._github(at)
+        # Lapsed projects retire next, whatever the day's signals: no model involved.
         expired = await self.db.write(lambda c: store.expire(c, at, self.owner_id))
         if expired:
             logger.info("nightly profile update: %d project(s) expired", len(expired))
@@ -222,6 +229,22 @@ class Nightly:
             len(outcome.refused),
         )
         return outcome
+
+    async def _github(self, at: int) -> None:
+        """Projects from the owner's active repos; a failure costs only this pass."""
+        assert self.github is not None and self.http is not None
+        try:
+            done = await github.run(self.db, self.model, self.http, self.github, at, self.owner_id)
+        except (httpx.HTTPError, LLMUnavailable, KeyError, TypeError, ValueError) as exc:
+            logger.warning("nightly profile update: GitHub projects skipped (%s)", exc)
+            return
+        logger.info(
+            "nightly profile update: %d repo(s), %d project(s) written, %d refreshed, %d refused",
+            len(done.repos),
+            len(done.sent),
+            len(done.refreshed),
+            len(done.refused),
+        )
 
 
 # --------------------------------------------------------------- the claim
@@ -441,7 +464,7 @@ def build_nightly(db: Any) -> tuple[Nightly | None, httpx.AsyncClient | None]:
     """The update and the HTTP client it owns, or (None, None) when off.
 
     Off unless the companion model is configured, and off when
-    `VIDTHEQUE_NIGHTLY=0` even then.
+    `VIDTHEQUE_NIGHTLY=0` even then. `VIDTHEQUE_GITHUB_USER` adds the GitHub pass.
     """
     nightly = NightlySettings.from_env()
     if not nightly.enabled:
@@ -449,8 +472,10 @@ def build_nightly(db: Any) -> tuple[Nightly | None, httpx.AsyncClient | None]:
     settings = LLMSettings.from_env()
     if not is_configured(settings):
         return None, None
-    http = httpx.AsyncClient() if settings.backend == "api" else None
+    projects = github.GitHubSettings.from_env(dict(os.environ))
+    needs_http = settings.backend == "api" or projects is not None
+    http = httpx.AsyncClient() if needs_http else None
     model = build_model(settings, http, db)  # type: ignore[arg-type]
     assert model is not None
     label = f"{settings.backend}:{settings.model or 'default'}"
-    return Nightly(db, model, label, hour=nightly.hour), http
+    return Nightly(db, model, label, hour=nightly.hour, github_settings=projects, http=http), http
