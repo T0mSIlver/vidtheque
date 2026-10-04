@@ -78,15 +78,15 @@ describe("the video detail", () => {
       },
     });
 
-    // On the timeline, not in a section of its own.
+    // A segment names its chapter above the band, which holds the link: a
+    // tap on a phone reads the title rather than leaving for YouTube.
     const chapters = await screen.findByRole("list", { name: "Chapters" });
-    expect(within(chapters).getByRole("link", { name: "attention" })).toHaveAttribute(
+    await userEvent.click(within(chapters).getByRole("button", { name: "attention" }));
+    const named = screen.getByText("1/1").parentElement!;
+    expect(within(named).getByText("attention")).toBeInTheDocument();
+    expect(within(named).getByRole("link", { name: "5:05" })).toHaveAttribute(
       "href",
       "https://youtu.be/kCc8FmEb1nY?t=305",
-    );
-    expect(within(chapters).getByRole("link", { name: "attention" })).toHaveAttribute(
-      "title",
-      "5:05 attention",
     );
   });
 

@@ -1,15 +1,21 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import type { Shot } from "@/lib/dashboard/schemas";
 import { clock, count } from "@/lib/format";
 import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 import { frameLink } from "./query";
 
-/** A chapter narrower than this draws its boundary but not its title, which
- *  would be an ellipsis and a letter; the tooltip still names it. */
-const TITLE_MIN_PX = 56;
+/** A segment's side padding, as the stylesheet sets it: a title is drawn
+ *  only when it fits whole between the two. */
+const TITLE_PAD_PX = 16;
+/** Narrower than a title, a segment shows its number, as the line above and
+ *  the list do; narrower than this, its shade alone. */
+const NUMBER_MIN_PX = 20;
+
+type Label = "title" | "number" | null;
 
 /** A new shot's still waits this long, so a sweep is not one request per bar. */
 const SETTLE_MS = 70;
@@ -30,10 +36,10 @@ function barElement(target: EventTarget | null): Element | null {
 }
 
 /** The chapter holding a second: the last one to start at or before it. */
-function chapterAt(chapters: Chapter[], second: number): Chapter | null {
-  let found: Chapter | null = null;
-  for (const chapter of chapters) {
-    if (chapter.start_s <= second) found = chapter;
+function chapterIndex(chapters: Chapter[], second: number): number | null {
+  let found: number | null = null;
+  for (const [index, chapter] of chapters.entries()) {
+    if (chapter.start_s <= second) found = index;
     else break;
   }
   return found;
@@ -70,19 +76,6 @@ export function Timeline({
 }) {
   const band = useRef<HTMLOListElement>(null);
   const scrub = useRef<HTMLDivElement>(null);
-  const [bandPx, setBandPx] = useState(0);
-  // A callback ref: the band mounts with the chapters, whenever they arrive.
-  const measured = useRef<ResizeObserver | null>(null);
-  const chapterBand = useCallback((element: HTMLOListElement | null) => {
-    measured.current?.disconnect();
-    measured.current = null;
-    if (!element) return;
-    setBandPx(element.clientWidth);
-    if (typeof ResizeObserver === "undefined") return;
-    measured.current = new ResizeObserver(() => setBandPx(element.clientWidth));
-    measured.current.observe(element);
-  }, []);
-
   // A video with no recorded duration is drawn against its furthest shot.
   const span = runtime > 0 ? runtime : Math.max(...shots.map((s) => s.end_s), 1);
   const bars = useMemo<Bar[]>(() => {
@@ -133,35 +126,12 @@ export function Timeline({
         Timeline
       </h2>
       {chapters.length ? (
-        <ol aria-label="Chapters" className={styles.chapterband} ref={chapterBand}>
-          {chapters.map((chapter, index) => {
-            const end = chapters[index + 1]?.start_s ?? span;
-            const left = (100 * Math.min(chapter.start_s, span)) / span;
-            const width = (100 * Math.max(Math.min(end, span) - chapter.start_s, 0)) / span;
-            return (
-              <li
-                className={styles.chapterseg}
-                key={`${chapter.start_s}-${chapter.title}`}
-                style={{ left: `${left}%`, width: `${width}%` }}
-              >
-                {/* The chapter's own start, not a quoted moment (§3.6). */}
-                <a
-                  className={styles.chapterlink}
-                  href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${Math.floor(chapter.start_s)}`}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                  title={`${clock(chapter.start_s)} ${chapter.title}`}
-                >
-                  {(width / 100) * bandPx >= TITLE_MIN_PX ? (
-                    chapter.title
-                  ) : (
-                    <span className={ui.srOnly}>{chapter.title}</span>
-                  )}
-                </a>
-              </li>
-            );
-          })}
-        </ol>
+        <Chapters
+          chapters={chapters}
+          span={span}
+          videoId={videoId}
+          under={preview ? chapterIndex(chapters, preview.shot.start_s) : null}
+        />
       ) : null}
       {/* Arrows move focus between the bars' own links, so Enter always
           follows one. */}
@@ -251,7 +221,9 @@ export function Timeline({
           {preview ? `${clock(preview.shot.start_s)}–${clock(preview.shot.end_s)}` : ""}
         </span>
         <span className={styles.scrubmeta}>
-          {preview ? (chapterAt(chapters, preview.shot.start_s)?.title ?? "") : ""}
+          {preview
+            ? (chapters[chapterIndex(chapters, preview.shot.start_s) ?? -1]?.title ?? "")
+            : ""}
         </span>
       </div>
       <p className={styles.scale} aria-hidden="true">
@@ -277,7 +249,180 @@ export function Timeline({
           </span>
         </p>
       </div>
+      {chapters.length ? (
+        <div className={styles.chapterfold}>
+          <ChapterList chapters={chapters} videoId={videoId} />
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+/** A title's drawn width, in the font the band sets; an estimate where there
+ *  is no canvas to measure with (a test's DOM). */
+function measurer(element: Element): (text: string) => number {
+  const style = getComputedStyle(element);
+  const context =
+    typeof OffscreenCanvas === "undefined" ? null : new OffscreenCanvas(1, 1).getContext("2d");
+  if (!context) {
+    const size = parseFloat(style.fontSize) || 14;
+    return (text) => text.length * size * 0.6;
+  }
+  context.font = style.font || `${style.fontSize} ${style.fontFamily}`;
+  return (text) => context.measureText(text).width;
+}
+
+/**
+ * The chapters on the shots' scale (§28.7). Every segment is drawn, shaded in
+ * turn, so a chapter's extent shows without its title; a title is drawn only
+ * where it fits whole, and its number where that does. The line above the band names the chapter under the
+ * pointer, the keyboard, a tap, or the shot preview, with its start linked;
+ * the full list folds under the band.
+ */
+function Chapters({
+  chapters,
+  span,
+  videoId,
+  under,
+}: {
+  chapters: Chapter[];
+  span: number;
+  videoId: string;
+  /** The chapter of the shot the preview shows. */
+  under: number | null;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [labels, setLabels] = useState<Label[]>([]);
+
+  const segments = useMemo(
+    () =>
+      chapters.map((chapter, index) => {
+        const end = chapters[index + 1]?.start_s ?? span;
+        const left = (100 * Math.min(chapter.start_s, span)) / span;
+        const width = (100 * Math.max(Math.min(end, span) - chapter.start_s, 0)) / span;
+        return { chapter, left, width };
+      }),
+    [chapters, span],
+  );
+
+  // A callback ref: the band is measured as it mounts and as it resizes.
+  const observer = useRef<ResizeObserver | null>(null);
+  const band = useCallback(
+    (element: HTMLOListElement | null) => {
+      observer.current?.disconnect();
+      observer.current = null;
+      if (!element) return;
+      const width = measurer(element);
+      const fit = () => {
+        const px = element.clientWidth;
+        setLabels(
+          segments.map(({ chapter, width: share }): Label => {
+            const room = (share / 100) * px;
+            if (px > 0 && width(chapter.title) + TITLE_PAD_PX <= room) return "title";
+            return room >= NUMBER_MIN_PX ? "number" : null;
+          }),
+        );
+      };
+      fit();
+      if (typeof ResizeObserver === "undefined") return;
+      observer.current = new ResizeObserver(fit);
+      observer.current.observe(element);
+    },
+    [segments],
+  );
+
+  const shown = hover ?? under ?? picked;
+  const active = shown === null ? null : chapters[shown];
+
+  return (
+    <>
+      <p className={styles.chapternow}>
+        {active && shown !== null ? (
+          <>
+            <span className={styles.chapterord}>
+              {shown + 1}/{chapters.length}
+            </span>
+            {/* The chapter's own start, not a quoted moment (§3.6). */}
+            <a
+              className={styles.at}
+              href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${Math.floor(active.start_s)}`}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {clock(active.start_s)}
+            </a>
+            <span className={styles.chaptertitle}>{active.title}</span>
+          </>
+        ) : (
+          <span className={styles.muted}>{count(chapters.length)} chapters</span>
+        )}
+      </p>
+      <ol
+        aria-label="Chapters"
+        className={styles.chapterband}
+        onPointerLeave={() => setHover(null)}
+        ref={band}
+      >
+        {segments.map(({ chapter, left, width }, index) => (
+          <li
+            className={`${styles.chapterseg} ${index === shown ? styles.isOn : ""}`}
+            key={`${chapter.start_s}-${chapter.title}`}
+            style={{ left: `${left}%`, width: `${width}%` }}
+          >
+            {/* A tap names the chapter above the band; its link is there. */}
+            <button
+              aria-pressed={index === picked}
+              className={styles.chapterbtn}
+              onBlur={() => setHover(null)}
+              onClick={() => setPicked(index === picked ? null : index)}
+              onFocus={() => setHover(index)}
+              onPointerEnter={(event) => {
+                if (event.pointerType !== "touch") setHover(index);
+              }}
+              type="button"
+            >
+              {labels[index] === "title" ? (
+                chapter.title
+              ) : (
+                <>
+                  {labels[index] === "number" ? (
+                    <span aria-hidden="true" className={styles.chapternum}>
+                      {index + 1}
+                    </span>
+                  ) : null}
+                  <span className={ui.srOnly}>{chapter.title}</span>
+                </>
+              )}
+            </button>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+/** Every chapter, its start linked: the band's index, for a phone's thumb. */
+function ChapterList({ chapters, videoId }: { chapters: Chapter[]; videoId: string }) {
+  return (
+    <Fold label="chapters">
+      <ol className={styles.chapterlist}>
+        {chapters.map((chapter, index) => (
+          <li className={styles.chapteritem} key={`${chapter.start_s}-${chapter.title}`}>
+            <span className={styles.chapterord}>{index + 1}</span>
+            <a
+              className={styles.at}
+              href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${Math.floor(chapter.start_s)}`}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {clock(chapter.start_s)}
+            </a>
+            <span>{chapter.title}</span>
+          </li>
+        ))}
+      </ol>
+    </Fold>
   );
 }
 
