@@ -12,6 +12,12 @@ export const ValuedWeek = z.object({
   hits: z.object({ kept: count(), offered: count(), rate: rate(), capped: z.boolean() }),
   regret: z.object({ down: count(), watched: count(), rate: rate(), capped: z.boolean() }),
   misses: z.object({ count: count(), pending: count(), shared: count(), capped: z.boolean() }),
+  /** Discovery's picks shown that week, and the share kept (§27.7). */
+  outside: z
+    .object({ shown: count(), kept: count(), rate: rate() })
+    .nullable()
+    .optional()
+    .default(null),
 });
 export type ValuedWeek = z.infer<typeof ValuedWeek>;
 

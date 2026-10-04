@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { count, epoch, httpUrl, seconds } from "./common";
 import { FeedbackState, Match, Moment } from "./feed";
+import { OutsideWeek } from "./outside";
 import { ValuedTime } from "./valued-time";
 
 // The weekly brief (dashboard.md §26, companion.md §6.1).
@@ -79,6 +80,8 @@ export const Brief = z.object({
   checkin: z.object({ rating: count(), missing: z.string().nullable(), at: epoch() }).nullable(),
   /** This week of the valued-time ledger (§25.12); null past the weeks it reads. */
   ledger: ValuedTime.nullable(),
+  /** Discovery's week (§27.7); absent from a server before it. */
+  outside: OutsideWeek.nullable().optional().default(null),
 });
 export type Brief = z.infer<typeof Brief>;
 

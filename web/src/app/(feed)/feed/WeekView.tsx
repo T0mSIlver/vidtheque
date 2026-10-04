@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { OutsideBand } from "@/components/feed/OutsidePicks";
 import { FeedFailure } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
 import { dashboard, FEED } from "@/lib/dashboard/client";
@@ -67,6 +68,8 @@ function Loaded({ week, onBudget }: { week: Week; onBudget: () => void }) {
           <Row key={item.video_id} item={item} />
         ))}
       </ol>
+
+      <OutsideBand week={week.week} />
 
       <section className={styles.end} aria-label="End of the feed">
         <p className={styles.endLine}>
