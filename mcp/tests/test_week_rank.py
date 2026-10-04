@@ -158,3 +158,30 @@ async def test_the_verdict_job_ranks_once_no_other_verdict_waits(assembled: Asse
     assert {r["video_id"] for r in feed_rows} == {vid, other}
     run = (await rows(db, "SELECT candidates, outcome FROM week_rank_runs"))[0]
     assert run["outcome"] == "ok" and len(json.loads(run["candidates"])) == 2
+
+
+async def test_a_backfill_past_a_years_weeks_ranks_the_rest_on_the_next_pass(
+    assembled: Assembled, monkeypatch
+) -> None:
+    db = assembled.db
+    monkeypatch.setattr(week, "WEEKS_PER_PASS", 2)
+    weeks = []
+    for back in range(4):
+        await db.write(lambda c, back=back: seed_week(c, [2, 2], at=WED - back * 7 * 86_400))
+        weeks.append(week.week_of(WED - back * 7 * 86_400))
+    model = FakeModel({"order": [], "top": []})
+    ranker = week.WeekRanker(db, model, "api:fake", clock=lambda: time.time())
+    await ranker.rank_pending(Logged())
+    await ranker.rank_pending(Logged())
+    # Two a pass, newest first; the ranked ones never take a later pass's place.
+    ranked = [r[0] for r in await rows(db, "SELECT week FROM week_rank_runs ORDER BY week DESC")]
+    assert ranked == weeks
+    assert len(model.prompts) == 4
+
+
+def test_a_dated_verdict_past_its_weeks_bound_keeps_its_week(monkeypatch) -> None:
+    from vidtheque_mcp.dashboard.feed import _place
+
+    assert _place(2, WED, None) == {"tier": 2, "week": MONDAY, "week_rank": None}
+    assert _place(3, None, None) == {"tier": 2, "week": None, "week_rank": None}
+    assert _place(1, WED, None)["week"] is None

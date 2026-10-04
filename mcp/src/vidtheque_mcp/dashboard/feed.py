@@ -228,15 +228,16 @@ def _video_json(row: sqlite3.Row) -> dict[str, Any]:
 # --------------------------------------------------------------------- feed
 
 
-def _place(score: int, ranked: verdicts_week.Ranked | None) -> dict[str, Any]:
+def _place(score: int, published_at: int | None, ranked: verdicts_week.Ranked | None) -> dict[str, Any]:
     """`tier`, what the feed shows, and the video's place in its week (companion.md §3.4).
 
-    A 2+ verdict outside any week's candidates (undated, or past the week's
-    bound) shows as 2: only the week's ranking makes a 3.
+    A 2+ verdict outside its week's candidates (past the week's bound of 40)
+    has a week but no rank, and shows as 2: only the week's ranking makes a 3.
     """
+    week = verdicts_week.week_of(published_at) if published_at is not None and score >= 2 else None
     if ranked is None:
-        return {"tier": min(score, 2), "week": None, "week_rank": None}
-    return {"tier": ranked.tier, "week": verdicts_week.week_of(ranked.candidate.published_at), "week_rank": ranked.rank}
+        return {"tier": min(score, 2), "week": week, "week_rank": None}
+    return {"tier": ranked.tier, "week": week, "week_rank": ranked.rank}
 
 
 
@@ -327,7 +328,7 @@ async def feed(request: Request) -> Response:
                 {
                     **_video_json(row),
                     "score": int(row["score"]),
-                    **_place(int(row["score"]), ranks.get(int(row["id"]))),
+                    **_place(int(row["score"]), row["published_at"], ranks.get(int(row["id"]))),
                     "reason": row["reason"],
                     "explored": bool(row["explored"]),
                     "matches": row_matches,
@@ -426,7 +427,7 @@ async def verdict(request: Request) -> Response:
         return {
             "video": _video_json(video),
             "score": int(row["score"]),
-            **_place(int(row["score"]), ranked),
+            **_place(int(row["score"]), video["published_at"], ranked),
             "reason": row["reason"],
             "explored": bool(row["explored"]),
             "matches": verdicts_store.matches_json(conn, [row])[0],
