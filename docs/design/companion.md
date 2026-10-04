@@ -650,7 +650,8 @@ one migration (0022, index-schema §1.22), all server-side capped.
 **Topic scouting.** Once a night, from `VIDTHEQUE_SCOUT_HOUR` (default 5,
 local), the scout takes the three live profile entries with the highest
 positive weight and runs one YouTube search for each, newest uploads first
-(`ytsearchdate`), 8 results, flat: one request, no per-video call. It takes
+(the results page's upload-date sort; the pinned yt-dlp has no
+`ytsearchdate`), 8 results, flat: one request, no per-video call. It takes
 the first result per entry that is new to it, not in the corpus, not from a
 followed channel, and 5 to 120 minutes long, then fetches its metadata and one
 caption track: two requests, no audio, no GPU, nothing written to `videos`.
@@ -670,8 +671,10 @@ caption fetches.
 
 **Backing off.** A bot check or a 429 (`RateLimited`) stops the night at
 once and is logged in `scout_runs`; nothing retries it that night. After
-blocked nights the scout waits 1, 2, 4, then 7 days before it asks again, so
-the box's indexing, which shares the IP, keeps its requests.
+1, 2, 3 and 4 or more blocked nights in a row the scout skips the next 1, 2, 4
+and 7 nights, and it skips any night when an indexing job is waiting out a
+YouTube block (`E_RATE_LIMIT`), so the box's indexing, which shares the IP,
+keeps its requests.
 
 **Where picks show.** A band at the end of the fitted week (§6), before
 the stop line, and a section of the weekly brief (§6.1), each pick labelled
