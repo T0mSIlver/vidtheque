@@ -1,21 +1,21 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
   useReducer,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent,
 } from "react";
 import { dashboard, DashboardError } from "@/lib/dashboard/client";
 import type { Cue, CuePage, VideoDetail } from "@/lib/dashboard/schemas";
-import { clock, count } from "@/lib/format";
+import { clock } from "@/lib/format";
 import controls from "@/components/dashboard/kit/controls.module.css";
 import { table } from "@/components/dashboard/kit/table";
-import { DashLink, Panel, Sep, ui } from "@/components/dashboard/kit/ui";
+import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 import { cueLink, markCues } from "./query";
 
@@ -68,6 +68,43 @@ function reduce(state: Cues, action: Action): Cues {
   }
 }
 
+/** A paragraph ends at a new speaker, a pause, or past a reading length. */
+const PAUSE_S = 2;
+const PARA_S = 60;
+const PARA_CHARS = 600;
+
+export interface Paragraph {
+  cues: Cue[];
+  speaker: string | null;
+}
+
+/** Consecutive cues as paragraphs a person can skim (§28.3): a cue is a
+ *  sentence or less, so one per line read as a list. */
+export function paragraphsOf(cues: Cue[]): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  let open: Paragraph | null = null;
+  let chars = 0;
+  for (const cue of cues) {
+    const last = open?.cues[open.cues.length - 1];
+    const fresh =
+      !open ||
+      !last ||
+      cue.speaker !== open.speaker ||
+      cue.start_s - last.end_s >= PAUSE_S ||
+      cue.start_s - open.cues[0].start_s >= PARA_S ||
+      chars >= PARA_CHARS;
+    if (fresh) {
+      open = { cues: [cue], speaker: cue.speaker };
+      paragraphs.push(open);
+      chars = cue.text.length;
+    } else if (open) {
+      open.cues.push(cue);
+      chars += cue.text.length + 1;
+    }
+  }
+  return paragraphs;
+}
+
 const plain = (event: MouseEvent) =>
   !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
 
@@ -95,7 +132,7 @@ export function Transcript({
   const total = transcript.cues;
   const endpoint = transcript.endpoint;
   // Read once: the URL is rewritten as the reader pages, and must not re-seed.
-  const [size] = useState(seedSize ?? transcript.default_limit);
+  const [size] = useState(seedSize ?? transcript.max_limit);
   const [seed] = useState(seedOffset);
   const [state, dispatch] = useReducer(reduce, seed, (first) => ({
     cues: [],
@@ -141,6 +178,17 @@ export function Transcript({
   useLayoutEffect(() => {
     if (state.rewound && box.current) box.current.scrollTop = 0;
   }, [state.cues, state.rewound]);
+
+  // A batch that does not fill the box leaves nothing to scroll: read on. A
+  // box with no height has not been laid out, and is left to its link.
+  useEffect(() => {
+    const element = box.current;
+    if (!element || state.busy || !state.hasMore || state.error) return;
+    if (element.clientHeight > 0 && element.scrollHeight <= element.clientHeight * 2) {
+      dispatch({ type: "ask" });
+      read(state.next, false);
+    }
+  }, [state.cues, state.busy, state.hasMore, state.error, state.next, read]);
 
   function loadMore() {
     dispatch({ type: "ask" });
@@ -198,96 +246,75 @@ export function Transcript({
 
   return (
     <Panel id="transcript" title="Transcript">
-      {/* Totals, not position: the scrollbar already says where you are. */}
-      <p className={styles.cuepos}>
-        <span className={ui.mono}>{count(total)}</span> cues
-        <Sep /> <span className={ui.mono}>{count(transcript.words)}</span> words
-        <Sep /> <span className={ui.mono}>{count(transcript.chars)}</span> chars
-      </p>
-      <div
-        className={styles.cuebox}
-        onScroll={onScroll}
-        ref={box}
-        style={{ "--cue-rows": Math.max(Math.min(size, total - seed), 1) } as CSSProperties}
-        tabIndex={0}
-      >
-        <ol className={styles.cues}>
-          {cues.map((cue, index) => (
-            <CueRow key={`${cue.t}-${index}`} cue={cue} videoId={videoId} />
-          ))}
-        </ol>
+      {first > 0 ? (
+        <nav className={table.pager} aria-label="Transcript pages">
+          <DashLink
+            className={controls.ghostlink}
+            href={cueLink(search, videoId, Math.max(first - size, 0))}
+            onClick={(event) => {
+              if (!plain(event)) return;
+              event.preventDefault();
+              loadEarlier(Math.max(first - size, 0));
+            }}
+          >
+            ← Earlier
+          </DashLink>
+        </nav>
+      ) : null}
+      <div className={styles.cuebox} onScroll={onScroll} ref={box} tabIndex={0}>
+        {paragraphsOf(cues).map((paragraph) => (
+          <Para key={paragraph.cues[0].start_s} paragraph={paragraph} videoId={videoId} />
+        ))}
         {busy ? <p className={styles.cueload}>loading</p> : null}
+        {/* A real link at the server's offset, for a browser that never
+            scrolls the box; the scroll reads the same batch in place. */}
+        {hasMore && !busy ? (
+          <DashLink
+            className={`${controls.ghostlink} ${styles.cuemore}`}
+            href={cueLink(search, videoId, first + cues.length)}
+            onClick={(event) => {
+              if (!plain(event)) return;
+              event.preventDefault();
+              loadMore();
+            }}
+          >
+            Read on
+          </DashLink>
+        ) : null}
       </div>
       {error ? (
         <p className={styles.panelNote}>
           {error instanceof DashboardError ? error.message : "The next batch did not arrive."}
         </p>
       ) : null}
-      {/* Real links at the server's offsets, so a page can go to a new tab; a
-          plain click appends in place instead. */}
-      {first > 0 || hasMore ? (
-        <nav className={table.pager} aria-label="Transcript pages">
-          {first > 0 ? (
-            <DashLink
-              className={controls.ghostlink}
-              href={cueLink(search, videoId, Math.max(first - size, 0))}
-              onClick={(event) => {
-                if (!plain(event)) return;
-                event.preventDefault();
-                loadEarlier(Math.max(first - size, 0));
-              }}
-            >
-              ← Earlier
-            </DashLink>
-          ) : null}
-          {hasMore ? (
-            <DashLink
-              className={controls.ghostlink}
-              href={cueLink(search, videoId, first + cues.length)}
-              onClick={(event) => {
-                if (!plain(event)) return;
-                event.preventDefault();
-                loadMore();
-              }}
-            >
-              Next {size} cues →
-            </DashLink>
-          ) : null}
-        </nav>
-      ) : null}
     </Panel>
   );
 }
 
-function CueRow({ cue, videoId }: { cue: Cue; videoId: string }) {
-  const opens = cue.chunk_opens;
-  const confidence = cue.avg_logprob !== null ? cue.avg_logprob.toFixed(2) : null;
-
+/** One paragraph: its first second, linked, then its cues as running text,
+ *  each titled with its own second. */
+function Para({ paragraph, videoId }: { paragraph: Paragraph; videoId: string }) {
+  const head = paragraph.cues[0];
   return (
-    <>
-      {opens ? (
-        <li className={styles.chunkmark} aria-hidden="true">
-          {`chunk ${opens.seq} · ${clock(opens.start_s)}–${clock(opens.end_s)} · ${opens.n_words} words · ${opens.n_chars} chars`}
-        </li>
-      ) : null}
-      <li className={`${styles.cue} ${cue.in_chunk ? styles.inChunk : ""}`}>
-        {/* `t` is the whole second the endpoint sends for the deeplink. */}
-        <a
-          className={styles.at}
-          href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${cue.t}`}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          {clock(cue.start_s)}
-        </a>
-        <span className={styles.cuetext}>{cue.text}</span>
-        {cue.speaker ? <span className={styles.speaker}>{cue.speaker}</span> : null}
-        {confidence ? (
-          <span className={styles.conf} title="avg_logprob">
-            {confidence}
-          </span>
-        ) : null}
-      </li>
-    </>
+    <div className={styles.para}>
+      {/* `t` is the whole second the endpoint sends for the deeplink. */}
+      <a
+        className={styles.at}
+        href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${head.t}`}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        {clock(head.start_s)}
+      </a>
+      <p className={styles.paratext}>
+        {paragraph.speaker ? <span className={styles.speaker}>{paragraph.speaker} </span> : null}
+        {paragraph.cues.map((cue, index) => (
+          <Fragment key={`${cue.t}-${index}`}>
+            {index ? " " : null}
+            <span title={clock(cue.start_s)}>{cue.text}</span>
+          </Fragment>
+        ))}
+      </p>
+    </div>
   );
 }

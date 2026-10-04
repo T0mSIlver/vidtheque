@@ -25,8 +25,8 @@ export interface Shot {
   lines?: OcrLine[];
 }
 
-/** Detection boxes at the stored 0–1 coordinates. Without `onLit` (the card)
- *  they are inert. */
+/** Detection boxes at the stored 0–1 coordinates, each titled with its text
+ *  and confidence. Without `onLit` (the card) a box only lights on hover. */
 export function OcrBoxes({
   lines,
   lit,
@@ -53,8 +53,8 @@ export function OcrBoxes({
             width: `${(line.box[2] - line.box[0]) * 100}%`,
             height: `${(line.box[3] - line.box[1]) * 100}%`,
           }}
-          // The text is listed beside the frame; a node here would cover it.
-          title={onLit ? line.text : undefined}
+          // A title, not a node: text drawn on the box would cover what it read.
+          title={line.conf === null ? line.text : `${line.text} · ${line.conf.toFixed(2)}`}
         />
       ))}
     </>

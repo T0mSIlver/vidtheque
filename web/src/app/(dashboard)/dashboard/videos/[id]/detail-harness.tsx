@@ -94,3 +94,9 @@ export function stripPage(offset: number) {
     },
   };
 }
+
+/** The strip page a detail read asked for by its `frame_offset`. */
+export function stripAt(url: string) {
+  const offset = Number(new URL(url, "http://localhost").searchParams.get("frame_offset") ?? 0);
+  return stripPage(Math.min(offset, OWNER_VIDEO.frames.frames.length - 1));
+}

@@ -5,6 +5,9 @@ import { pick } from "@/lib/dashboard/query";
 // the transcript's place is `cues`/`cue_offset`, and `select` marks a card.
 
 export const FRAME_KEYS = ["frames", "frame_offset"];
+
+/** The strip's page when the URL names none: `read_models.FRAME_PAGE_MAX`. */
+export const STRIP_PAGE = 96;
 const CUE_KEYS = ["cues", "cue_offset"];
 
 /** The cue endpoint's own offset ceiling. */

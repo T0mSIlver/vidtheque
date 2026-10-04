@@ -6,7 +6,8 @@ import { bandOf, cuePage, mountVideo } from "./detail-harness";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-// The shot band drawn from seconds, its preview, and its link to the strip.
+// The shot band drawn from seconds, its chapters and preview, and its link to
+// the strip.
 
 describe("the scene timeline", () => {
   afterEach(() => {
@@ -45,18 +46,13 @@ describe("the scene timeline", () => {
     ]);
   });
 
-  // Paging the strip keeps the transcript's place, and vice versa.
+  // A bar's strip page keeps the transcript's place.
   it("carries the transcript's bounds across a strip navigation", async () => {
     await mountVideo(
       { body: { ...OWNER_VIDEO, frames: { ...OWNER_VIDEO.frames, limit: 2, has_more: true } } },
       { search: "frames=2&cues=25&cue_offset=100", cues: (url) => ({ body: cuePage(url) }) },
     );
 
-    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
-    expect(within(pager).getByRole("link", { name: "Next 2 frames →" })).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?frames=2&cues=25&cue_offset=100&frame_offset=2#frames",
-    );
     const band = await screen.findByRole("list", { name: "Shots across the runtime" });
     expect(within(band).getAllByRole("link")[0].getAttribute("href")).toContain(
       "cues=25&cue_offset=100",
@@ -77,7 +73,6 @@ describe("the scene timeline", () => {
       // shot 1 runs 430–435s of a 7000s runtime: 6.143% to 6.214% of the band,
       // and 62px of 1000 is 6.2%.
       expect(screen.getByText("7:10–7:15")).toBeInTheDocument();
-      expect(screen.getByText("shot 1 · 1/1 kept")).toBeInTheDocument();
       // The 192px still, after the pause that keeps a sweep from being one
       // request per bar.
       await waitFor(() =>
@@ -85,6 +80,25 @@ describe("the scene timeline", () => {
           document.querySelector('img[src="/frames/kCc8FmEb1nY-00001.jpg?w=192&q=70"]'),
         ).toBeInTheDocument(),
       );
+    });
+
+    // The preview names the chapter the shot falls in, from the same scale.
+    it("names the chapter under the pointer", async () => {
+      await mountVideo({
+        body: {
+          ...OWNER_VIDEO,
+          chapters: [
+            { start_s: 0, title: "intro", link: null },
+            { start_s: 400, title: "attention", link: null },
+          ],
+        },
+      });
+      const band = await bandOf();
+
+      fireEvent.pointerMove(band, { clientX: 62, pointerType: "mouse" });
+
+      const preview = screen.getByText("7:10–7:15").parentElement!;
+      expect(within(preview).getByText("attention")).toBeInTheDocument();
     });
 
     // `min-width: 3px` means a rendered bar can be wider than its share of the
@@ -96,11 +110,10 @@ describe("the scene timeline", () => {
 
       fireEvent.pointerMove(band, { clientX: 500, pointerType: "mouse" });
 
-      expect(screen.getByText("shot 7 · 0/1 kept")).toBeInTheDocument();
       expect(screen.getByText("11:40–12:25")).toBeInTheDocument();
 
       fireEvent.pointerLeave(band);
-      expect(screen.queryByText("shot 7 · 0/1 kept")).not.toBeInTheDocument();
+      expect(screen.queryByText("11:40–12:25")).not.toBeInTheDocument();
     });
 
     // A tap is a navigation, not a hover: on a touch screen the bar's own link
@@ -111,7 +124,7 @@ describe("the scene timeline", () => {
 
       fireEvent.pointerMove(band, { clientX: 62, pointerType: "touch" });
 
-      expect(screen.queryByText("shot 1 · 1/1 kept")).not.toBeInTheDocument();
+      expect(screen.queryByText("7:10–7:15")).not.toBeInTheDocument();
     });
 
     // The card is already on screen: mark it in the URL, scroll to it, and
@@ -128,7 +141,11 @@ describe("the scene timeline", () => {
 
       expect(click.defaultPrevented).toBe(true);
       expect(window.location.href).toContain("select=1#frame-1");
-      expect(scroll).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+      expect(scroll).toHaveBeenCalledWith({
+        block: "nearest",
+        inline: "center",
+        behavior: "smooth",
+      });
       expect(document.activeElement).toBe(
         screen.getByRole("button", { name: "Keyframe 1 at 7:10" }),
       );
@@ -158,7 +175,7 @@ describe("the scene timeline", () => {
       const bars = within(band).getAllByRole("link");
 
       bars[0].focus();
-      await waitFor(() => expect(screen.getByText("shot 0 · 1/1 kept")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText("0:05–0:10")).toBeInTheDocument());
 
       fireEvent.keyDown(bars[0], { key: "ArrowRight" });
       expect(document.activeElement).toBe(bars[1]);
@@ -167,7 +184,7 @@ describe("the scene timeline", () => {
       expect(document.activeElement).toBe(bars[2]);
 
       fireEvent.keyDown(bars[2], { key: "Escape" });
-      expect(screen.queryByText(/^shot \d+ · \d+\/\d+ kept$/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^\d+:\d+–\d+:\d+$/)).not.toBeInTheDocument();
     });
 
     // The band and the strip are two views of one thing, and the link between

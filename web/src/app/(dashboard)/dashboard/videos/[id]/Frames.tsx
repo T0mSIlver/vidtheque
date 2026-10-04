@@ -1,27 +1,29 @@
 "use client";
 
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Pill } from "@/components/ui/Pill";
+import { dashboard } from "@/lib/dashboard/client";
 import type { FrameCard, VideoDetail } from "@/lib/dashboard/schemas";
-import { bytes, clock, count, DASH } from "@/lib/format";
-import { OcrBoxes, OcrLines } from "@/components/dashboard/FrameOverlay";
+import { bytes, clock, DASH } from "@/lib/format";
+import { OcrBoxes } from "@/components/dashboard/FrameOverlay";
 import controls from "@/components/dashboard/kit/controls.module.css";
-import { Fold } from "@/components/dashboard/kit/Fold";
 import { RefusalNotice } from "@/components/dashboard/kit/notice";
-import { Pager } from "@/components/dashboard/kit/table";
-import { Panel, Sep, ui } from "@/components/dashboard/kit/ui";
+import { Panel } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
-import { frameLink } from "./query";
+
+/** OCR states that need no word on the card: read, or read and blank. */
+const QUIET_OCR = new Set(["done", "empty"]);
+
+type Page = VideoDetail["frames"];
 
 /**
- * Every keyframe on this strip page, its detection boxes at the stored 0–1
- * coordinates and its lines beside it. Frames by URL, never inline base64.
- * While the next page is read the current one stays, dimmed and `aria-busy`.
+ * The kept keyframes as one strip that scrolls sideways, each with its
+ * detection boxes. Pages after the one the URL asked for are read as the strip
+ * nears its end and appended (§28.3); a deduplicated frame is not drawn, and
+ * selecting one selects the frame it duplicates.
  */
 export function Frames({
   frames,
-  kept,
-  search,
   selected,
   videoId,
   pending,
@@ -29,93 +31,251 @@ export function Frames({
   onRetry,
   onOpen,
 }: {
-  frames: VideoDetail["frames"];
-  /** The video's kept keyframes, which the phone's toggle names. */
-  kept: number;
-  search: string;
+  frames: Page;
   selected: number | null;
   videoId: string;
-  /** Another strip page is being read. */
+  /** Another strip page is being read for the URL. */
   pending: boolean;
   /** That read's refusal, with the page it replaces still on screen. */
   error: unknown;
   onRetry: () => void;
   onOpen: (frame: FrameCard) => void;
 }) {
-  // The last page has no Next: its link goes, and focus would fall to <body>.
-  const pager = useRef<HTMLDivElement>(null);
-  const paged = useRef(false);
-  useLayoutEffect(() => {
-    if (!paged.current) return;
-    paged.current = false;
-    if (document.activeElement && document.activeElement !== document.body) return;
-    pager.current?.querySelector<HTMLAnchorElement>("a")?.focus({ preventScroll: true });
-  }, [frames.offset]);
+  const strip = useStrip(frames, videoId);
+  const { more } = strip;
+  const scroller = useRef<HTMLOListElement>(null);
+  const [ends, setEnds] = useState({ start: true, end: true });
+
+  const kept = strip.frames.filter((frame) => frame.dup_of_ord === null);
+  const target = keptOrd(strip.frames, selected);
+
+  const measure = useCallback(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const start = element.scrollLeft <= 1;
+    const end = element.scrollLeft + element.clientWidth >= element.scrollWidth - 1;
+    setEnds((last) => (last.start === start && last.end === end ? last : { start, end }));
+    // A strip's width short of its end, so the next page lands before the stop.
+    if (element.scrollLeft + element.clientWidth * 2 >= element.scrollWidth) more();
+  }, [more]);
+
+  useEffect(() => {
+    measure();
+    const element = scroller.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [measure, kept.length]);
+
+  const step = (direction: 1 | -1) => {
+    const element = scroller.current;
+    if (element)
+      element.scrollBy({ left: direction * element.clientWidth * 0.8, behavior: "smooth" });
+  };
 
   return (
-    <Panel id="frames" title="Frames, and what the machine read">
-      {/* Most of a phone's scroll; folded there unless a frame is selected (§24.3). */}
-      <Fold phone label={`${count(kept)} frames`} open={selected !== null}>
-        {error !== undefined ? (
-          <>
-            <RefusalNotice error={error} id="frames-refused" />
-            <p>
-              <button className={controls.ghostlink} type="button" onClick={onRetry}>
-                Try again
-              </button>
-            </p>
-          </>
-        ) : null}
-        <div className={pending ? styles.paging : undefined} aria-busy={pending || undefined}>
-          {frames.frames.length ? (
-            <>
-              <ul className={styles.frames}>
-                {frames.frames.map((frame) => (
-                  <Card
-                    key={frame.frame_id}
-                    frame={frame}
-                    onOpen={onOpen}
-                    selected={frame.ord === selected}
-                    videoId={videoId}
-                  />
-                ))}
-              </ul>
-              {/* The page's line budget ran out: §5.3's double cap. */}
-              {frames.ocr_lines_capped ? (
-                <p className={styles.panelNote}>
-                  The page&apos;s on-screen-text budget of{" "}
-                  <span className={ui.mono}>{count(frames.ocr_line_cap)}</span> lines is spent, so
-                  the last cards in this grid list fewer lines than they hold. Narrow the page with{" "}
-                  <code>?frames=</code> to read them.
-                </p>
-              ) : null}
-              <div ref={pager} onClick={() => (paged.current = true)}>
-                <Pager
-                  limit={frames.limit}
-                  offset={frames.offset}
-                  hasMore={frames.has_more}
-                  href={(offset) => frameLink(search, videoId, offset, null, "frames")}
-                  previous="← Earlier frames"
-                  next={`Next ${frames.limit} frames →`}
-                  label="Keyframe pages"
-                  scroll={false}
-                />
-              </div>
-            </>
-          ) : (
-            <div className={styles.empty}>
-              <p className={styles.emptyLead}>No keyframes on this page.</p>
-              <p className={ui.emptyNote}>
-                The <code>keyframes</code> figure above says how many exist in total.{" "}
-                <code>skipped</code> on a card means deduplicated and never read; <code>empty</code>{" "}
-                means read and blank.
-              </p>
-            </div>
-          )}
+    <Panel id="frames" title="Keyframes">
+      {error !== undefined || strip.error !== undefined ? (
+        <>
+          <RefusalNotice error={error ?? strip.error} id="frames-refused" />
+          <p>
+            <button
+              className={controls.ghostlink}
+              type="button"
+              onClick={error !== undefined ? onRetry : strip.retry}
+            >
+              Try again
+            </button>
+          </p>
+        </>
+      ) : null}
+      {kept.length || strip.earlier ? (
+        <div
+          className={`${styles.strip} ${pending ? styles.paging : ""}`}
+          aria-busy={pending || strip.busy || undefined}
+        >
+          <ol className={styles.frames} onScroll={measure} ref={scroller}>
+            {strip.earlier ? (
+              <li className={styles.earlier}>
+                <button className={controls.ghostlink} type="button" onClick={strip.back}>
+                  Earlier keyframes
+                </button>
+              </li>
+            ) : null}
+            {kept.map((frame) => (
+              <Card
+                key={frame.frame_id}
+                frame={frame}
+                onOpen={onOpen}
+                selected={frame.ord === target}
+                videoId={videoId}
+              />
+            ))}
+          </ol>
+          <StripArrow side="start" hidden={ends.start} onClick={() => step(-1)} />
+          <StripArrow side="end" hidden={ends.end} onClick={() => step(1)} />
         </div>
-      </Fold>
+      ) : (
+        <p className={styles.emptyLead}>No keyframes.</p>
+      )}
+      {/* The page's line budget ran out: §5.3's double cap. */}
+      {strip.capped ? (
+        <p className={styles.panelNote}>
+          Some frames list fewer lines than they hold: the page&apos;s on-screen-text budget ran
+          out.
+        </p>
+      ) : null}
     </Panel>
   );
+}
+
+/** A scroll control drawn, not typed: a chevron in one stroke. */
+function StripArrow({
+  side,
+  hidden,
+  onClick,
+}: {
+  side: "start" | "end";
+  hidden: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={side === "start" ? "Scroll back" : "Scroll on"}
+      className={`${styles.arrow} ${side === "start" ? styles.arrowStart : styles.arrowEnd}`}
+      hidden={hidden}
+      onClick={onClick}
+      tabIndex={-1}
+      type="button"
+    >
+      <svg aria-hidden="true" height="16" viewBox="0 0 16 16" width="16">
+        <path
+          d={side === "start" ? "M10 3 5 8l5 5" : "M6 3l5 5-5 5"}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+      </svg>
+    </button>
+  );
+}
+
+/** A selected duplicate stands for the frame it duplicates, which is drawn. */
+export function keptOrd(frames: FrameCard[], selected: number | null): number | null {
+  if (selected === null) return null;
+  const frame = frames.find((entry) => entry.ord === selected);
+  return frame?.dup_of_ord ?? selected;
+}
+
+/** The strip's frames: the URL's page, then pages read after it in place. */
+function useStrip(first: Page, videoId: string) {
+  const [state, setState] = useState({
+    seed: first,
+    frames: first.frames,
+    start: first.offset,
+    next: first.offset + first.limit,
+    hasMore: first.has_more,
+    capped: first.ocr_lines_capped,
+    busy: false,
+    error: undefined as unknown,
+  });
+  // A new page from the URL (a timeline jump) starts the strip again.
+  if (state.seed !== first) {
+    setState({
+      seed: first,
+      frames: first.frames,
+      start: first.offset,
+      next: first.offset + first.limit,
+      hasMore: first.has_more,
+      capped: first.ocr_lines_capped,
+      busy: false,
+      error: undefined,
+    });
+  }
+
+  const request = useRef<AbortController | null>(null);
+  // Synchronous, unlike `busy`: a scroll that fires twice before a render
+  // must not start a second read.
+  const reading = useRef(false);
+  useEffect(() => () => request.current?.abort(), []);
+
+  const read = useCallback(
+    (offset: number, back: boolean) => {
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
+      reading.current = true;
+      setState((last) => ({ ...last, busy: true, error: undefined }));
+      // The strip's own size, at another offset; the rest of the payload is
+      // read again and dropped.
+      const query = new URLSearchParams({
+        frames: String(first.limit),
+        frame_offset: String(offset),
+      });
+      dashboard.video(videoId, query, controller.signal).then(
+        (data) => {
+          if (controller.signal.aborted) return;
+          reading.current = false;
+          const page = data.frames;
+          setState((last) =>
+            back
+              ? {
+                  ...last,
+                  frames: [
+                    ...page.frames.filter((frame) => frame.ord < last.start),
+                    ...last.frames,
+                  ],
+                  start: page.offset,
+                  capped: last.capped || page.ocr_lines_capped,
+                  busy: false,
+                }
+              : {
+                  ...last,
+                  // Only frames past the strip's end: a page that overlaps it,
+                  // or answers for another offset, adds nothing twice.
+                  frames: [
+                    ...last.frames,
+                    ...page.frames.filter((frame) => frame.ord >= last.next),
+                  ],
+                  next: Math.max(last.next, page.offset + page.frames.length),
+                  hasMore: page.has_more && page.offset + page.frames.length > last.next,
+                  capped: last.capped || page.ocr_lines_capped,
+                  busy: false,
+                },
+          );
+        },
+        (error: unknown) => {
+          if (controller.signal.aborted) return;
+          reading.current = false;
+          setState((last) => ({ ...last, busy: false, error }));
+        },
+      );
+    },
+    [first.limit, videoId],
+  );
+
+  const { busy, hasMore, next, start, error } = state;
+  const more = useCallback(() => {
+    if (!reading.current && hasMore && error === undefined) read(next, false);
+  }, [hasMore, next, error, read]);
+  // The reader asked for this one: it replaces a read the scroll started.
+  const back = useCallback(
+    () => read(Math.max(start - first.limit, 0), true),
+    [start, first.limit, read],
+  );
+  const retry = useCallback(() => read(next, false), [next, read]);
+
+  return {
+    frames: state.frames,
+    capped: state.capped,
+    busy,
+    error,
+    earlier: start > 0,
+    more,
+    back,
+    retry,
+  };
 }
 
 const Card = memo(function Card({
@@ -129,12 +289,9 @@ const Card = memo(function Card({
   selected: boolean;
   onOpen: (frame: FrameCard) => void;
 }) {
-  // Line → box only at card size: a box on a 512px still is not a target.
-  const [lit, setLit] = useState<number | null>(null);
-
   return (
     <li
-      className={`${styles.framecard} ${frame.dup_of_ord !== null ? styles.isDup : ""} ${selected ? styles.isSelected : ""}`}
+      className={`${styles.framecard} ${selected ? styles.isSelected : ""}`}
       data-selected={selected || undefined}
       data-shot={frame.shot_id}
       id={`frame-${frame.ord}`}
@@ -149,7 +306,7 @@ const Card = memo(function Card({
           loading="lazy"
           decoding="async"
         />
-        <OcrBoxes lines={frame.lines} lit={lit} />
+        <OcrBoxes lines={frame.lines} lit={null} />
       </button>
       <p className={styles.framemeta}>
         <a
@@ -161,23 +318,8 @@ const Card = memo(function Card({
           {clock(frame.t_s)}
         </a>
         <span className={styles.muted}>#{frame.ord}</span>
-        <Pill state={frame.ocr_state} />
-        {frame.lines.length ? (
-          <span className={styles.muted}>{frame.lines.length} line(s)</span>
-        ) : null}
+        {QUIET_OCR.has(frame.ocr_state) ? null : <Pill state={frame.ocr_state} />}
       </p>
-      <p className={`${styles.framemeta} ${styles.muted}`}>
-        shot {frame.shot_id}
-        <Sep />{" "}
-        {frame.dup_of_ord !== null ? (
-          <span className={styles.dupnote}>duplicate of #{frame.dup_of_ord}</span>
-        ) : (
-          <span>sharpness {frame.sharpness === null ? DASH : frame.sharpness.toFixed(1)}</span>
-        )}
-      </p>
-      {frame.lines.length ? (
-        <OcrLines className={styles.ocrlines} lines={frame.lines} lit={lit} onLit={setLit} />
-      ) : null}
     </li>
   );
 });

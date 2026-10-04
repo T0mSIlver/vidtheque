@@ -1,7 +1,7 @@
 import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { VideoDetail } from "@/lib/dashboard/schemas";
-import { at, count, DASH } from "@/lib/format";
+import { at, DASH } from "@/lib/format";
 import { table } from "@/components/dashboard/kit/table";
 import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
@@ -63,7 +63,6 @@ export function JobHistory({ history }: { history: VideoDetail["job_history"] })
           </tbody>
         </table>
       </div>
-      <p className={styles.panelNote}>Latest {count(history.cap)} at most; no total is computed.</p>
     </Panel>
   );
 }

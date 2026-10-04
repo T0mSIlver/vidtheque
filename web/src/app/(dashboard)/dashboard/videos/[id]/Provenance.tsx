@@ -2,66 +2,51 @@ import { Pill } from "@/components/ui/Pill";
 import type { Stage, VideoDetail } from "@/lib/dashboard/schemas";
 import { at, bytes, count, DASH, duration, iso } from "@/lib/format";
 import { table } from "@/components/dashboard/kit/table";
-import { Figure, Panel, ui } from "@/components/dashboard/kit/ui";
+import { Fold } from "@/components/dashboard/kit/Fold";
+import { Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 
-/** What the pipeline stored for this video, and where its cues came from. */
+/** What the pipeline stored for this video, folded: a figure per count and
+ *  no sentence under any of them (§28.3). */
 export function Stored({
   counts,
   origins,
+  transcript,
 }: {
   counts: VideoDetail["counts"];
   origins: VideoDetail["cue_origins"];
+  transcript: VideoDetail["transcript"];
 }) {
-  const sources = Object.entries(origins);
+  const figures: [string, string][] = [
+    ["cues", count(counts.cues)],
+    ...Object.entries(origins).map(([origin, n]): [string, string] => [
+      `cues from ${origin}`,
+      count(n),
+    ]),
+    ["cues with word timings", count(counts.cues_with_words)],
+    ["words", count(transcript.words)],
+    ["characters", count(transcript.chars)],
+    ["chunks", count(counts.chunks)],
+    ["keyframes captured", count(counts.keyframes)],
+    ["keyframes kept", count(counts.keyframes_kept)],
+    ["frames with text", count(counts.ocr_frames)],
+    ["on-screen lines", count(counts.ocr_lines)],
+    ["chapters", count(counts.chapters)],
+    ["keyframe bytes", bytes(counts.jpeg_bytes)],
+  ];
   return (
-    <Panel id="counts" title="What was stored">
-      <dl className={ui.figures}>
-        <Figure
-          label="cues"
-          notes={[
-            sources.length ? (
-              <>
-                {sources.map(([origin, n], index) => (
-                  <span key={origin}>
-                    {index ? " · " : ""}
-                    {origin} {n}
-                  </span>
-                ))}
-              </>
-            ) : (
-              <>none</>
-            ),
-          ]}
-        >
-          {count(counts.cues)}
-        </Figure>
-        <Figure label="chunks" notes={[<>from {count(counts.cues)} cues</>]}>
-          {count(counts.chunks)}
-        </Figure>
-        <Figure label="keyframes" notes={[<>kept of {count(counts.keyframes)} captured</>]}>
-          {count(counts.keyframes_kept)}
-        </Figure>
-        <Figure label="frames with text" notes={[<>{count(counts.ocr_lines)} lines read</>]}>
-          {count(counts.ocr_frames)}
-        </Figure>
-        <Figure label="chapters" notes={[<>from the source metadata</>]}>
-          {count(counts.chapters)}
-        </Figure>
-        <Figure
-          label="keyframe bytes"
-          notes={[
-            counts.cues_with_words ? (
-              <>word timings on {count(counts.cues_with_words)} cues</>
-            ) : (
-              <>no word timings stored</>
-            ),
-          ]}
-        >
-          {bytes(counts.jpeg_bytes)}
-        </Figure>
-      </dl>
-    </Panel>
+    <section className={styles.stats} aria-label="Statistics">
+      <Fold label="statistics">
+        <dl className={styles.statlist}>
+          {figures.map(([label, value]) => (
+            <div key={label}>
+              <dt className={styles.statLabel}>{label}</dt>
+              <dd className={styles.statValue}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Fold>
+    </section>
   );
 }
 
