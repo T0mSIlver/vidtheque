@@ -4202,17 +4202,6 @@ and folds the older events behind `Fold`. The bar shows only while the job
 is live, and "this is the final record" and "Newest first, *n* shown" are
 gone.
 
-## 29. The console redesign: search, videos, one video (2026-10-04, #181)
-
-Tom's direction for the console, applied to three pages: quiet when fine and
-loud when not, human labels, no narration, statistics on demand, each fact
-once, a reading width, and controls weighted by use. Each subsection below
-supersedes the page's earlier sections (§5.2, §5.3, §14, §24.3, §24.4) where
-they disagree. §28 holds the shared kit these pages build on, and Health, Corpus, Costs and
-Jobs (#182).
-
-### 29.1 Search, and its two reads
-
 ### 28.5 Search, and its two reads (#181)
 
 **The page** is a centred column. The query box owns the first row with its
