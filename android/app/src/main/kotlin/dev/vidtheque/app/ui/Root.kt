@@ -277,7 +277,8 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                         // The list the video was opened from: the pager swipes through it and
                         // nothing else, so the week's fitted list never takes in the rest.
                         // The nearest list below it: a video a push opened over another keeps that list.
-                        val fromAll = stack.take(stack.indexOf(key)).lastOrNull { it == AllKey || it == FeedKey } == AllKey
+                        // Read once: a popped entry still composes through its exit, off the stack (#175).
+                        val fromAll = remember(key) { stack.take(stack.indexOf(key)).lastOrNull { it == AllKey || it == FeedKey } == AllKey }
                         val shownList = if (fromAll) list else weekList
                         // Where that list stood when the video opened, before any scroll asked below.
                         val home = remember(key) { shownList.firstVisibleItemIndex to shownList.firstVisibleItemScrollOffset }

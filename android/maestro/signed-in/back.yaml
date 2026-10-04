@@ -1,0 +1,33 @@
+appId: dev.vidtheque.app
+name: back
+---
+# Back from a video lands on the list it was opened from; it used to crash the app (#175).
+# CI's emulator has no instance, so this folder runs by hand: a debug build with
+# -Pvidtheque.instance and -Pvidtheque.devToken against a stack whose week holds a video.
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "This week"
+    timeout: 15000
+# The score dial sits inside each card, so tapping it opens the first one.
+- tapOn: "Score .* of 3.*"
+- extendedWaitUntil:
+    visible: "Ask Claude"
+    timeout: 10000
+- back
+- extendedWaitUntil:
+    visible: "This week"
+    timeout: 5000
+- assertVisible: "All videos"
+- tapOn: "All videos"
+- extendedWaitUntil:
+    visible: "Search titles and channels"
+    timeout: 10000
+- tapOn: "Score .* of 3.*"
+- extendedWaitUntil:
+    visible: "Ask Claude"
+    timeout: 10000
+- back
+- extendedWaitUntil:
+    visible: "Search titles and channels"
+    timeout: 5000
