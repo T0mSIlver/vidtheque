@@ -18,9 +18,13 @@ export function Recommendation({ item, compact = false }: { item: FeedItem; comp
         </span>
       </p>
       <h3 className={styles.title}>
-        <a href={item.url} rel="noopener">
-          {item.title}
-        </a>
+        {item.url ? (
+          <a href={item.url} rel="noopener">
+            {item.title}
+          </a>
+        ) : (
+          item.title
+        )}
       </h3>
       <p className={styles.reason}>{item.reason}</p>
       {compact ? null : <p className={styles.summary}>{item.summary}</p>}
@@ -41,13 +45,17 @@ export function Recommendation({ item, compact = false }: { item: FeedItem; comp
         <ol className={styles.moments}>
           {item.moments.slice(0, compact ? 1 : 3).map((moment) => (
             <li key={moment.offset_s}>
-              <a className={styles.at} href={moment.url} rel="noopener">
-                {clock(moment.offset_s)}
-              </a>
+              {moment.url ? (
+                <a className={styles.at} href={moment.url} rel="noopener">
+                  {clock(moment.offset_s)}
+                </a>
+              ) : (
+                <span className={styles.at}>{clock(moment.offset_s)}</span>
+              )}
               <div>
                 <p className={styles.why}>{moment.why}</p>
                 {moment.excerpt ? (
-                  <blockquote className={styles.quote} cite={moment.url}>
+                  <blockquote className={styles.quote} cite={moment.url ?? undefined}>
                     <p className={styles.quoteText}>“{moment.excerpt}”</p>
                     {moment.speaker ? (
                       <footer className={styles.quoteWho}>{moment.speaker}</footer>

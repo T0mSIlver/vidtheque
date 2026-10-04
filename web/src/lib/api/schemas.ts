@@ -138,7 +138,8 @@ export type Meta = z.infer<typeof Meta>;
 // `GET /api/feed`: the sample profile's verdicts (demo-site.md §8.2).
 export const FeedMoment = z.object({
   offset_s: z.number(),
-  url: httpUrl(),
+  // Null for a video that is not on YouTube: `deeplink` names no URL for it.
+  url: httpUrl().nullable(),
   why: z.string(),
   excerpt: z.string().nullable(),
   speaker: z.string().nullable(),
@@ -151,7 +152,7 @@ export const FeedItem = z.object({
   channel: z.string(),
   duration_s: z.number(),
   published_at: z.number().int().nullable(),
-  url: httpUrl(),
+  url: httpUrl().nullable(),
   thumb: httpUrl().nullable(),
   score: z.number().int(),
   reason: z.string(),
