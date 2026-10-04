@@ -16,6 +16,9 @@ class RootViewModel @Inject constructor(private val session: Session, private va
     /** A video a notification asked to open, for the signed-in back stack to take. */
     val opening = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
+    /** Sunday's brief, which a notification asked to open. */
+    val openingBrief = kotlinx.coroutines.flow.MutableStateFlow(false)
+
     fun signOut() {
         // Forget this phone first: the call needs the session it is about to end.
         viewModelScope.launch {

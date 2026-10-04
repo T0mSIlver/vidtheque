@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -43,6 +44,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
+import dev.vidtheque.app.ui.brief.BriefScreen
 import dev.vidtheque.app.ui.feed.FeedScreen
 import dev.vidtheque.app.data.FeedItem
 import dev.vidtheque.app.ui.feed.FeedViewModel
@@ -74,6 +76,9 @@ data object ProfileKey : NavKey
 
 @Serializable
 data object SearchKey : NavKey
+
+@Serializable
+data object BriefKey : NavKey
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
@@ -146,7 +151,7 @@ private val containerOnly = NavDisplay.transitionSpec { EnterTransition.None tog
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
+fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<Boolean>, onSignOut: () -> Unit) {
     val stack = rememberNavBackStack(FeedKey)
     // A tapped notification lands on its video, over the feed.
     val open by opening.collectAsStateWithLifecycle()
@@ -164,6 +169,13 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
     // load it again on the next sign-in.
     DisposableEffect(feed) { onDispose { feed.clear() } }
     LaunchedEffect(feed) { if (!feed.ui.value.loaded && !feed.ui.value.refreshing) feed.refresh() }
+    // Sunday's push lands on the brief, over the feed.
+    val brief by openingBrief.collectAsStateWithLifecycle()
+    LaunchedEffect(brief) {
+        if (!brief) return@LaunchedEffect
+        openingBrief.value = false
+        if (stack.lastOrNull() != BriefKey) stack.add(BriefKey)
+    }
     SharedTransitionLayout {
         CompositionLocalProvider(LocalShared provides this) {
             NavDisplay(
@@ -187,6 +199,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             list = list,
                             actions = {
                                 IconButton(onClick = { stack.add(SearchKey) }) { Icon(Icons.Rounded.Search, contentDescription = "Search the corpus") }
+                                IconButton(onClick = { stack.add(BriefKey) }) { Icon(Icons.Rounded.CalendarMonth, contentDescription = "Your week") }
                                 IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
                             },
                         )
@@ -198,6 +211,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             card = sharedCard,
                         )
                     }
+                    entry<BriefKey> { BriefScreen(onBack = { stack.removeLastOrNull() }, onOpen = { id, title, channel -> stack.add(VideoKey(id, title, channel)) }) }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
                     entry<VideoKey>(metadata = containerOnly) { key ->
                         // Where the feed stood when the video opened, before any scroll asked below.

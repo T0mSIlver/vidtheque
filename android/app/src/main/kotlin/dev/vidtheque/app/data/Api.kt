@@ -181,6 +181,93 @@ data class SearchPage(
 @Serializable
 data class NoVerdict(val video: VideoRow)
 
+// The weekly brief (dashboard.md §26).
+
+@Serializable
+data class Pick(
+    @SerialName("video_id") val videoId: String,
+    val title: String,
+    val channel: String? = null,
+    @SerialName("duration_s") val durationS: Double = 0.0,
+    val score: Int,
+    val reason: String = "",
+    val moments: List<Moment> = emptyList(),
+)
+
+/** One place a speaker said it: the cue, and its link. */
+@Serializable
+data class Receipt(
+    @SerialName("video_id") val videoId: String,
+    val title: String = "",
+    val channel: String = "",
+    @SerialName("offset_s") val offsetS: Double,
+    val url: String? = null,
+    val said: String? = null,
+)
+
+@Serializable
+data class Disagreement(val about: String, val sides: List<Receipt>)
+
+@Serializable
+data class Said(@SerialName("entry_id") val entryId: Long, val text: String, val points: List<Receipt> = emptyList(), val disagreement: Disagreement? = null)
+
+@Serializable
+data class ChannelCard(
+    val slug: String,
+    val title: String,
+    val state: String,
+    val videos: Int,
+    @SerialName("worth_share") val worthShare: Double? = null,
+    @SerialName("engaged_share") val engagedShare: Double? = null,
+    @SerialName("suggest_pause") val suggestPause: Boolean = false,
+)
+
+@Serializable
+data class Change(
+    @SerialName("event_id") val eventId: Long,
+    val op: String,
+    @SerialName("entry_id") val entryId: Long,
+    val before: EntryState? = null,
+    val after: EntryState? = null,
+    val reason: String? = null,
+    val reverted: Boolean = false,
+)
+
+@Serializable
+data class Audited(
+    @SerialName("video_id") val videoId: String,
+    val title: String,
+    val channel: String? = null,
+    val reason: String = "",
+    @SerialName("sunk_by") val sunkBy: Match? = null,
+    /** `wrong` is "I'd have watched it", `right` the skip was fair, null not asked yet. */
+    val answer: String? = null,
+)
+
+@Serializable
+data class Checkin(val rating: Int, val missing: String? = null)
+
+@Serializable
+data class Brief(
+    val week: String,
+    val since: Long,
+    @SerialName("previous_week") val previousWeek: String? = null,
+    val picks: List<Pick> = emptyList(),
+    val said: List<Said> = emptyList(),
+    @SerialName("said_note") val saidNote: String? = null,
+    val channels: List<ChannelCard> = emptyList(),
+    @SerialName("profile_changes") val profileChanges: List<Change> = emptyList(),
+    val audit: List<Audited> = emptyList(),
+    val checkin: Checkin? = null,
+)
+
+/** "Ease the entry that sank it to [to]?" — applied only when the reader says so. */
+@Serializable
+data class Proposal(@SerialName("entry_id") val entryId: Long, val text: String, val weight: Double, val to: Double)
+
+@Serializable
+data class SkipAnswered(val answer: String, val proposal: Proposal? = null)
+
 @Serializable
 data class Refusal(val error: String, val message: String)
 
@@ -238,6 +325,41 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
 
     suspend fun revert(eventId: Long): Profile =
         json.decodeFromString(post("$root/profile/revert", buildJsonObject { put("event_id", eventId) }))
+
+    suspend fun brief(week: String? = null): Brief = json.decodeFromString(get("$root/brief" + (week?.let { "?week=$it" } ?: "")))
+
+    suspend fun checkin(week: String, rating: Int, missing: String) {
+        post("$root/brief/checkin", buildJsonObject {
+            put("week", week)
+            put("rating", rating)
+            put("missing", missing)
+        })
+    }
+
+    /** `wrong` is "I'd watch this": a thumb up, and a proposed reweight in the answer. */
+    suspend fun skip(videoId: String, answer: String, source: String): SkipAnswered = json.decodeFromString(
+        post("$root/skips", buildJsonObject {
+            put("video_id", videoId)
+            put("answer", answer)
+            put("source", source)
+        }),
+    )
+
+    suspend fun reweight(entryId: Long, weight: Double, reason: String): Profile = json.decodeFromString(
+        post("$root/profile", buildJsonObject {
+            put("reweight", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
+                put("id", entryId)
+                put("weight", weight)
+            })))
+            put("reason", reason)
+        }),
+    )
+
+    /** The console's own pause (dashboard.md §21), a form post like the page's. */
+    suspend fun pauseFollow(slug: String) {
+        val form = okhttp3.FormBody.Builder().add("action", "pause").build()
+        send(Request.Builder().url("${instance.base}/dashboard/following/$slug/state").header("Accept", "application/json").post(form).build())
+    }
 
     /** This phone's FCM token, so verdicts at the threshold reach it (§25.6). */
     suspend fun registerDevice(token: String) {

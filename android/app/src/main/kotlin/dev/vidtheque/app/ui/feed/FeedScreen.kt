@@ -78,6 +78,7 @@ import dev.vidtheque.app.ui.asked
 import dev.vidtheque.app.ui.scoreColor
 import dev.vidtheque.app.ui.scoreWord
 import dev.vidtheque.app.ui.thumbnail
+import dev.vidtheque.app.ui.brief.SkipFix
 
 /** How a still is drawn, so the caller can make it a shared element with the video screen. */
 typealias Still = @Composable (videoId: String, modifier: Modifier) -> Unit
@@ -111,6 +112,8 @@ fun FeedScreen(
     card: Lift = { _, _ -> Modifier },
     list: LazyListState = rememberLazyListState(),
     actions: @Composable () -> Unit = {},
+    /** Off where no view model can be had (a JVM screenshot). */
+    skipFix: Boolean = true,
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
@@ -158,7 +161,12 @@ fun FeedScreen(
                 if (ui.skippedCount > 0 && ui.top.nextOffset == null) {
                     item(key = "skipped") { SkippedToggle(ui, onToggleSkipped) }
                     ui.skipped?.let { band ->
-                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item -> Row(item, still, card) { onOpen(item) } }
+                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item ->
+                            Column {
+                                Row(item, still, card) { onOpen(item) }
+                                if (skipFix) SkipFix(item.videoId, item.matches)
+                            }
+                        }
                         if (band.nextOffset != null) item { TextButton(onClick = onMoreSkipped, enabled = !band.loading) { Text("More skipped") } }
                     }
                 }

@@ -20,7 +20,8 @@ class VerdictMessagingService : FirebaseMessagingService() {
     // FCM runs these on its own executor, off the main thread (EnhancedIntentService),
     // and expects the work done before they return.
     override fun onMessageReceived(message: RemoteMessage) {
-        runBlocking { VerdictNotifications.show(this@VerdictMessagingService, message.data) }
+        if (message.data["kind"] == "brief") VerdictNotifications.showBrief(this, message.data)
+        else runBlocking { VerdictNotifications.show(this@VerdictMessagingService, message.data) }
     }
 
     override fun onNewToken(token: String) {
