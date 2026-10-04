@@ -1,0 +1,113 @@
+/* Health (dashboard.md §28.2): the services as words, the models as two
+   compact lists, the cost as one line. */
+
+.when {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Each service and its state word, wrapping as pairs. */
+.services {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s6);
+  list-style: none;
+  color: var(--fg2);
+}
+
+.services li {
+  white-space: nowrap;
+}
+
+.services [data-tone] {
+  color: var(--fg);
+}
+
+.services [data-tone="ok"] {
+  color: var(--tone-ok);
+}
+
+.services [data-tone="bad"] {
+  color: var(--tone-bad);
+}
+
+.models {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: var(--s2) var(--s8);
+  margin-top: var(--s4);
+}
+
+/* A stage and its model on one line; the model name wraps under itself. */
+.modelList {
+  composes: t-cell from global;
+}
+
+.modelList > div {
+  display: grid;
+  grid-template-columns: 11.5rem minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s1) 0;
+  border-top: 1px solid var(--seam);
+}
+
+.modelList > div:first-child {
+  border-top: 0;
+}
+
+.modelList dt {
+  color: var(--fg2);
+}
+
+.modelList dd {
+  min-width: 0;
+}
+
+/* 780px — `--bp-hand` */
+@media (max-width: 48.75rem) {
+  .modelList > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+.listHead {
+  composes: t-cell from global;
+  font-size: 0.8125rem;
+  margin-bottom: var(--s1);
+  color: var(--fg2);
+}
+
+.modelList dt::first-letter {
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ cost */
+
+.costLine {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s6);
+  margin-bottom: var(--s2);
+  list-style: none;
+  color: var(--fg2);
+}
+
+.costLine li {
+  white-space: nowrap;
+}
+
+.money {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  color: var(--fg);
+}
+
+.costNote {
+  composes: t-cell from global;
+  margin-bottom: var(--s2);
+}
