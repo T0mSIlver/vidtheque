@@ -44,7 +44,9 @@ def build_pipeline(
         layout=Layout(settings.data_dir),
         settings=resolved,
         source=source or YtDlpSource(resolved),
-        worker=worker or worker_client(settings.worker_url, resolved),
+        # No URL is WORKER_URL=none: the stages that need a worker skip.
+        worker=worker
+        or (worker_client(settings.worker_url, resolved) if settings.worker_url else None),
     )
 
 

@@ -175,6 +175,8 @@ def assemble(
         query_budget_s=settings.query_timeout_s,
         stale_claim_s=settings.stale_claim_s,
     )
+    if not settings.worker_url:
+        db.vectors.disable("this server runs without an embedding worker (WORKER_URL=none).")
     auth = build_auth(settings)
     # No default model: each leg names the encoder it needs from `config`, so
     # the transcript and frame spaces cannot be confused for one another. The
@@ -190,7 +192,7 @@ def assemble(
         or build_pipeline(
             settings,
             db,
-            worker=client if isinstance(client, WorkerAPI) else None,
+            worker=client if isinstance(client, WorkerAPI) and settings.worker_url else None,
             pipeline_settings=pipeline_settings,
         ),
         stale_after_s=settings.stale_claim_s,
