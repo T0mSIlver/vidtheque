@@ -39,6 +39,8 @@ describe("FeedView", () => {
     expect(within(rows[0]).getByText("watch it whole")).toBeInTheDocument();
     expect(rows[0]).toHaveAttribute("href", "/feed/kCc8FmEb1nY");
     expect(within(rows[1]).getByText("outside your profile")).toBeInTheDocument();
+    // Scored 2, shown 3: the week's ranking makes the 3s.
+    expect(within(rows[1]).getByText("watch it whole")).toBeInTheDocument();
     expect(within(rows[0]).queryByText("outside your profile")).toBeNull();
 
     const fold = screen.getByRole("button", { name: /Skipped \(2\)/ });

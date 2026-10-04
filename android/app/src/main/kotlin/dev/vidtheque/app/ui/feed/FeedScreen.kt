@@ -300,7 +300,7 @@ private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) 
     Card(onClick = onClick, shape = RoundedCornerShape(HERO_CORNER), modifier = Modifier.fillMaxWidth().then(card(item.videoId, HERO_CORNER))) {
         Box {
             still(item.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-            Verdict(item.score, onImage = true, Modifier.align(Alignment.BottomStart).padding(12.dp))
+            Verdict(item.tier ?: item.score, onImage = true, Modifier.align(Alignment.BottomStart).padding(12.dp))
         }
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleLargeEmphasized, color = MaterialTheme.colorScheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -324,7 +324,7 @@ private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
                 // The length goes up here: "6 of 42 min" beside the score cut its words.
                 Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, asked(item.momentsS, item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Verdict(item.score, onImage = false)
+                Verdict(item.tier ?: item.score, onImage = false)
             }
         }
         Reason(item, Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp), lines = 2)

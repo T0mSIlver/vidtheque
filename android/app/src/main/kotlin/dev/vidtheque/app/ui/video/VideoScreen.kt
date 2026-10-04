@@ -261,10 +261,11 @@ fun VideoContent(
 
 @Composable
 private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
+    val shown = verdict.tier ?: verdict.score
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScoreDial(verdict.score, size = 48.dp)
+        ScoreDial(shown, size = 48.dp)
         Column {
-            Text(scoreWord(verdict.score), style = MaterialTheme.typography.titleMediumEmphasized, color = scoreColor(verdict.score))
+            Text(scoreWord(shown), style = MaterialTheme.typography.titleMediumEmphasized, color = scoreColor(shown))
             Text(asked(verdict.momentsS, verdict.video.durationS), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

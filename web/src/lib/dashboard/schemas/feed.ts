@@ -27,6 +27,10 @@ export type Match = z.infer<typeof Match>;
 export const FeedItem = FeedVideo.extend({
   /** 0 skip, 1 the summary is enough, 2 watch the moments, 3 watch it whole. */
   score: count(),
+  /** What the feed shows: the week's ranking makes the 3s (companion.md §3.4). */
+  tier: count().nullable().optional().default(null),
+  week: z.string().nullable().optional().default(null),
+  week_rank: count().nullable().optional().default(null),
   reason: z.string(),
   /** Scored 2+ only once rescored without the negative entries. */
   explored: z.boolean().optional().default(false),
@@ -94,6 +98,9 @@ export type FeedbackState = z.infer<typeof FeedbackState>;
 export const Verdict = z.object({
   video: FeedVideo,
   score: count(),
+  tier: count().nullable().optional().default(null),
+  week: z.string().nullable().optional().default(null),
+  week_rank: count().nullable().optional().default(null),
   reason: z.string(),
   explored: z.boolean().optional().default(false),
   matches: z.array(Match).optional().default([]),

@@ -30,6 +30,10 @@ export const TOP = {
       duration_s: 7998.0,
       published_at: 1708000000,
       score: 2,
+      // The week's ranking put it on top (companion.md §3.4).
+      tier: 3,
+      week: "2024-02-12",
+      week_rank: 1,
       reason: "tokenizers, outside the usual",
       explored: true,
       judged_at: now - 20,
