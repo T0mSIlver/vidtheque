@@ -82,8 +82,8 @@ holds at most 10 live projects. Existing entries are topics that never lapse.
 
 **The server-side profile is topics only.** No companies, people, pay or
 job-search details, in an entry or in a reason, whoever writes it. Every
-prompt that asks Claude to write the profile says so, and the memory routine
-(§2.2) filters before anything leaves the box. The 32-character, 5-word cap
+prompt that asks Claude to write the profile says so, and both sources of
+projects (§2.2) filter what they read and what they write. The 32-character, 5-word cap
 keeps an entry too short to carry much else.
 
 ### 2.2 Who writes it
@@ -102,7 +102,7 @@ keeps an entry too short to carry much else.
 - **The owner**, on the profile screen.
 
 *Amended 2026-10-04 (#159):* the profile learns from what the owner already
-tells Claude, not from repeated questions. Three paths:
+tells Claude, not from repeated questions. Four paths:
 
 - **Ask Claude saves what it learned.** The video prompt (§6) ends by asking
   Claude to call `profile` when the conversation shows a topic the owner
@@ -113,8 +113,25 @@ tells Claude, not from repeated questions. Three paths:
   video is worth your time), then Claude shows the list and saves it, what
   you are building as `kind=project`. Rare by design: nothing ever prompts
   the owner to take it again.
-- **Current projects from Claude's memory.** `scripts/memory_projects.py`
-  runs where Claude Code keeps its memory (the dev box). It reads each
+- **Current projects from GitHub.** With `VIDTHEQUE_GITHUB_USER` set, the
+  nightly update (§2.4) lists the repos that user owns, pushed to in the last
+  30 days, forks and archives left out, at most 30, through the REST API. It
+  reads each repo's name, description, topics and main language, never code,
+  commits or issues. Private repos are listed only with
+  `VIDTHEQUE_GITHUB_TOKEN`. A repo whose name, description or topics hit the
+  deny list (job, interview, salary and the like) is dropped before the model
+  sees it. One model call (`llm_calls.purpose` `github_projects`) names at
+  most 8 topics. The model is given the live projects so that a repo still
+  active reuses its entry's exact text. Each topic then passes the checks in
+  `profile/topics.py` (the entry caps, plain characters, the deny list and a
+  built-in list of vendor names), and the survivors are added as `kind=project`, weight 0.5, by
+  `actor=nightly`, reason "an active GitHub repo". Naming a live project again
+  restarts its 30 days. The pass runs on the box, so it needs no credential
+  beyond the optional token, and a GitHub or model failure skips only this
+  pass.
+- **Current projects from Claude's memory, by hand**, for what is not on
+  GitHub. `scripts/memory_projects.py` runs where Claude Code keeps its memory
+  (the dev box). It reads each
   `~/.claude/projects/*/memory/` changed in the last 30 days (the
   `MEMORY.md` index and the newest files, at most 8,000 characters a project
   and 60,000 in all), skipping unread any project directory or memory file
@@ -123,18 +140,17 @@ tells Claude, not from repeated questions. Three paths:
   `~/.config/vidtheque/memory-deny.txt`). `claude -p` with no tools, no MCP
   servers and no settings turns that text into at most 8 topics against a
   JSON schema, and is told to name no company or vendor. Each topic must then
-  fit the entry caps, use plain characters, and miss the deny list and a
-  built-in list of vendor names; the survivors go to `profile` as `kind=project`,
+  pass the same checks as the GitHub pass (`profile/topics.py`): the entry
+  caps, plain characters, the deny list and a built-in list of vendor names.
+  The survivors go to `profile` as `kind=project`,
   weight 0.5, under a fixed reason, so the checked topic text is the only
   thing that leaves the memory. A project still in the memory is refreshed
   each run; one that drops out lapses after 30 days. Dry run by default;
   `--send` writes and appends the run to
   `~/.local/state/vidtheque/memory-projects.jsonl`.
 
-  *Proposed, not installed:* a user systemd timer on the dev box runs it
-  daily at 03:30, before the 04:00 nightly update, with `--send`, the
-  private instance's MCP URL and a token file. The orchestrator installs it
-  after reviewing a dry run.
+  It is run by hand, never on a timer: the GitHub pass covers the daily
+  refresh without an unattended MCP credential.
 
 ### 2.3 Signals
 
@@ -217,11 +233,10 @@ transaction that applies the ops, so a restart never runs a day twice. A
 failed model call applies nothing and is retried up to 3 times that day, an
 hour apart. A day with no signals is `idle` and calls no model.
 
-*Amended 2026-10-04 (#159):* before it reads the signals, the run retires
-every project past its expiry (§2.1), one `drop` event each as
-`actor=nightly`, reason "project not written again in 30 days". Expiry is
-not one of the night's 5 operations, calls no model and happens on idle days
-too. It is not under the owner guard: an entry that carries an expiry was
+*Amended 2026-10-04 (#159):* before it reads the signals, the run writes the
+GitHub projects (§2.2) and then retires every project past its expiry (§2.1), one `drop` event each as
+`actor=nightly`, reason "project not written again in 30 days". Neither pass counts toward the night's 5 operations, and both run on idle
+days too; expiry calls no model. It is not under the owner guard: an entry that carries an expiry was
 written to lapse. The model sees a project marked as one and is told to
 leave it be.
 
@@ -430,7 +445,7 @@ weekly Claude limit is the budget that runs out first. All new vars land in
 completion in `llm_calls` (index-schema §1.16), whatever its outcome:
 purpose (`verdict`, `verdict_explore` for the exploration rescore,
 `week_rank` for the week's ranking (§3.4),
-`nightly_update`, `unknown` for a caller that names none), the video, backend,
+`nightly_update`, `github_projects`, `unknown` for a caller that names none), the video, backend,
 model, the token counts the backend reported, latency, outcome and cost.
 `build_model` takes the database, so no caller can build a model whose calls
 go unrecorded.
