@@ -176,17 +176,17 @@ private fun HitRow(hit: SearchHit, container: Modifier, onOpen: (SearchHit) -> U
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
-                        Text(duration(hit.matchStart ?: hit.start), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                // The chip heads the moment and the text runs the full width under it (#175).
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
+                            Text(duration(hit.matchStart ?: hit.start), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Text(evidence(hit.source), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        if (linked) Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open on YouTube at this moment", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        if (hit.text != null) Text(hit.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4)
-                        else Text("Visual match, no text hit", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        val where = evidence(hit.source)
-                        if (where.isNotEmpty()) Text(where, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (linked) Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open on YouTube at this moment", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (hit.text != null) Text(hit.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4)
+                    else Text("Visual match, no text hit", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
