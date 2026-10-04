@@ -22,6 +22,18 @@ import dev.vidtheque.app.ui.profile.ProfileContent
 import dev.vidtheque.app.ui.profile.ProfileUi
 import dev.vidtheque.app.ui.search.SearchContent
 import dev.vidtheque.app.ui.search.SearchUi
+import dev.vidtheque.app.data.Audited
+import dev.vidtheque.app.data.Brief
+import dev.vidtheque.app.data.Change
+import dev.vidtheque.app.data.ChannelCard
+import dev.vidtheque.app.data.EntryState
+import dev.vidtheque.app.data.Match
+import dev.vidtheque.app.data.Moment
+import dev.vidtheque.app.data.Pick
+import dev.vidtheque.app.data.Receipt
+import dev.vidtheque.app.data.Said
+import dev.vidtheque.app.ui.brief.BriefContent
+import dev.vidtheque.app.ui.brief.BriefUi
 import dev.vidtheque.app.ui.signin.SignInScreen
 import dev.vidtheque.app.ui.theme.VidthequeTheme
 import org.junit.Rule
@@ -93,4 +105,41 @@ class ScreenshotTest {
         }
         compose.onRoot().captureRoboImage("screenshots/valued-time.png")
     }
+
+    @Test
+    fun brief() {
+        compose.setContent {
+            VidthequeTheme(darkTheme = true) {
+                BriefContent(
+                    ui = BriefUi(brief = BRIEF, loaded = true),
+                    skips = emptyMap(),
+                    onBack = {}, onRetry = {}, onEarlier = {}, onOpen = { _, _, _ -> }, onLink = {},
+                    onCheckin = { _, _ -> }, onRevert = {}, onPause = {}, onAudit = { _, _ -> }, onEase = { _, _ -> },
+                )
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/brief.png")
+    }
 }
+
+private val HYPE = Match(7, "Model launch hype with no benchmarks", "down", 2)
+
+private val BRIEF = Brief(
+    week = "2026-09-28",
+    since = 1_790_546_400,
+    previousWeek = "2026-09-21",
+    picks = listOf(
+        Pick("kCc8FmEb1nY", "Let's build GPT: from scratch, in code, spelled out.", "Andrej Karpathy", 6972.0, 3, "His eval harness is the one you are building.",
+            listOf(Moment(41, 842.5, "the self-attention block", "https://youtu.be/kCc8FmEb1nY?t=840"))),
+        Pick("zduSFxRajkE", "Let's build the GPT Tokenizer", "Andrej Karpathy", 7998.0, 2, "Tokenizer pitfalls you hit last week.",
+            listOf(Moment(77, 1210.0, "why byte-level BPE", "https://youtu.be/zduSFxRajkE?t=1208"))),
+        Pick("aircAruvnKk", "But what is a neural network?", "3Blue1Brown", 1140.0, 2, "A clean refresher on gradients.", emptyList()),
+    ),
+    said = listOf(Said(3, "Local inference on consumer GPUs", listOf(Receipt("kCc8FmEb1nY", "Let's build GPT", "Andrej Karpathy", 842.5, "https://youtu.be/kCc8FmEb1nY?t=840", "A 3090 trains the small model overnight.")))),
+    channels = listOf(
+        ChannelCard("karpathy", "Andrej Karpathy", "active", 3, 0.67, 0.33),
+        ChannelCard("hype-daily", "Hype Daily", "active", 6, 0.0, 0.0, suggestPause = true),
+    ),
+    profileChanges = listOf(Change(3, "reweight", 3, EntryState("Local inference on consumer GPUs", 0.3, true), EntryState("Local inference on consumer GPUs", 0.6, true), "4 asks this week")),
+    audit = listOf(Audited("eMlx5fFNoYc", "Visualizing transformers", "3Blue1Brown", "Launch coverage, no benchmarks.", HYPE)),
+)

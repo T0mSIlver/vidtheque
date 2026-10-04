@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     when (state) {
                         SessionState.Loading -> Unit
-                        SessionState.SignedIn -> SignedIn(opening = root.opening, onSignOut = root::signOut)
+                        SessionState.SignedIn -> SignedIn(opening = root.opening, openingBrief = root.openingBrief, onSignOut = root::signOut)
                         SessionState.SignedOut -> SignInScreen(
                             host = signIn.host,
                             error = ui.error,
@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
     // A browser without Auth Tab returns through the verified App Link instead.
     private fun handleCallback(intent: Intent) {
         intent.getStringExtra(VerdictNotifications.EXTRA_VIDEO)?.let { root.opening.value = it }
+        if (intent.getBooleanExtra(VerdictNotifications.EXTRA_BRIEF, false)) root.openingBrief.value = true
         val uri = intent.data ?: return
         if (intent.action == Intent.ACTION_VIEW && uri.scheme == "https" && uri.host == signIn.host && uri.path == "/auth/android/callback") {
             signIn.onRedirect(uri)
