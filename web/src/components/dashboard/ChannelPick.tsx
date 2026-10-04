@@ -5,9 +5,9 @@ import { useResource } from "@/lib/dashboard/resource";
 import controls from "./kit/controls.module.css";
 
 /**
- * The `channel` filter as a select over every stored name (§28.5). A name in
- * the URL that the list lacks stays an option, so the filter the query ran
- * with is never dropped; until the list lands, that name is the only one.
+ * The `channel` filter as a select over every stored name (§28.5). The URL's
+ * own spelling is always an option, so neither the first paint nor the band's
+ * re-seed drops the filter the query ran with.
  */
 export function ChannelPick({
   id,
@@ -20,27 +20,23 @@ export function ChannelPick({
 }) {
   const list = useResource("channels", (signal) => dashboard.channels(signal));
   const names = list.data?.channels.rows ?? [];
-  // The filter matches without case, so `gpu mode` selects `GPU MODE`.
-  const match = names.find((row) => row.channel.toLowerCase() === value.toLowerCase());
-  const known = match !== undefined;
+  // A stored name differing only in case is the same filter: not offered twice.
+  const exact = names.some((row) => row.channel === value);
 
   return (
     <div className={`${controls.field} ${controls.pickField}`}>
       <label htmlFor={id}>{label}</label>
       <span className={controls.pick}>
-        <select
-          defaultValue={match?.channel ?? value}
-          id={id}
-          key={`${known}-${names.length}`}
-          name="channel"
-        >
+        <select defaultValue={value} id={id} key={names.length} name="channel">
           <option value="">all channels</option>
-          {value && !known ? <option value={value}>{value}</option> : null}
-          {names.map((row) => (
-            <option key={row.channel} value={row.channel}>
-              {row.channel}
-            </option>
-          ))}
+          {value && !exact ? <option value={value}>{value}</option> : null}
+          {names
+            .filter((row) => exact || row.channel.toLowerCase() !== value.toLowerCase())
+            .map((row) => (
+              <option key={row.channel} value={row.channel}>
+                {row.channel}
+              </option>
+            ))}
         </select>
       </span>
     </div>
