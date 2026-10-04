@@ -28,6 +28,13 @@
   overflow-wrap: anywhere;
 }
 
+.headNote {
+  composes: t-cell from global;
+  margin-top: var(--s2);
+  max-width: var(--note);
+  color: var(--fg2);
+}
+
 .meta {
   composes: t-machine-sm from global;
   color: var(--muted);
