@@ -1,0 +1,39 @@
+# Captions-only overlay for deploy/docker-compose.yml: no GPU worker.
+#
+# Named after the release overlay and before your local one:
+#
+#   docker compose -f docker-compose.yml \
+#                  -f compose.release.yml \
+#                  -f compose.captions.yml \
+#                  -f compose.local.yml up -d
+#
+# The setup guide is docs/self-host.md. Transcripts come from YouTube's
+# captions, nothing is embedded, and the video itself is never downloaded, so
+# the box needs no GPU and keeps no media. The env side of the preset
+# (VIDTHEQUE_STT_POLICY, VIDTHEQUE_INDEX_CHANNELS, VIDTHEQUE_KEEP_SOURCE and the
+# LLM key) is in .env; docs/self-host.md lists it.
+#
+# deploy/vidtheque-update.sh keeps this file current when it finds
+# compose.captions.yml in the deploy directory.
+#
+# Verify the merged model, never the YAML:
+#
+#   docker compose -f docker-compose.yml -f compose.release.yml \
+#                  -f compose.captions.yml config --services
+#
+# must not list `worker`.
+
+services:
+  mcp:
+    environment:
+      # The server's switch for "there is no worker": the stages that need one
+      # skip, and search runs on keywords alone with a note saying so.
+      WORKER_URL: none
+    # `!reset` because Compose merges lists by appending: restating
+    # `depends_on` would keep the worker in it.
+    depends_on: !reset []
+
+  worker:
+    # Out of every command that does not name the profile, `pull` included,
+    # so the 28 GB CUDA image is never fetched.
+    profiles: ["gpu"]
