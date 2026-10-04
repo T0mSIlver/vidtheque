@@ -294,7 +294,7 @@ function Row({ item }: { item: FeedItem }) {
         {item.channel ? <span className={styles.channel}>{item.channel}</span> : null}
         <span className={styles.title}>{item.title || item.video_id}</span>
         <span className={styles.meta}>
-          <Score score={item.score} />
+          <Score score={item.tier ?? item.score} />
           {item.explored ? <Outside /> : null}
           <span className={styles.duration}>{asked(item.moments_s, item.duration_s)}</span>
         </span>

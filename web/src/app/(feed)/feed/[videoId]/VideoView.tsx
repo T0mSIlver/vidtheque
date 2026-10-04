@@ -87,7 +87,7 @@ function Loaded({ verdict }: { verdict: Verdict }) {
           {video.channel ? <p className={styles.channel}>{video.channel}</p> : null}
           <h1 className={styles.videoTitle}>{video.title || id}</h1>
           <p className={styles.meta}>
-            <Score score={verdict.score} />
+            <Score score={verdict.tier ?? verdict.score} />
             {verdict.explored ? <Outside /> : null}
             <span className={styles.duration}>
               {asked(verdict.moments_s, video.duration_s)}

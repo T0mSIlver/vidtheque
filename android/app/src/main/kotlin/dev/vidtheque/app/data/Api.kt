@@ -42,6 +42,8 @@ data class FeedItem(
     @SerialName("duration_s") val durationS: Double = 0.0,
     @SerialName("published_at") val publishedAt: Long? = null,
     val score: Int,
+    /** What the feed shows: the week's ranking makes the 3s (companion.md §3.4). */
+    val tier: Int? = null,
     val reason: String = "",
     val explored: Boolean = false,
     val matches: List<Match> = emptyList(),
@@ -98,6 +100,7 @@ data class Moment(
 data class Verdict(
     val video: VideoRow,
     val score: Int,
+    val tier: Int? = null,
     val reason: String = "",
     val explored: Boolean = false,
     val matches: List<Match> = emptyList(),
