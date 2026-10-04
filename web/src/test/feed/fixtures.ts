@@ -56,6 +56,14 @@ export const SKIPPED = {
       score: 0,
       reason: "launch hype ↓",
       explored: false,
+      matches: [
+        {
+          entry_id: 7,
+          text: "Model launch hype with no benchmarks",
+          direction: "down",
+          strength: 2,
+        },
+      ],
       judged_at: now - 30,
     },
   ],
@@ -140,4 +148,84 @@ export const FACETS = {
   ],
   other: 1,
   capped: false,
+};
+
+const HYPE = {
+  entry_id: 7,
+  text: "Model launch hype with no benchmarks",
+  direction: "down",
+  strength: 2,
+};
+
+export const PROPOSED = {
+  video_id: "eMlx5fFNoYc",
+  answer: "wrong",
+  feedback: "up",
+  proposal: { entry_id: 7, text: "Model launch hype with no benchmarks", weight: -0.8, to: -0.5 },
+};
+
+// `dashboard/brief.py`'s answer (dashboard.md §26.1).
+export const BRIEF = {
+  week: "2026-09-28",
+  since: 1790546400,
+  until: 1791151200,
+  built_at: 1791108000,
+  previous_week: "2026-09-21",
+  picks: [{ ...TOP.items[0], moments: VERDICT.moments }],
+  said: [
+    {
+      entry_id: 3,
+      text: "Local inference on consumer GPUs",
+      points: [
+        {
+          video_id: "kCc8FmEb1nY",
+          title: "Let's build GPT",
+          channel: "Andrej Karpathy",
+          cue_id: 41,
+          offset_s: 842.5,
+          url: "https://youtu.be/kCc8FmEb1nY?t=840",
+          said: "A 3090 trains the small model overnight.",
+        },
+      ],
+      disagreement: null,
+    },
+  ],
+  said_note: null,
+  channels: [
+    {
+      slug: "karpathy",
+      title: "Andrej Karpathy",
+      state: "active",
+      videos: 3,
+      judged: 3,
+      worth_share: 0.67,
+      engaged_share: 0.33,
+      suggest_pause: false,
+    },
+    {
+      slug: "hype-daily",
+      title: "Hype Daily",
+      state: "active",
+      videos: 6,
+      judged: 6,
+      worth_share: 0,
+      engaged_share: 0,
+      suggest_pause: true,
+    },
+  ],
+  profile_changes: [
+    {
+      event_id: 3,
+      at: now - 40,
+      op: "reweight",
+      entry_id: 3,
+      before: { text: "Local inference on consumer GPUs", weight: 0.3, live: true },
+      after: { text: "Local inference on consumer GPUs", weight: 0.6, live: true },
+      reason: "4 asks this week",
+      reverted: false,
+    },
+  ],
+  audit: [{ ...SKIPPED.items[0], sunk_by: HYPE, answer: null }],
+  checkin: null,
+  ledger: null,
 };

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
 import { mountDashboard } from "@/test/dashboard/harness";
-import { FACETS, SKIPPED, TOP } from "@/test/feed/fixtures";
+import { FACETS, PROPOSED, SKIPPED, TOP } from "@/test/feed/fixtures";
 import { FeedView } from "./FeedView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
@@ -116,5 +116,20 @@ describe("FeedView", () => {
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "Channel" })).toHaveValue("Andrej Karpathy"),
     );
+  });
+
+  it('names what sank a skipped video, and takes an "I\'d watch this"', async () => {
+    const view = await mount({ "POST /dashboard/api/skips": { body: PROPOSED } });
+    await userEvent.click(await screen.findByRole("button", { name: /Skipped/ }));
+    expect(
+      await screen.findByText("Sunk by “Model launch hype with no benchmarks”"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "I’d watch this" }));
+    expect(view.calls("/dashboard/api/skips", "POST")[0].json).toEqual({
+      video_id: "eMlx5fFNoYc",
+      answer: "wrong",
+      source: "row",
+    });
+    expect(await screen.findByRole("button", { name: "Ease it" })).toBeInTheDocument();
   });
 });

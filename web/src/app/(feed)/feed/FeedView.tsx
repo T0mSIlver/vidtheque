@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { FeedFailure, Matches, Outside, Score } from "@/components/feed/parts";
+import { SunkBy, sunkBy, WouldWatch } from "@/components/feed/SkipFix";
 import styles from "@/components/feed/feed.module.css";
 import { dashboard, FEED } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
@@ -274,7 +275,7 @@ function BandPage({
         </li>
       ) : null}
       {items.map((item) => (
-        <Row key={item.video_id} item={item} />
+        <Row key={item.video_id} item={item} skipped={band === "skipped"} />
       ))}
       {onMore && pagination.has_more && next !== null ? (
         <li className={styles.rowNote}>
@@ -287,7 +288,7 @@ function BandPage({
   );
 }
 
-function Row({ item }: { item: FeedItem }) {
+function Row({ item, skipped }: { item: FeedItem; skipped: boolean }) {
   return (
     <li>
       <Link className={styles.row} href={`${FEED}/${encodeURIComponent(item.video_id)}`}>
@@ -300,7 +301,9 @@ function Row({ item }: { item: FeedItem }) {
         </span>
         {item.reason ? <span className={styles.reason}>{item.reason}</span> : null}
         <Matches matches={item.matches} />
+        {skipped ? <SunkBy match={sunkBy(item.matches)} /> : null}
       </Link>
+      {skipped ? <WouldWatch videoId={item.video_id} /> : null}
     </li>
   );
 }

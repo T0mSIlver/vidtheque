@@ -706,3 +706,110 @@
   composes: t-machine-sm from global;
   color: var(--fg3);
 }
+
+/* -------------------------------------------------------------- brief */
+
+.sunk {
+  composes: t-machine-sm from global;
+  color: var(--tone-bad);
+  overflow-wrap: anywhere;
+}
+
+.skipFix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding-bottom: var(--s3);
+}
+
+.skipFix .small[aria-pressed="true"] {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.proposal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 14px;
+  color: var(--fg2);
+}
+
+.brief {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+}
+
+.briefHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s3) 0;
+}
+
+.moments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  list-style: none;
+}
+
+.momentLink {
+  composes: t-machine-sm from global;
+  color: var(--fg2);
+}
+
+.momentLink:hover {
+  color: var(--gold);
+}
+
+.said {
+  composes: t-cell from global;
+  overflow-wrap: anywhere;
+}
+
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.more > summary {
+  composes: t-label from global;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  color: var(--fg2);
+  cursor: pointer;
+}
+
+.rating {
+  display: flex;
+  gap: var(--s2);
+}
+
+.rating .small[aria-pressed="true"] {
+  color: var(--bg);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.missing {
+  composes: t-cell from global;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+}
