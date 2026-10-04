@@ -32,4 +32,5 @@ documented in `deploy/.env.example`, the document of record.
 Also here: `docs/ROADMAP.md` (the only list of open work),
 `docs/LESSONS.md` (operational rules an incident paid for),
 `docs/security.md` (the map of security material), `docs/takedown.md` (creator
-removal), `docs/deploy-public.md` (the go-public runbook).
+removal), `docs/deploy-public.md` (the go-public runbook), `docs/self-host.md`
+(running your own, captions only, no GPU).
