@@ -78,6 +78,12 @@ function Loaded({ week, onBudget }: { week: Week; onBudget: () => void }) {
               ? "That is everything worth your time this week."
               : "That was everything worth your time that week."}
         </p>
+        {week.capped ? (
+          <p className={styles.quiet}>
+            This week holds more verdicts than the 40 it compares; the newest of the rest are under
+            Show all.
+          </p>
+        ) : null}
         {week.rest.count > 0 ? (
           <p className={styles.quiet}>
             {count(week.rest.count)} more {week.rest.count === 1 ? "verdict asks" : "verdicts ask"}{" "}
@@ -98,7 +104,8 @@ function Budget({ week, onSaved }: { week: Week; onSaved: () => void }) {
   const [daily, setDaily] = useState(String(Math.round(week.budget_min / 7)));
   const [failed, setFailed] = useState(false);
   const save = async () => {
-    const perDay = Number(daily);
+    // An emptied box is no figure, not zero.
+    const perDay = daily.trim() === "" ? NaN : Number(daily);
     if (!Number.isInteger(perDay) || perDay < 0 || perDay > 1440) {
       setFailed(true);
       return;

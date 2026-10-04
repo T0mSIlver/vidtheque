@@ -70,6 +70,8 @@ data class Week(
     val items: List<FeedItem> = emptyList(),
     val days: List<WeekDay> = emptyList(),
     val rest: WeekRest = WeekRest(),
+    /** The week holds 40 candidates or more, the most it compares. */
+    val capped: Boolean = false,
 )
 
 @Serializable

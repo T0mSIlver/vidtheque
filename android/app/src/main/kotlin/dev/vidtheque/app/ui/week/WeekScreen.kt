@@ -223,6 +223,13 @@ private fun End(week: Week, current: Boolean, onShowAll: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (week.capped) {
+                Text(
+                    "This week holds more verdicts than the 40 it compares; the rest are under Show all.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             FilledTonalButton(onClick = onShowAll) { Text("Show all videos") }
         }
     }
