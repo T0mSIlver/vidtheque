@@ -5,6 +5,6 @@ manager owning the GPU. Never imported by the ``mcp`` package — the two talk
 over HTTP only.
 """
 
-__version__ = "0.0.36"
+__version__ = "0.0.37"
 
 __all__ = ["__version__"]
