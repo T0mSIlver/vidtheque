@@ -74,7 +74,7 @@ import dev.vidtheque.app.ui.theme.LocalTones
 import dev.vidtheque.app.ui.Matches
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.dated
-import dev.vidtheque.app.ui.duration
+import dev.vidtheque.app.ui.asked
 import dev.vidtheque.app.ui.scoreColor
 import dev.vidtheque.app.ui.scoreWord
 import dev.vidtheque.app.ui.thumbnail
@@ -304,7 +304,7 @@ private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) 
         }
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleLargeEmphasized, color = MaterialTheme.colorScheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, duration(item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, asked(item.momentsS, item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Reason(item, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp), lines = 3)
     }
@@ -321,12 +321,10 @@ private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             still(item.videoId, Modifier.width(128.dp).aspectRatio(16f / 9f).clip(MaterialTheme.shapes.medium))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // The length goes up here: "6 of 42 min" beside the score cut its words.
+                Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, asked(item.momentsS, item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Verdict(item.score, onImage = false, Modifier.weight(1f))
-                    Text(duration(item.durationS), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Verdict(item.score, onImage = false)
             }
         }
         Reason(item, Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp), lines = 2)
