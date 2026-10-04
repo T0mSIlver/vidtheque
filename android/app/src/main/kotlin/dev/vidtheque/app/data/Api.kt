@@ -49,6 +49,27 @@ data class FeedItem(
     val matches: List<Match> = emptyList(),
     /** Seconds the moments cover; null for moments written before spans (companion.md §3.1). */
     @SerialName("moments_s") val momentsS: Double? = null,
+    /** What it asks of you in the fitted week: the whole video for a 3, its moments for a 2. */
+    @SerialName("asks_s") val asksS: Double? = null,
+)
+
+@Serializable
+data class WeekDay(val day: String, @SerialName("asks_s") val asksS: Double = 0.0, val fitted: Int = 0, val candidates: Int = 0)
+
+@Serializable
+data class WeekRest(val count: Int = 0, @SerialName("asks_s") val asksS: Double = 0.0)
+
+/** The week's ranked verdicts fitted to the owner's minutes (dashboard.md §25.10). */
+@Serializable
+data class Week(
+    val week: String,
+    val previous: String,
+    val next: String? = null,
+    @SerialName("budget_min") val budgetMin: Int,
+    @SerialName("asks_s") val asksS: Double = 0.0,
+    val items: List<FeedItem> = emptyList(),
+    val days: List<WeekDay> = emptyList(),
+    val rest: WeekRest = WeekRest(),
 )
 
 @Serializable
@@ -296,7 +317,14 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
         return json.decodeFromString(get(url.build().toString()))
     }
 
-    suspend fun facets(): FeedFacets = json.decodeFromString(get("$root/feed/facets?band=top"))
+    suspend fun facets(): FeedFacets = json.decodeFromString(get("$root/feed/facets?band=all"))
+
+    /** The current week without [week], else the week starting that Monday. */
+    suspend fun week(week: String? = null): Week = json.decodeFromString(get("$root/week" + (week?.let { "?week=$it" } ?: "")))
+
+    suspend fun budget(weekMinutes: Int) {
+        post("$root/budget", buildJsonObject { put("week_budget_min", weekMinutes) })
+    }
 
     suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
 

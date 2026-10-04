@@ -18,14 +18,11 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
 
-/** One band of verdicts as the server pages it: `top` (2–3) or `skipped` (0–1). */
+/** Every judged video as the server pages it (`band=all`), the list behind "Show all". */
 data class Band(val items: List<FeedItem> = emptyList(), val nextOffset: Int? = 0, val loading: Boolean = false)
 
 data class FeedUi(
     val top: Band = Band(),
-    val skipped: Band? = null,
-    val skippedCount: Int = 0,
-    val skippedCapped: Boolean = false,
     val loaded: Boolean = false,
     val refreshing: Boolean = false,
     val error: String? = null,
@@ -33,6 +30,8 @@ data class FeedUi(
     /** Null until read; a failed read leaves the filters without channels and entries. */
     val facets: FeedFacets? = null,
 )
+
+private const val BAND = "all"
 
 /** How long typing pauses before the search is sent. */
 private const val TYPING_MS = 300L
@@ -57,15 +56,9 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
         val filters = _ui.value.filters
         paging = viewModelScope.launch {
             load {
-                val page = api.feed("top", 0, filters)
+                val page = api.feed(BAND, 0, filters)
                 _ui.update {
-                    it.copy(
-                        top = Band(page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }),
-                        skipped = null,
-                        skippedCount = page.skipped.count,
-                        skippedCapped = page.skipped.capped,
-                        loaded = true,
-                    )
+                    it.copy(top = Band(page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }), loaded = true)
                 }
             }
             _ui.update { it.copy(refreshing = false) }
@@ -116,35 +109,20 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
         _ui.value = FeedUi()
     }
 
-    /** The next page of the top band, when the list nears its end. */
-    fun more() = page(skipped = false)
-
-    /** "Skipped (n)" opens the 0–1 band; tapping again folds it. */
-    fun toggleSkipped() {
-        if (_ui.value.skipped != null) _ui.update { it.copy(skipped = null) } else page(skipped = true)
-    }
-
-    fun moreSkipped() = page(skipped = true)
-
-    private fun page(skipped: Boolean) {
-        val band = (if (skipped) _ui.value.skipped ?: Band() else _ui.value.top)
+    /** The next page, when the list nears its end. */
+    fun more() {
+        val band = _ui.value.top
         val offset = band.nextOffset ?: return
         if (band.loading || paging?.isActive == true) return
-        set(skipped, band.copy(loading = true))
+        _ui.update { it.copy(top = band.copy(loading = true)) }
         paging = viewModelScope.launch {
             load {
-                val page = api.feed(if (skipped) "skipped" else "top", offset, _ui.value.filters)
-                // Folded while the page was on its way: leave it folded.
-                if (skipped && _ui.value.skipped == null) return@load
-                set(skipped, Band(band.items + page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }))
+                val page = api.feed(BAND, offset, _ui.value.filters)
+                _ui.update { it.copy(top = Band(band.items + page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore })) }
             }
-            val now = if (skipped) _ui.value.skipped else _ui.value.top
-            if (now?.loading == true) set(skipped, now.copy(loading = false))
+            if (_ui.value.top.loading) _ui.update { it.copy(top = it.top.copy(loading = false)) }
         }
     }
-
-    private fun set(skipped: Boolean, band: Band) =
-        _ui.update { if (skipped) it.copy(skipped = band) else it.copy(top = band) }
 
     private suspend fun load(block: suspend () -> Unit) {
         try {

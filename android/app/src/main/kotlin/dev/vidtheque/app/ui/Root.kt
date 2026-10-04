@@ -55,14 +55,22 @@ import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.profile.ProfileScreen
 import dev.vidtheque.app.ui.search.SearchScreen
 import dev.vidtheque.app.ui.video.VideoScreen
+import dev.vidtheque.app.ui.week.WeekScreen
+import dev.vidtheque.app.ui.week.WeekViewModel
+import dev.vidtheque.app.ui.week.weekIndex
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.ContentScale
 
+/** The start screen: this week, fitted to the budget. */
 @Serializable
 data object FeedKey : NavKey
+
+/** Every judged video, behind "Show all videos". */
+@Serializable
+data object AllKey : NavKey
 
 /**
  * [title] and [channel] let the screen draw at once while the verdict loads; a push carries only the id.
@@ -162,12 +170,16 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
     }
     // Above the entries, so the video pager swipes over the list the feed shows and
     // the feed is scrolled to the video shown before a back gesture reveals it.
+    val week: WeekViewModel = hiltViewModel()
+    val weekUi by week.ui.collectAsStateWithLifecycle()
+    val weekList = rememberLazyListState()
     val feed: FeedViewModel = hiltViewModel()
     val feedUi by feed.ui.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
-    // Held above the screens, the feed would outlive a sign-out: empty it then, and
-    // load it again on the next sign-in.
-    DisposableEffect(feed) { onDispose { feed.clear() } }
+    // Held above the screens, they would outlive a sign-out: empty them then, and
+    // load them again on the next sign-in.
+    DisposableEffect(feed) { onDispose { feed.clear(); week.clear() } }
+    LaunchedEffect(week) { if (week.ui.value.week == null && !week.ui.value.refreshing) week.refresh() }
     LaunchedEffect(feed) { if (!feed.ui.value.loaded && !feed.ui.value.refreshing) feed.refresh() }
     // Sunday's push lands on the brief, over the feed.
     val brief by openingBrief.collectAsStateWithLifecycle()
@@ -184,24 +196,35 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                 sharedTransitionScope = this,
                 entryProvider = entryProvider {
                     entry<FeedKey> {
+                        WeekScreen(
+                            ui = weekUi,
+                            onRefresh = week::refresh,
+                            onWeek = week::go,
+                            onBudget = week::budget,
+                            onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
+                            onShowAll = { stack.add(AllKey) },
+                            card = sharedCard,
+                            list = weekList,
+                            actions = {
+                                IconButton(onClick = { stack.add(SearchKey) }) { Icon(Icons.Rounded.Search, contentDescription = "Search the corpus") }
+                                IconButton(onClick = { stack.add(BriefKey) }) { Icon(Icons.Rounded.CalendarMonth, contentDescription = "Weekly brief") }
+                                IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
+                            },
+                        )
+                    }
+                    entry<AllKey> {
                         FeedScreen(
                             ui = feedUi,
                             onRefresh = feed::refresh,
                             onMore = feed::more,
-                            onToggleSkipped = feed::toggleSkipped,
-                            onMoreSkipped = feed::moreSkipped,
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
+                            onBack = { stack.removeLastOrNull() },
                             onSearch = feed::search,
                             onChannel = feed::channel,
                             onEntry = feed::entry,
                             onOldest = feed::oldest,
                             card = sharedCard,
                             list = list,
-                            actions = {
-                                IconButton(onClick = { stack.add(SearchKey) }) { Icon(Icons.Rounded.Search, contentDescription = "Search the corpus") }
-                                IconButton(onClick = { stack.add(BriefKey) }) { Icon(Icons.Rounded.CalendarMonth, contentDescription = "Your week") }
-                                IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
-                            },
                         )
                     }
                     entry<SearchKey> {
@@ -214,14 +237,16 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                     entry<BriefKey> { BriefScreen(onBack = { stack.removeLastOrNull() }, onOpen = { id, title, channel -> stack.add(VideoKey(id, title, channel)) }) }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
                     entry<VideoKey>(metadata = containerOnly) { key ->
-                        // Where the feed stood when the video opened, before any scroll asked below.
-                        val home = remember(key) { list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset }
-                        // The band the video was opened from, and how to page it further.
+                        // The list the video was opened from: the pager swipes through it and
+                        // nothing else, so the week's fitted list never takes in the rest.
+                        val fromAll = stack.getOrNull(stack.indexOf(key) - 1) == AllKey
+                        val shownList = if (fromAll) list else weekList
+                        // Where that list stood when the video opened, before any scroll asked below.
+                        val home = remember(key) { shownList.firstVisibleItemIndex to shownList.firstVisibleItemScrollOffset }
                         val (pages, more) = when {
                             key.alone -> emptyList<FeedItem>() to {}
-                            feedUi.top.items.any { it.videoId == key.videoId } -> feedUi.top.items to feed::more
-                            feedUi.skipped?.items?.any { it.videoId == key.videoId } == true -> feedUi.skipped!!.items to feed::moreSkipped
-                            else -> emptyList<FeedItem>() to {}
+                            fromAll -> feedUi.top.items to feed::more
+                            else -> weekUi.week?.items.orEmpty() to {}
                         }
                         VideoScreen(
                             key,
@@ -235,9 +260,9 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                                 // feed is not laid out meanwhile, so its visible items are those it had when
                                 // the video opened, and a card among them asks for that position back,
                                 // replacing a scroll an earlier swipe asked for.
-                                val index = listIndex(feedUi, id) ?: return@VideoScreen
-                                if (list.layoutInfo.visibleItemsInfo.none { it.index == index }) list.requestScrollToItem(index)
-                                else list.requestScrollToItem(home.first, home.second)
+                                val index = (if (fromAll) listIndex(feedUi, id) else weekIndex(weekUi, id)) ?: return@VideoScreen
+                                if (shownList.layoutInfo.visibleItemsInfo.none { it.index == index }) shownList.requestScrollToItem(index)
+                                else shownList.requestScrollToItem(home.first, home.second)
                             },
                         )
                     }

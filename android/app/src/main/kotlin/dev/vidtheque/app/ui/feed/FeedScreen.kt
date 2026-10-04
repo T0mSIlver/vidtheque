@@ -21,11 +21,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Search
@@ -74,7 +73,7 @@ import dev.vidtheque.app.ui.theme.LocalTones
 import dev.vidtheque.app.ui.Matches
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.dated
-import dev.vidtheque.app.ui.asked
+import dev.vidtheque.app.ui.askedOf
 import dev.vidtheque.app.ui.scoreColor
 import dev.vidtheque.app.ui.scoreWord
 import dev.vidtheque.app.ui.thumbnail
@@ -101,9 +100,8 @@ fun FeedScreen(
     ui: FeedUi,
     onRefresh: () -> Unit,
     onMore: () -> Unit,
-    onToggleSkipped: () -> Unit,
-    onMoreSkipped: () -> Unit,
     onOpen: (FeedItem) -> Unit,
+    onBack: () -> Unit = {},
     onSearch: (String) -> Unit = {},
     onChannel: (String?) -> Unit = {},
     onEntry: (String?) -> Unit = {},
@@ -119,8 +117,9 @@ fun FeedScreen(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text("Feed") },
+                title = { Text("All videos") },
                 subtitle = if (ui.loaded) ({ Text(worthLine(ui)) }) else null,
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to this week") } },
                 actions = {
                     SortMenu(ui.filters.oldest, onOldest)
                     actions()
@@ -148,21 +147,12 @@ fun FeedScreen(
                     item {
                         Notice(
                             if (ui.filters.narrowed) "Nothing here matches."
-                            else "Nothing to watch yet. New videos from the channels you follow land here once they are judged.",
+                            else "Nothing judged yet. New videos from the channels you follow land here once they are judged.",
                         )
                     }
                 }
-                itemsIndexed(ui.top.items, key = { _, it -> "top-${it.videoId}" }) { index, item ->
-                    if (index == 0) Hero(item, still, card) { onOpen(item) } else Row(item, still, card) { onOpen(item) }
-                }
+                itemsIndexed(ui.top.items, key = { _, it -> "all-${it.videoId}" }) { _, item -> Row(item, still, card) { onOpen(item) } }
                 if (ui.top.loading) item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { LoadingIndicator() } }
-                if (ui.skippedCount > 0 && ui.top.nextOffset == null) {
-                    item(key = "skipped") { SkippedToggle(ui, onToggleSkipped) }
-                    ui.skipped?.let { band ->
-                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item -> Row(item, still, card) { onOpen(item) } }
-                        if (band.nextOffset != null) item { TextButton(onClick = onMoreSkipped, enabled = !band.loading) { Text("More skipped") } }
-                    }
-                }
             }
         }
     }
@@ -178,17 +168,10 @@ fun listIndex(ui: FeedUi, videoId: String): Int? {
     if (ui.error != null) index++
     if (ui.loaded && ui.top.items.isEmpty()) index++
     ui.top.items.indexOfFirst { it.videoId == videoId }.let { if (it >= 0) return index + it }
-    index += ui.top.items.size
-    if (ui.top.loading) index++
-    if (ui.skippedCount > 0 && ui.top.nextOffset == null) {
-        index++
-        ui.skipped?.items?.indexOfFirst { it.videoId == videoId }?.let { if (it >= 0) return index + it }
-    }
     return null
 }
 
 private fun worthLine(ui: FeedUi): String = when {
-    ui.top.items.isEmpty() && !ui.filters.narrowed -> "Nothing new"
     ui.filters.oldest -> "Oldest first"
     else -> "Newest first"
 }
@@ -297,7 +280,7 @@ private fun ChannelChip(ui: FeedUi, onChannel: (String?) -> Unit) {
 }
 
 @Composable
-private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
+internal fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
     Card(onClick = onClick, shape = RoundedCornerShape(HERO_CORNER), modifier = Modifier.fillMaxWidth().then(card(item.videoId, HERO_CORNER))) {
         Box {
             still(item.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
@@ -305,14 +288,14 @@ private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) 
         }
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleLargeEmphasized, color = MaterialTheme.colorScheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, asked(item.momentsS, item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, askedOf(item)).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Reason(item, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp), lines = 3)
     }
 }
 
 @Composable
-private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
+internal fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(ROW_CORNER),
@@ -323,7 +306,7 @@ private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
             still(item.videoId, Modifier.width(128.dp).aspectRatio(16f / 9f).clip(MaterialTheme.shapes.medium))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // The length goes up here: "6 of 42 min" beside the score cut its words.
-                Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, asked(item.momentsS, item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, askedOf(item)).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Verdict(item.tier ?: item.score, onImage = false)
             }
@@ -361,17 +344,6 @@ private fun Reason(item: FeedItem, modifier: Modifier, lines: Int) {
             Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.tertiaryContainer) {
                 Text("Outside your profile", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
             }
-        }
-    }
-}
-
-@Composable
-private fun SkippedToggle(ui: FeedUi, onToggle: () -> Unit) {
-    val count = if (ui.skippedCapped) "${ui.skippedCount}+" else "${ui.skippedCount}"
-    Surface(onClick = onToggle, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Skipped ($count)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Icon(if (ui.skipped != null) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = null)
         }
     }
 }

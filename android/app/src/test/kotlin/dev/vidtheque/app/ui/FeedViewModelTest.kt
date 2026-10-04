@@ -88,10 +88,10 @@ class FeedViewModelTest {
         model.more()
         settle { model.ui.value.top.items.size == 2 }
         val sent = reads()
-        assertEquals("band=top&offset=0&limit=20", sent[0])
-        assertEquals("band=top&offset=0&limit=20&channel=GPU%20MODE", sent[1])
-        assertEquals("band=top&offset=0&limit=20&channel=GPU%20MODE&entry=other&order=oldest", sent[3])
-        assertEquals("band=top&offset=20&limit=20&channel=GPU%20MODE&entry=other&order=oldest", sent[4])
+        assertEquals("band=all&offset=0&limit=20", sent[0])
+        assertEquals("band=all&offset=0&limit=20&channel=GPU%20MODE", sent[1])
+        assertEquals("band=all&offset=0&limit=20&channel=GPU%20MODE&entry=other&order=oldest", sent[3])
+        assertEquals("band=all&offset=20&limit=20&channel=GPU%20MODE&entry=other&order=oldest", sent[4])
     }
 
     @Test
@@ -106,6 +106,6 @@ class FeedViewModelTest {
         assertEquals(emptyList<String>(), reads())
         test.advanceTimeBy(2)
         settle { !model.ui.value.refreshing }
-        assertEquals(listOf("band=top&offset=0&limit=20&q=gpu"), reads())
+        assertEquals(listOf("band=all&offset=0&limit=20&q=gpu"), reads())
     }
 }

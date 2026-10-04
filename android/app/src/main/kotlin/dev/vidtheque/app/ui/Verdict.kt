@@ -94,6 +94,16 @@ fun asked(momentsS: Double?, durationS: Double): String {
     return "$part\u00A0of\u00A0$whole\u00A0min"
 }
 
+/** What a feed row asks of you: the whole video for the week's 3, else [asked]. */
+fun askedOf(item: dev.vidtheque.app.data.FeedItem): String =
+    if (item.tier == 3) duration(item.durationS) else asked(item.momentsS, item.durationS)
+
+/** A stretch of watching: "35 min", "2 h 05". */
+fun minutes(seconds: Double): String {
+    val total = Math.round(seconds / 60).coerceAtLeast(0)
+    return if (total < 60) "$total min" else "${total / 60} h %02d".format(java.util.Locale.ROOT, total % 60)
+}
+
 /** YouTube serves stills for every public video; the server sends none. 4:3 with bars, so crop to 16:9. */
 fun thumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
