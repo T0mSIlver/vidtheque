@@ -129,17 +129,18 @@ function escapeRe(term: string): string {
   return term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// `_LEG_LABELS`: the planner's leg keys in words, with units, because the
-// counts are different units and not summands (tool-surface.md §9.2).
+// `_LEG_LABELS`: the planner's leg keys in the picker's words (spoken,
+// on-screen text, frames), with units, because the counts are different units
+// and not summands (tool-surface.md §9.2).
 const LEG_LABELS: [string, string, string][] = [
-  ["transcript", "Transcript — ranked into these results", "segments"],
-  ["transcript_fts", "Transcript — keyword match (FTS)", "cues"],
-  ["transcript_vec", "Transcript — semantic match (embeddings)", "chunks kept"],
-  ["transcript_vec_knn", "Transcript — semantic candidates considered", "chunks"],
-  ["ocr", "On-screen text (OCR)", ""],
-  ["frame", "Frames — visual match", ""],
-  ["frame_vec", "Frames — semantic match (embeddings)", "frames kept"],
-  ["frame_knn", "Frames — visual candidates considered", "frames"],
+  ["transcript", "Spoken, ranked into these results", "segments"],
+  ["transcript_fts", "keyword matches", "cues"],
+  ["transcript_vec", "meaning matches kept", "chunks"],
+  ["transcript_vec_knn", "meaning candidates", "chunks"],
+  ["ocr", "On-screen text", ""],
+  ["frame", "Frames", ""],
+  ["frame_vec", "meaning matches kept", "frames"],
+  ["frame_knn", "visual candidates", "frames"],
 ];
 
 /** A fused leg is a peer; the others explain one. */

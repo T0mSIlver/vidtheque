@@ -18,7 +18,17 @@ import {
   TRAP_SEARCH,
 } from "@/test/dashboard/search-fixtures";
 import { firstPaint } from "@/test/dashboard/retry";
-import { SearchView } from "./SearchView";
+import { SearchView, waitingOn } from "./SearchView";
+
+const CHANNELS = {
+  channels: {
+    rows: [
+      { channel: "GPU MODE", videos: 3 },
+      { channel: "Andrej Karpathy", videos: 1 },
+    ],
+    has_more: false,
+  },
+};
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
@@ -34,13 +44,20 @@ function mount(
     path: "/dashboard/search",
     search,
     session,
-    routes: { "/dashboard/api/search": search_ },
+    routes: { "/dashboard/api/search": search_, "/dashboard/api/channels": { body: CHANNELS } },
   });
 }
 
 /** The row one moment is on, found by the timecode it prints. */
 function momentAt(timecode: string) {
   return screen.getByText(timecode).closest("li") as HTMLElement;
+}
+
+/** The line saying which slice of the ranking is on screen. */
+function slice() {
+  return screen.getByText(
+    (_, element) => element?.tagName === "P" && /^\d+–\d+/.test(element.textContent ?? ""),
+  );
 }
 
 /** The control that opens a moment's frame. */
@@ -64,11 +81,7 @@ describe("the owner's search page", () => {
     // own link into the index — never a heading's, printed once above them.
     expect(screen.getAllByRole("link", { name: "Making LLMs go brrr" })).toHaveLength(3);
 
-    const head = screen
-      .getByRole("heading", { name: "Search the corpus" })
-      .closest("div") as HTMLElement;
-    expect(head).toHaveTextContent("1–5");
-    expect(head).toHaveTextContent("of 5");
+    expect(slice()).toHaveTextContent("1–5 of 5");
   });
 
   // `<ol start="{{ offset + 1 }}">`, as `search.html` drew it: the list is the
@@ -93,10 +106,7 @@ describe("the owner's search page", () => {
     await mount({ body: PROBED_SEARCH }, { search: "q=cache" });
     await screen.findByRole("heading", { name: "Results" });
 
-    const head = screen
-      .getByRole("heading", { name: "Search the corpus" })
-      .closest("div") as HTMLElement;
-    expect(head).toHaveTextContent("of ~200");
+    expect(slice()).toHaveTextContent("of ~200");
   });
 
   it("prints every leg with its unit and its raw key, and no total under them", async () => {
@@ -104,12 +114,61 @@ describe("the owner's search page", () => {
     const legs = await screen.findByLabelText("Search legs");
 
     expect(within(legs).getByText("transcript_fts")).toBeInTheDocument();
-    expect(within(legs).getByText("Transcript — keyword match (FTS)")).toBeInTheDocument();
+    expect(within(legs).getByText("keyword matches")).toBeInTheDocument();
     expect(within(legs).getByText("cues")).toBeInTheDocument();
     // A zero is a reading: `fts 0` is how you learn the corpus does not contain
     // your phrasing, so the leg that counted nothing is drawn too.
     expect(within(legs).getByText("frame_knn")).toBeInTheDocument();
     expect(within(legs).getAllByRole("definition")).toHaveLength(8);
+  });
+
+  // ------------------------------------------------------------- the wait
+
+  // A cold GPU makes a first search take tens of seconds; the page asks the
+  // worker why once the search is slow, and says it.
+  it("says the search models are loading while a slow search waits on them", async () => {
+    const readiness = {
+      readiness: {
+        mcp: "ready",
+        database: "ready",
+        vectors: { enabled: true, reason: null },
+        worker: {
+          state: "ready",
+          detail: "Reachable over HTTP.",
+          models: [{ task: "embed", model: "m", loaded: false }],
+        },
+        checked_at: 1_760_000_000,
+      },
+    };
+    const { calls } = await mountDashboard(<SearchView />, {
+      path: "/dashboard/search",
+      search: "q=cache",
+      routes: {
+        "/dashboard/api/search": () => new Promise<Answer>(() => {}),
+        "/dashboard/api/readiness": { body: readiness },
+      },
+    });
+
+    expect(await screen.findByText("Searching")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Loading the search models", {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(calls("/dashboard/api/readiness").length).toBeGreaterThan(0);
+  });
+
+  it("names why it waits from the worker's own model states", () => {
+    const worker = (state: string, loaded: boolean) => ({
+      mcp: "ready",
+      database: "ready",
+      vectors: { enabled: true, reason: null },
+      worker: { state, detail: "", models: [{ task: "image_embed", model: "m", loaded }] },
+      checked_at: 1,
+    });
+    expect(waitingOn(null).words).toBe("Searching");
+    expect(waitingOn({ ...worker("ready", true), worker: null }).words).toBe("Searching");
+    expect(waitingOn(worker("ready", true))).toEqual({ words: "Searching", slow: false });
+    expect(waitingOn(worker("ready", false)).words).toBe("Loading the search models");
+    expect(waitingOn(worker("unavailable", false)).words).toBe("Embedding worker not answering");
   });
 
   // ------------------------------------------------------------ the traps
@@ -180,10 +239,9 @@ describe("the owner's search page", () => {
 
     const row = momentAt("0:10");
     expect(within(row).queryByRole("link", { name: /youtu\.be/ })).toBeNull();
-    // …and its unknown source still arrives as a word, never as a hit with no
-    // provenance on it at all — on the badge, and in the box the frame it does
-    // not have would have taken.
-    expect(within(row).getAllByText("caption_track")).toHaveLength(2);
+    // …and its unknown source still arrives as a word on its badge, never as a
+    // hit with no provenance on it at all.
+    expect(within(row).getByText("caption_track")).toBeInTheDocument();
   });
 
   // The receipt at the end of the row goes out to YouTube, which is the
@@ -360,7 +418,7 @@ describe("the owner's search page", () => {
     );
     await screen.findByText("No moments matched.");
 
-    expect(screen.getByRole("link", { name: "Search all three channels" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Look in everything" })).toHaveAttribute(
       "href",
       "/dashboard/search?q=slide",
     );
@@ -371,7 +429,8 @@ describe("the owner's search page", () => {
   it("reads nothing at all until there is a query in the URL", async () => {
     const { calls } = await mount({ body: OWNER_SEARCH });
 
-    expect(await screen.findByText("No search has run.")).toBeInTheDocument();
+    expect(await screen.findByRole("search")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
     expect(calls("/dashboard/api/search")).toHaveLength(0);
   });
 
@@ -386,12 +445,20 @@ describe("the owner's search page", () => {
 
     await userEvent.clear(screen.getByLabelText("Query"));
     await userEvent.type(screen.getByLabelText("Query"), "paged attention");
-    await userEvent.selectOptions(screen.getByLabelText("Searched content"), "ocr");
-    await userEvent.type(screen.getByLabelText("Video channel"), "GPU MODE");
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
-
     // `content_type=all` would say nothing twice, so it is left off.
-    expect(push).toHaveBeenCalledWith(
+    expect(push).toHaveBeenLastCalledWith("/dashboard/search?q=paged+attention", {
+      scroll: false,
+    });
+
+    // A picker reruns the search at once, with the query beside it.
+    await userEvent.selectOptions(screen.getByLabelText("Look in"), "ocr");
+    expect(push).toHaveBeenLastCalledWith("/dashboard/search?q=paged+attention&content_type=ocr", {
+      scroll: false,
+    });
+    await screen.findByRole("option", { name: "GPU MODE" });
+    await userEvent.selectOptions(screen.getByLabelText("Channel"), "GPU MODE");
+    expect(push).toHaveBeenLastCalledWith(
       "/dashboard/search?q=paged+attention&content_type=ocr&channel=GPU+MODE",
       { scroll: false },
     );
@@ -513,7 +580,7 @@ describe("the owner's search page", () => {
     await mount({ status: 400, body: BAD_PARAM_REFUSAL }, { search: "q=cache&content_type=x" });
 
     expect(await screen.findByText(BAD_PARAM_REFUSAL.message)).toBeInTheDocument();
-    expect(screen.getByLabelText("Searched content")).toBeInTheDocument();
+    expect(screen.getByLabelText("Look in")).toBeInTheDocument();
   });
 
   it("renders the signed-out state, in the API's own words", async () => {

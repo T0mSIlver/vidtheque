@@ -208,7 +208,7 @@ describe("the leg counts", () => {
       "frame_knn",
     ]);
     expect(legs.map((leg) => leg.sub)).toEqual([false, true, false, true]);
-    expect(legs[1].label).toBe("Transcript — keyword match (FTS)");
+    expect(legs[1].label).toBe("keyword matches");
     expect(legs[1].unit).toBe("cues");
   });
 
@@ -216,7 +216,7 @@ describe("the leg counts", () => {
   // does not contain your phrasing.
   it("draws a leg that counted nothing", () => {
     expect(legsOf({ frame: 0 })).toEqual([
-      { key: "frame", label: "Frames — visual match", unit: "", count: 0, sub: false },
+      { key: "frame", label: "Frames", unit: "", count: 0, sub: false },
     ]);
   });
 

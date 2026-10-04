@@ -1,5 +1,110 @@
-/* The owner's search page: the leg lines, a moment row, the snippet treatments
-   and the receipt. Nothing here is a card. */
+/* The owner's search page: the band, the wait, the leg lines, a moment row and
+   the snippet treatments. Nothing here is a card. */
+
+/* A reading column: a moment's text is a measure wide, so the row is too. */
+.column {
+  max-width: 60rem;
+  margin-inline: auto;
+}
+
+/* The query owns the first row with its button; the two pickers sit under it. */
+.band > form {
+  margin-top: var(--s4);
+}
+
+.query {
+  flex: 1 1 calc(100% - 9rem);
+}
+
+.query input {
+  height: 2.75rem;
+  font-size: 0.84375rem;
+}
+
+.go {
+  align-self: flex-end;
+}
+
+.go button {
+  height: 2.75rem;
+  padding: 0 var(--s5);
+}
+
+/* ------------------------------------------------------------- the wait */
+
+.waiting {
+  margin-top: var(--s4);
+}
+
+/* A request in flight is the one thing allowed to move (DESIGN.md). */
+.waitbar {
+  position: relative;
+  display: block;
+  height: 1px;
+  overflow: hidden;
+  background: var(--seam);
+}
+
+.waitbar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: var(--accent);
+  animation: travel 1.6s var(--ease-acquire) infinite;
+}
+
+@keyframes travel {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waitbar::after {
+    animation: none;
+    width: 100%;
+  }
+}
+
+.waitline {
+  composes: t-cell from global;
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+}
+
+.waitSlow {
+  color: var(--tone-work);
+}
+
+/* ---------------------------------------------------------- the results */
+
+.results {
+  margin-top: var(--s6);
+}
+
+.resultsHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+}
+
+/* The fold's body takes the whole row once open. */
+.resultsHead > :last-child[data-open] {
+  flex-basis: 100%;
+}
+
+.slice {
+  composes: t-machine-sm from global;
+  margin: 0;
+  color: var(--muted);
+}
 
 /* A sub-leg is inset by its own hairline: it explains the line above. */
 .legline {
@@ -53,14 +158,15 @@
   color: var(--fg3);
 }
 
+/* A skipped leg changes how every row below reads: loud, in the warn tone. */
 .notes {
   composes: t-log from global;
   margin: var(--s3) 0 0;
   padding: var(--s3) var(--s4);
   list-style: none;
-  color: var(--muted);
-  background: var(--console);
-  border: 1px solid var(--seam);
+  color: var(--tone-warn);
+  background: var(--tone-warn-bg);
+  border: 1px solid var(--tone-warn-line);
 }
 
 .notes li + li {
@@ -79,10 +185,10 @@
   list-style: none;
 }
 
-/* The frame, the moment, the receipt: for two sources the frame is the evidence. */
+/* The frame, then the moment: for two sources the frame is the evidence. */
 .hit {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--s3) var(--s4);
   padding: var(--s4) 0;
   border-top: 1px solid var(--seam);
@@ -123,12 +229,8 @@ button.shot:focus-visible {
 }
 
 .shotEmpty {
-  composes: t-label from global;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  background: var(--plate);
+  background: transparent;
+  box-shadow: none;
 }
 
 .body {
@@ -228,8 +330,14 @@ button.shot:focus-visible {
   color: var(--fg3);
 }
 
+/* A slide's whole text reads as a wall; four lines say what matched, and the
+   frame holds the rest. */
 .isScreen {
   composes: t-machine from global;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
   color: var(--seen);
 }
 
@@ -249,24 +357,20 @@ button.shot:focus-visible {
   color: var(--fg);
 }
 
+/* The moment's timecode is the gold; its receipt is the quieter proof. */
 .receipt {
-  composes: t-machine-sm from global;
-  align-self: start;
-  color: var(--accent);
+  color: var(--fg2);
   text-decoration: none;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .receipt:hover {
+  color: var(--accent);
   text-decoration: underline;
 }
 
 .empty {
   padding: var(--s6) 0;
-}
-
-.emptyFirst {
-  margin-top: var(--s6);
 }
 
 .emptyLead {
@@ -276,13 +380,22 @@ button.shot:focus-visible {
 }
 
 @media (max-width: 780px) {
-  /* The still stays beside the moment; the receipt drops under the body. */
+  /* The still stays beside the moment, smaller. */
   .hit {
-    grid-template-columns: auto minmax(0, 1fr);
     gap: var(--s2) var(--s3);
   }
 
-  .hit > .receipt {
-    grid-column: 2;
+  .shot,
+  .shot img {
+    width: 96px;
+    height: 54px;
+  }
+
+  .query {
+    flex-basis: 100%;
+  }
+
+  .go {
+    order: 3;
   }
 }
