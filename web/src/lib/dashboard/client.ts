@@ -349,7 +349,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     profileRevert(target: { event_id: number } | { revision: number }) {
       return postJson(`${ROOT}/api/profile/revert`, target, ProfileReverted);
     },
-    /** The latest week's brief, or `week` (a Monday) for an older one (§28.1). */
+    /** The latest week's brief, or `week` (a Monday) for an older one (§26.1). */
     brief(week: string | null, signal?: AbortSignal) {
       const query = week === null ? "" : `?week=${encodeURIComponent(week)}`;
       return get(`${ROOT}/api/brief${query}`, Brief, { signal });
@@ -357,7 +357,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     checkin(week: string, rating: number, missing: string) {
       return postJson(`${ROOT}/api/brief/checkin`, { week, rating, missing }, CheckinStored);
     },
-    /** The owner's word on a skipped video; `wrong` is "I'd watch this" (§28.3). */
+    /** The owner's word on a skipped video; `wrong` is "I'd watch this" (§26.3). */
     skip(videoId: string, answer: SkipAnswer, source: "audit" | "row") {
       return postJson(`${ROOT}/api/skips`, { video_id: videoId, answer, source }, SkipAnswered);
     },
