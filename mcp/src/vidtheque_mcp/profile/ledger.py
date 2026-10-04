@@ -21,7 +21,7 @@ from .signals import KEEP_DAYS
 
 WEEKS = 8
 # A moment counts as watched when one stretch in the player starts at most
-# this far past it and runs this long after it (or to the video's end).
+# this far past it and passes its middle; one with no end needs this long.
 MOMENT_LEAD_S = 5.0
 MOMENT_WATCH_S = 60.0
 # Below this a hand-off is a bounce, not a watch, for regret's denominator.
@@ -155,15 +155,25 @@ def _coverage(conn: sqlite3.Connection, video_ids: list[int], owner_id: int) -> 
     return spans
 
 
-def kept(moments: list[float], duration: float, spans: list[tuple[float, float]]) -> bool:
-    """Watched past half the moments; with no moment, past half the video."""
+def kept(
+    moments: list[tuple[float, float | None]], duration: float, spans: list[tuple[float, float]]
+) -> bool:
+    """Watched past half the moments; with no moment, past half the video.
+
+    A moment `(start, end)` is watched when one stretch starts by it and passes
+    its middle; one written before spans (#156) has no end and needs a minute.
+    """
     if not spans:
         return False
     if not moments:
         return duration > 0 and _covered(spans) >= duration / 2
     seen = 0
-    for m in moments:
-        until = min(m + MOMENT_WATCH_S, duration) if duration > m else m
+    for m, end in moments:
+        until = (m + end) / 2 if end is not None and end > m else m + MOMENT_WATCH_S
+        if duration > m:
+            until = min(until, duration)
+        else:
+            until = m
         if any(a <= m + MOMENT_LEAD_S and b >= until for a, b in spans):
             seen += 1
     return seen >= math.ceil(len(moments) / 2)
@@ -196,7 +206,10 @@ def _hits(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> dict
     spans = _coverage(conn, [int(r["id"]) for r in rows], owner_id)
     hits = 0
     for r in rows:
-        moments = [float(m["offset_s"]) for m in json.loads(r["moments"])]
+        moments = [
+            (float(m["offset_s"]), None if m.get("end_s") is None else float(m["end_s"]))
+            for m in json.loads(r["moments"])
+        ]
         if r["state"] == "up" or kept(moments, float(r["duration_s"] or 0), spans.get(int(r["id"]), [])):
             hits += 1
     return {"kept": hits, "offered": len(rows), "rate": _rate(hits, len(rows)), "capped": capped}
