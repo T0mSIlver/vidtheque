@@ -16,7 +16,7 @@ from vidtheque_mcp.discover import picks
 from vidtheque_mcp.discover import scout as scout_mod
 from vidtheque_mcp.discover.scout import Scout
 from vidtheque_mcp.llm import LLMUnavailable
-from vidtheque_mcp.pipeline.sources import RateLimited, SearchHit, SubtitleTrack
+from vidtheque_mcp.pipeline.sources import RateLimited, SearchHit, SourceError, SubtitleTrack
 from vidtheque_mcp.profile import store as profile_store
 
 NIGHT = datetime(2026, 10, 7, 5, 30, tzinfo=UTC)  # a Wednesday
@@ -75,6 +75,7 @@ class FakeSource:
         self.captions = captions
         self.requests: list[str] = []
         self.block_on: str | None = None
+        self.stale_captions = False
 
     def _ask(self, what: str) -> None:
         self.requests.append(what)
@@ -105,6 +106,8 @@ class FakeSource:
 
     def fetch_subtitle(self, track: SubtitleTrack) -> str:
         self._ask(f"captions:{track.url}")
+        if self.stale_captions:
+            raise SourceError("HTTP Error 404: the timedtext URL expired")
         return VTT
 
 
@@ -224,6 +227,17 @@ async def test_no_captions_costs_no_model_call(assembled: Assembled) -> None:
     source = FakeSource({"Coding agent evals": [hit("newtalk0001")]}, captions=False)
     model = FakeModel(assembled.db)
     await make(assembled, model, source).run_once()
+    assert model.calls == []
+    [row] = await rows(assembled, "SELECT state FROM outside_picks")
+    assert row["state"] == "no_captions"
+
+
+async def test_a_refused_caption_track_costs_that_candidate_only(assembled: Assembled) -> None:
+    await profile(assembled, ("Coding agent evals", 0.9))
+    source = FakeSource({"Coding agent evals": [hit("newtalk0001")]})
+    source.stale_captions = True
+    model = FakeModel(assembled.db)
+    assert await make(assembled, model, source).run_once() == "done"
     assert model.calls == []
     [row] = await rows(assembled, "SELECT state FROM outside_picks")
     assert row["state"] == "no_captions"
