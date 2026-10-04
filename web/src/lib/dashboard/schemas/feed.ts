@@ -45,7 +45,7 @@ export const FeedOrder = z.enum(["newest", "oldest"]);
 export type FeedOrder = z.infer<typeof FeedOrder>;
 
 export const Feed = z.object({
-  band: z.enum(["top", "skipped"]),
+  band: z.enum(["top", "skipped", "all"]),
   order: z.string(),
   q: z.string().nullable().optional(),
   channel: z.string().nullable().optional(),
@@ -64,9 +64,32 @@ export const Feed = z.object({
 });
 export type Feed = z.infer<typeof Feed>;
 
+/** A fitted row: what it asks of you, the whole video for a 3, its moments for a 2. */
+export const WeekItem = FeedItem.extend({ asks_s: seconds() });
+export type WeekItem = z.infer<typeof WeekItem>;
+
+/** The week fitted to the owner's minutes (dashboard.md §25.10). */
+export const Week = z.object({
+  week: z.string(),
+  previous: z.string(),
+  next: z.string().nullable(),
+  budget_min: count(),
+  asks_s: seconds(),
+  items: z.array(WeekItem),
+  days: z.array(
+    z.object({ day: z.string(), asks_s: seconds(), fitted: count(), candidates: count() }),
+  ),
+  rest: z.object({ count: count(), asks_s: seconds() }),
+  capped: z.boolean(),
+});
+export type Week = z.infer<typeof Week>;
+
+export const BudgetStored = z.object({ week_budget_min: count() });
+export type BudgetStored = z.infer<typeof BudgetStored>;
+
 /** What the feed's channel and entry filters offer for one band (§25.2). */
 export const FeedFacets = z.object({
-  band: z.enum(["top", "skipped"]),
+  band: z.enum(["top", "skipped", "all"]),
   channels: z.array(z.object({ name: z.string(), count: count() })),
   entries: z.array(
     z.object({

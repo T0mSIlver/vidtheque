@@ -21,6 +21,13 @@ export function asked(momentsS: number | null | undefined, durationS: number): s
   return `${part} of ${whole} min`;
 }
 
+/** A stretch of watching: "35 min", "2 h 05". */
+export function minutes(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds / 60));
+  if (total < 60) return `${total} min`;
+  return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, "0")}`;
+}
+
 /** The three parts a receipt is printed in (`components/Receipt`). */
 export interface ReceiptParts {
   /** `youtu.be/` — which surface, trailing slash included. */

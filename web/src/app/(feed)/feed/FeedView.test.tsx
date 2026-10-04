@@ -9,7 +9,9 @@ import { FeedView } from "./FeedView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-// The two bands: 2–3 listed, 0–1 behind "skipped (n)" and read only when opened.
+// Every judged video, one list, under "Show all": never mixed into the week's.
+
+const ALL = { ...TOP, band: "all", items: [...TOP.items, ...SKIPPED.items] };
 
 function mount(routes = {}, search = "") {
   return mountDashboard(
@@ -18,12 +20,10 @@ function mount(routes = {}, search = "") {
     </FeedShell>,
     {
       bare: true,
-      path: "/feed",
+      path: "/feed/all",
       search,
       routes: {
-        "/dashboard/api/feed": ({ url }) => ({
-          body: new URL(url, "http://x").searchParams.get("band") === "skipped" ? SKIPPED : TOP,
-        }),
+        "/dashboard/api/feed": { body: ALL },
         "/dashboard/api/feed/facets": { body: FACETS },
         ...routes,
       },
@@ -32,8 +32,9 @@ function mount(routes = {}, search = "") {
 }
 
 describe("FeedView", () => {
-  it("lists the top band with its score words, and folds the skipped", async () => {
+  it("lists every judged video in one list, skipped ones included", async () => {
     const view = await mount();
+    expect(await screen.findByText("Visualizing transformers")).toBeInTheDocument();
     const rows = await screen.findAllByRole("link", { name: /Let's build/ });
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("watch it whole")).toBeInTheDocument();
@@ -41,24 +42,16 @@ describe("FeedView", () => {
     expect(within(rows[1]).getByText("outside your profile")).toBeInTheDocument();
     // Scored 2, shown 3: the week's ranking makes the 3s.
     expect(within(rows[1]).getByText("watch it whole")).toBeInTheDocument();
-    expect(within(rows[0]).queryByText("outside your profile")).toBeNull();
-
-    const fold = screen.getByRole("button", { name: /Skipped \(2\)/ });
-    expect(screen.queryByText("Visualizing transformers")).toBeNull();
-    expect(view.calls("/dashboard/api/feed").map((r) => r.url)).not.toContain(
-      expect.stringContaining("skipped"),
-    );
-
-    await userEvent.click(fold);
-    expect(await screen.findByText("Visualizing transformers")).toBeInTheDocument();
     expect(screen.getByText("skip")).toBeInTheDocument();
+    expect(view.calls("/dashboard/api/feed").every((r) => r.url.includes("band=all"))).toBe(true);
+    expect(screen.getByRole("link", { name: /This week/ })).toHaveAttribute("href", "/feed");
   });
 
   it("pages on, only while the band says there is more", async () => {
-    const first = { ...TOP, pagination: { limit: 1, offset: 0, has_more: true, next_offset: 1 } };
+    const first = { ...ALL, pagination: { limit: 1, offset: 0, has_more: true, next_offset: 1 } };
     const view = await mount({
       "/dashboard/api/feed": ({ url }: { url: string }) => ({
-        body: new URL(url, "http://x").searchParams.get("offset") === "1" ? TOP : first,
+        body: new URL(url, "http://x").searchParams.get("offset") === "1" ? ALL : first,
       }),
     });
     await userEvent.click(await screen.findByRole("button", { name: "More" }));
@@ -83,7 +76,7 @@ describe("FeedView", () => {
     const view = await mount();
     await userEvent.type(screen.getByRole("searchbox", { name: /Search titles/ }), "tokenizer");
     await vi.waitFor(() =>
-      expect(view.replace).toHaveBeenCalledWith("/feed?q=tokenizer", { scroll: false }),
+      expect(view.replace).toHaveBeenCalledWith("/feed/all?q=tokenizer", { scroll: false }),
     );
     await vi.waitFor(() =>
       expect(view.calls("/dashboard/api/feed").some((r) => r.url.includes("q=tokenizer"))).toBe(
@@ -92,7 +85,9 @@ describe("FeedView", () => {
     );
 
     await userEvent.click(await screen.findByRole("button", { name: /Launch hype/ }));
-    expect(view.replace).toHaveBeenLastCalledWith("/feed?q=tokenizer&entry=36", { scroll: false });
+    expect(view.replace).toHaveBeenLastCalledWith("/feed/all?q=tokenizer&entry=36", {
+      scroll: false,
+    });
     expect(screen.getByRole("button", { name: /Launch hype/ })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -108,7 +103,7 @@ describe("FeedView", () => {
 
   it("keeps a narrowed feed's filters from the URL and says when nothing matches", async () => {
     await mount(
-      { "/dashboard/api/feed": { body: { ...TOP, items: [] } } },
+      { "/dashboard/api/feed": { body: { ...ALL, items: [] } } },
       "channel=andrej+karpathy",
     );
     expect(await screen.findByText("Nothing here matches.")).toBeInTheDocument();

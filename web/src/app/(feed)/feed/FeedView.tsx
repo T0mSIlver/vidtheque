@@ -11,12 +11,10 @@ import { useResource } from "@/lib/dashboard/resource";
 import type { Feed, FeedFacets, FeedItem } from "@/lib/dashboard/schemas";
 import { asked, count } from "@/lib/format";
 
-// What should I watch? Verdicts newest first, 2–3 on top, 0–1 folded into
-// "skipped (n)" (companion.md §6). Pages append; `has_more` decides the button.
-// The search, channel, order and profile entry live in the URL, so the back
-// button from a video returns to the same narrowed feed (§25.2).
-
-type BandName = "top" | "skipped";
+// Every judged video, newest first, one tap from the end of the week's fitted
+// list (companion.md §6): never mixed into it. The search, channel, order and
+// profile entry live in the URL, so the back button from a video returns to
+// the same narrowed list (§25.2). Pages append; `has_more` decides the button.
 
 const FILTERS = ["q", "channel", "entry", "order"] as const;
 const TYPING_MS = 300;
@@ -29,61 +27,42 @@ export function FeedView() {
     if (value) filters.set(name, value);
   }
   const narrowed = filters.toString();
-  const [skippedOpen, setSkippedOpen] = useState(false);
-  const first = useBandPage("top", 0, narrowed);
+  const first = useBandPage(0, narrowed);
 
   if (first.error && !first.data) {
     return <FeedFailure error={first.error} onRetry={first.reload} />;
   }
-  const skipped = first.data?.skipped;
 
   return (
     <>
+      <Link className={styles.action} href={FEED}>
+        ‹ This week
+      </Link>
       <Controls filters={filters} />
 
-      <section aria-labelledby="to-watch">
-        <h1 className={styles.label} id="to-watch">
-          To watch
+      <section aria-labelledby="all-videos">
+        <h1 className={styles.label} id="all-videos">
+          All videos
         </h1>
-        <Band key={narrowed} band="top" narrowed={narrowed} />
+        <Band key={narrowed} narrowed={narrowed} />
       </section>
-
-      {skipped && skipped.count > 0 ? (
-        <section className={styles.skipped} aria-labelledby="skipped">
-          <h2 id="skipped">
-            <button
-              className={styles.fold}
-              type="button"
-              aria-expanded={skippedOpen}
-              onClick={() => setSkippedOpen((open) => !open)}
-            >
-              <span>
-                Skipped ({count(skipped.count)}
-                {skipped.capped ? "+" : ""})
-              </span>
-              <span aria-hidden="true">{skippedOpen ? "−" : "+"}</span>
-            </button>
-          </h2>
-          {skippedOpen ? <Band key={narrowed} band="skipped" narrowed={narrowed} /> : null}
-        </section>
-      ) : null}
     </>
   );
 }
 
-function useBandPage(band: BandName, offset: number, narrowed: string) {
-  return useResource<Feed>(`feed:${band}:${offset}:${narrowed}`, (signal) => {
+function useBandPage(offset: number, narrowed: string) {
+  return useResource<Feed>(`feed:all:${offset}:${narrowed}`, (signal) => {
     const query = new URLSearchParams(narrowed);
-    query.set("band", band);
+    query.set("band", "all");
     query.set("offset", String(offset));
     return dashboard.feed(query, signal);
   });
 }
 
 const readFacets = (signal: AbortSignal) =>
-  dashboard.feedFacets(new URLSearchParams({ band: "top" }), signal);
+  dashboard.feedFacets(new URLSearchParams({ band: "all" }), signal);
 
-/** Search, channel, order and the profile entries, over the band below. */
+/** Search, channel, order and the profile entries, over the list below. */
 function Controls({ filters }: { filters: URLSearchParams }) {
   const router = useRouter();
   const path = usePathname();
@@ -218,15 +197,14 @@ function EntryChip({
   );
 }
 
-/** One band as the pages read so far. */
-function Band({ band, narrowed }: { band: BandName; narrowed: string }) {
+/** The list as the pages read so far. */
+function Band({ narrowed }: { narrowed: string }) {
   const [offsets, setOffsets] = useState([0]);
   return (
     <ol className={styles.rows}>
       {offsets.map((offset, index) => (
         <BandPage
           key={offset}
-          band={band}
           offset={offset}
           narrowed={narrowed}
           first={index === 0}
@@ -238,19 +216,17 @@ function Band({ band, narrowed }: { band: BandName; narrowed: string }) {
 }
 
 function BandPage({
-  band,
   offset,
   narrowed,
   first,
   onMore,
 }: {
-  band: BandName;
   offset: number;
   narrowed: string;
   first: boolean;
   onMore: ((next: number) => void) | null;
 }) {
-  const page = useBandPage(band, offset, narrowed);
+  const page = useBandPage(offset, narrowed);
   if (!page.data) {
     if (page.error) {
       return (
@@ -269,9 +245,7 @@ function BandPage({
         <li className={styles.rowNote}>
           {narrowed
             ? "Nothing here matches."
-            : band === "top"
-              ? "Nothing to watch yet. A verdict is written once a new video from the channels you follow is indexed."
-              : "Nothing skipped."}
+            : "Nothing judged yet. A verdict is written once a new video from the channels you follow is indexed."}
         </li>
       ) : null}
       {items.map((item) => (
@@ -288,7 +262,8 @@ function BandPage({
   );
 }
 
-function Row({ item }: { item: FeedItem }) {
+/** One video; `label` replaces what it asks of you, as the week's 3s ask the whole video. */
+export function Row({ item, label }: { item: FeedItem; label?: string }) {
   // A skipped verdict says what sank it and takes an "I'd watch this" (§6.1).
   const skipped = item.score <= 1;
   return (
@@ -299,7 +274,7 @@ function Row({ item }: { item: FeedItem }) {
         <span className={styles.meta}>
           <Score score={item.tier ?? item.score} />
           {item.explored ? <Outside /> : null}
-          <span className={styles.duration}>{asked(item.moments_s, item.duration_s)}</span>
+          <span className={styles.duration}>{label ?? asked(item.moments_s, item.duration_s)}</span>
         </span>
         {item.reason ? <span className={styles.reason}>{item.reason}</span> : null}
         <Matches matches={item.matches} />
