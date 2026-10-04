@@ -55,7 +55,9 @@ CHECK_EVERY_S = 60
 
 
 class ScoutSource(Protocol):
-    def search(self, query: str, max_items: int, *, this_month: bool = False) -> list[SearchHit]: ...
+    def search(
+        self, query: str, max_items: int, *, this_month: bool = False
+    ) -> list[SearchHit]: ...
 
     def probe(self, url: str) -> dict[str, Any]: ...
 
@@ -159,7 +161,8 @@ class Scout:
             logger.exception("scout run failed")
         if state == "done" and run.requests == 0 and run.speaker is None:
             state = "idle"
-        await self.db.write(lambda c: finish(c, run, state, at, error))
+        ended = int(self.clock().timestamp())
+        await self.db.write(lambda c: finish(c, run, state, ended, error))
         logger.info(
             "scout %s: %d request(s), %d judged, %d shown, speaker %s",
             state,
@@ -230,14 +233,18 @@ class Scout:
         if tracks:
             run.requests += 1
             track = tracks[0]
-            payload = await asyncio.to_thread(self.source.fetch_subtitle, track)
             try:
+                payload = await asyncio.to_thread(self.source.fetch_subtitle, track)
                 cues = (
                     cues_from_json3(payload, word_timed=track.word_timed)
                     if track.ext == "json3"
                     else cues_from_vtt(payload)
                 )
-            except ValueError:
+            except RateLimited:
+                raise
+            except (SourceError, ValueError) as exc:
+                # A stale or refused track: recorded, so the video is not fetched again.
+                run.notes.append(f"{hit.source_id}: {exc}")
                 cues = []
         if not cues:
             await self.db.write(
