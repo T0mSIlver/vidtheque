@@ -5,7 +5,7 @@ import { useResource } from "@/lib/dashboard/resource";
 import controls from "./kit/controls.module.css";
 
 /**
- * The `channel` filter as a select over every stored name (§29.1). A name in
+ * The `channel` filter as a select over every stored name (§28.5). A name in
  * the URL that the list lacks stays an option, so the filter the query ran
  * with is never dropped; until the list lands, that name is the only one.
  */

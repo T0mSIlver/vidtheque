@@ -4213,6 +4213,8 @@ Jobs (#182).
 
 ### 29.1 Search, and its two reads
 
+### 28.5 Search, and its two reads (#181)
+
 **The page** is a centred column. The query box owns the first row with its
 button; under it, **Look in** (`everything`, `spoken`, `on-screen text`,
 `frames`: the badges' words, so the picker and the results speak one
@@ -4246,7 +4248,7 @@ it; the `channel` filters match without case, so a stored name is always a
 value they accept. A name in the URL the list lacks stays an option. Both
 reads take no parameter and sit behind the gate.
 
-### 29.2 The videos table
+### 28.6 The videos table (#181)
 
 The band keeps the three filters used most out (the text box, Channel as the
 same select, State) and folds the rest behind "more filters": tags, coverage,
@@ -4259,7 +4261,7 @@ its coverage column. **State** is quiet when fine: a ready video with every
 leg reads `ready` in muted text; any other state is its pill, and each missing
 leg is named in the warn tone (`no ocr`, `no frames`).
 
-### 29.3 One video
+### 28.7 One video (#181)
 
 Top to bottom: the head, the timeline, the keyframes, the transcript,
 Provenance, the indexing runs, the folded statistics, and re-index.
@@ -4296,4 +4298,5 @@ Provenance, the indexing runs, the folded statistics, and re-index.
 - **Re-index** is the button alone; a refusal prints in place, and where the
   database refuses writes the button is disabled (the rail already says why).
 
-Payloads are unchanged but for the two reads in §29.1.
+Payloads are unchanged but for the two reads in §28.5; these sections
+supersede §5.2, §5.3, §14, §24.3 and §24.4 where they disagree.

@@ -74,7 +74,7 @@ LIGHTBOX_WIDTH = 1280
 
 # The Corpus page's list bounds (§24.1). Server-side, like every other list here.
 CHANNEL_CAP = 12
-# The search and videos pages' channel pickers (§29.1): a select, not a list.
+# The search and videos pages' channel pickers (§28.5): a select, not a list.
 CHANNEL_PICK_CAP = 200
 TAG_CAP = 24
 

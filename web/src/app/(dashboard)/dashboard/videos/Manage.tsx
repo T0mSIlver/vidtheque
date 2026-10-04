@@ -13,11 +13,11 @@ import {
 } from "@/components/dashboard/kit/write";
 import styles from "./videos.module.css";
 
-// The two writes on one video, on its detail page (dashboard.md §21, §29.3).
+// The two writes on one video, on its detail page (dashboard.md §21, §28.7).
 // The page does not poll, so the inline answer is the only evidence a write
 // leaves; `tag_video` and `index_video` decide everything.
 
-/** The detail page's one rare write: re-index, the button alone (§29.3).
+/** The detail page's one rare write: re-index, the button alone (§28.7).
  *  No delete: that job kind has no pipeline (§5.2). */
 export function ManagePanel({ videoId }: { videoId: string }) {
   const { rendered } = useWriteSide();
@@ -79,7 +79,7 @@ export function ReindexControl({ videoId, label }: { videoId: string; label: str
 
 /**
  * The video's tags as chips, each with its own remove, and one box that adds
- * (§29.3). The rules and their refusals are `tag_video`'s; `onWritten` hands
+ * (§28.7). The rules and their refusals are `tag_video`'s; `onWritten` hands
  * the page the row's tags after the write. Without a write side the chips are
  * plain links to the table filtered by the tag.
  */

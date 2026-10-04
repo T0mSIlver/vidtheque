@@ -570,7 +570,7 @@ def test_an_unreachable_worker_degrades_rather_than_failing_the_payload(
 def test_readiness_is_healths_block_alone_and_the_projection_never_probes(
     tmp_path: Path,
 ) -> None:
-    """The search page asks it while a search is slow (§29.1): the same three
+    """The search page asks it while a search is slow (§28.5): the same three
     fields per model as Health, and in the projection no worker request."""
     called = False
 
