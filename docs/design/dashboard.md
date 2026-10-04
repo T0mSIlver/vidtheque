@@ -4133,3 +4133,70 @@ line a section shows when nothing needs acting on). A `Notice` with tone
 state. `Fold` is the details disclosure. `PageHead` has no rule under it,
 and its `note` is a sans sentence under the title: the page's state in words.
 Panel headings, table heads and figure labels are sans and sentence case.
+
+### 28.2 Health
+
+**The head** says `data_status` in words ("Index up to date", "Indexing
+now", "Waiting on a retry", "Some data is missing", "Some videos have no
+on-screen text", "No videos yet") with the last index clock. The key
+`data_status` is no longer printed.
+
+**Alerts come first:** the drift notice, a worker that does not answer, jobs
+failed in the window (a count, linking to `jobs?state=failed`) and failed
+videos (linking to `videos?index_state=failed`). Each failure is said here
+and not counted again lower down; the failed-video count lives on Corpus.
+
+**Pipeline** prints each service with its state word in its tone, then the
+models the corpus was built with and, beside them, the ones the worker
+serves with loaded or cold. The embedding dimension and the "last health
+check" clock are gone: the dimension is implied by the model, and the clock
+is the moment the page loaded.
+
+**Queue** lists only the lines that are not zero (queued or running with how
+many wait on a retry, mid-pipeline, the two embedding backlogs, transcripts
+without on-screen text), or says "Queue empty, nothing missing."
+
+**Model cost** stays on Health, because a runaway caller is a question about
+whether the machine is working right now, and Health is the page read for
+that. It is one line: today, this month, 30 days and the cost per verdict,
+with a warning when calls had no known price. The cost by purpose (calls,
+tokens in and out, cost) is behind a toggle. The 7-day window and the ten
+most expensive calls are no longer printed; both stay in the payload, which
+the app also reads (§25.8).
+
+### 28.3 Corpus
+
+**The head** is the size in one sentence: the video count (a link to the
+videos table), the hours and the published span. The band of five figures
+and the "counted" stamp are gone.
+
+**Against YouTube** prints this week as one line, leaving out regret with
+nothing watched, zero misses and an empty outside share; the weeks before are
+behind a toggle as the table they were. **Channels and tags** stay as they
+were: each one is a filter on the videos table. **Every other count** (videos
+by state with the zero states left out, cues and chunks, keyframes, on-screen
+lines, the two byte totals) is behind one toggle at the foot.
+
+### 28.4 Jobs and one job
+
+**The state filter is tabs** (Active, Failed, Done, All) with each tab's count
+from `by_state`, replacing both the state picker and the five figures; a tab
+keeps the other filters. Cancelled has no filter, so no tab. Kind, error
+code, order, degraded and rows fold behind "more filters", open when one of
+them is set.
+
+**A row** is the job's name with its kind, channel and id under it, the
+state, the items (a bar only while the job is live), the wall clock and the
+finish time. Priority shows only when the order is by priority. The "shown"
+count line and its "snapshot" sentence are gone; the arrival and stopped
+notes stay. The cancel column exists only while a row can be cancelled. On a
+phone a row is its name and one wrapped line of the rest, without labels.
+
+A job with no title says its item count, plural-correct; "none fetched yet"
+is said only while it is queued or running (`read_models.job_contents`).
+
+**One job** puts kind, item counts and priority in the head's sentence, the
+three durations on one line, the deferral as "Waiting to retry, *n* left",
+and folds the older events behind `Fold`. The bar shows only while the job
+is live, and "this is the final record" and "Newest first, *n* shown" are
+gone.
