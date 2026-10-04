@@ -21,8 +21,11 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** [instance] is the base URL they were issued by; empty in sessions stored before the choice existed. */
 @Serializable
-data class Tokens(val access: String, val refresh: String?, val expiresAtMs: Long)
+data class Tokens(val access: String, val refresh: String?, val expiresAtMs: Long, val instance: String = "") {
+    fun withInstance(base: String) = copy(instance = base)
+}
 
 /** Where the tokens live between launches. */
 interface TokenStore {

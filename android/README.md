@@ -14,9 +14,11 @@ JDK 21 and an Android SDK with platform 37, then:
 ./gradlew assembleRelease
 ```
 
-The APK lands in `app/build/outputs/apk/release/`. The instance is fixed at
-build time: `-Pvidtheque.instance=https://your.host` overrides the default
-in `gradle.properties`.
+The APK lands in `app/build/outputs/apk/release/`. Sign-in asks for the
+instance's address, prefilled with `vidtheque.instance` from
+`gradle.properties` (`-Pvidtheque.instance=` leaves it empty). Push works on
+one instance only, `vidtheque.pushInstance`: FCM tokens belong to one Firebase
+project, and only the server holding its key can send to them.
 
 Screenshots render on the JVM through Roborazzi, no emulator needed:
 `./gradlew recordRoborazziDebug` writes `app/screenshots/`, and

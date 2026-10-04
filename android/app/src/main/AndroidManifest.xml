@@ -19,12 +19,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- The OAuth callback, verified against the instance's assetlinks.json. -->
-            <intent-filter android:autoVerify="true">
+            <!-- The OAuth callback from a browser without Auth Tab; Auth Tab returns it as a result. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="${instanceHost}" android:path="/auth/android/callback" />
+                <data android:scheme="dev.vidtheque.app" />
             </intent-filter>
         </activity>
         <!-- "Found it elsewhere": a YouTube link shared from any app (companion.md §6). -->

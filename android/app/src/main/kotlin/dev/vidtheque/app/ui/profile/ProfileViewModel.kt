@@ -3,6 +3,8 @@ package dev.vidtheque.app.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.vidtheque.app.BuildConfig
+import dev.vidtheque.app.auth.Instance
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
 import dev.vidtheque.app.data.CollectionSummary
@@ -32,8 +34,12 @@ data class ProfileUi(
 )
 
 @HiltViewModel
-class ProfileViewModel @Inject constructor(private val api: Api, private val push: Push) : ViewModel() {
+class ProfileViewModel @Inject constructor(private val api: Api, private val push: Push, private val instance: Instance) : ViewModel() {
     val pushAvailable: Boolean get() = push.available
+    val host: String get() = instance.host
+
+    /** Set when this build has push, but for another instance than this one. */
+    val pushOnlyAt: String? get() = Instance.hostOf(BuildConfig.PUSH_INSTANCE).takeIf { push.built && !push.available }
     val pushOn: StateFlow<Boolean> = push.on.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** On after the system granted the permission; off forgets this phone on the instance. */
