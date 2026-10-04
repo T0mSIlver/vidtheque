@@ -117,6 +117,69 @@ data class Moment(
     val why: String,
     val url: String,
     @SerialName("end_s") val endS: Double? = null,
+    /** Where [url] starts: past a stretch you saw elsewhere that covers the start (#171). */
+    @SerialName("start_s") val startS: Double? = null,
+    val repeat: Repeat? = null,
+) {
+    val linkS: Double get() = startS ?: offsetS
+}
+
+/** The video a moment repeats; [whole] when all of the moment is said there. */
+@Serializable
+data class Repeat(@SerialName("video_id") val videoId: String, val title: String, val channel: String? = null, val whole: Boolean = false)
+
+/** A video the owner saw, as a repeated stretch names it. */
+@Serializable
+data class SeenVideo(@SerialName("video_id") val videoId: String, val title: String, val channel: String? = null)
+
+/** This video's [startS]–[endS] says what [video] says from [seenS] (dashboard.md §25.3). */
+@Serializable
+data class Overlap(
+    val video: SeenVideo,
+    @SerialName("start_s") val startS: Double,
+    @SerialName("end_s") val endS: Double,
+    @SerialName("seen_s") val seenS: Double,
+    val url: String,
+)
+
+/** A wanted entry's moments: how many, and their minutes (dashboard.md §25.14). */
+@Serializable
+data class CollectionSummary(
+    @SerialName("entry_id") val entryId: Long,
+    val text: String,
+    val moments: Int,
+    @SerialName("moments_s") val momentsS: Double,
+    val videos: Int = 0,
+    @SerialName("has_more") val hasMore: Boolean = false,
+)
+
+@Serializable
+data class Collections(val collections: List<CollectionSummary> = emptyList())
+
+/** An earlier moment of the collection, by index, that this one repeats. */
+@Serializable
+data class CollectionRepeat(val item: Int, @SerialName("video_id") val videoId: String, val title: String, val whole: Boolean = false)
+
+@Serializable
+data class CollectionMoment(
+    val video: VideoRow,
+    val why: String,
+    @SerialName("offset_s") val offsetS: Double,
+    @SerialName("end_s") val endS: Double,
+    @SerialName("start_s") val startS: Double,
+    val url: String,
+    val repeat: CollectionRepeat? = null,
+)
+
+@Serializable
+data class CollectionEntry(@SerialName("entry_id") val entryId: Long, val text: String)
+
+@Serializable
+data class MomentCollection(
+    val entry: CollectionEntry,
+    val moments: List<CollectionMoment> = emptyList(),
+    @SerialName("moments_s") val momentsS: Double = 0.0,
+    @SerialName("has_more") val hasMore: Boolean = false,
 )
 
 @Serializable
@@ -131,6 +194,7 @@ data class Verdict(
     val feedback: String = "none",
     val summary: String = "",
     val moments: List<Moment> = emptyList(),
+    val overlaps: List<Overlap> = emptyList(),
     @SerialName("moments_dropped") val momentsDropped: Int = 0,
     @SerialName("moments_s") val momentsS: Double? = null,
 )
@@ -349,6 +413,10 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
         if (e.error != "E_NO_VERDICT") null else runCatching { json.decodeFromString<NoVerdict>(e.body).video }.getOrNull()
 
     suspend fun costs(): Costs = json.decodeFromString(get("$root/costs"))
+
+    suspend fun collections(): Collections = json.decodeFromString(get("$root/collections"))
+
+    suspend fun collection(entryId: Long): MomentCollection = json.decodeFromString(get("$root/collections/$entryId"))
 
     suspend fun profile(before: Long? = null): Profile =
         json.decodeFromString(get("$root/profile" + (before?.let { "?before=$it" } ?: "")))

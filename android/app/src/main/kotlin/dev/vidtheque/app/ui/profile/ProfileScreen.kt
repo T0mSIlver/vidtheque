@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
@@ -68,6 +69,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.vidtheque.app.data.CollectionSummary
 import dev.vidtheque.app.data.CostWindow
 import dev.vidtheque.app.data.ValuedTime
 import dev.vidtheque.app.data.PROFILE_PROMPT
@@ -77,11 +79,12 @@ import dev.vidtheque.app.data.claudeUri
 import dev.vidtheque.app.data.signed
 import dev.vidtheque.app.ui.NO_APP
 import dev.vidtheque.app.ui.WeightDial
+import dev.vidtheque.app.ui.minutes
 import dev.vidtheque.app.ui.openLink
 import kotlinx.coroutines.launch
 
 @Composable
-fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
+fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit, onCollection: (Long, String) -> Unit = { _, _ -> }) {
     val model: ProfileViewModel = hiltViewModel()
     val ui by model.ui.collectAsStateWithLifecycle()
     val pushOn by model.pushOn.collectAsStateWithLifecycle()
@@ -103,6 +106,7 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
         onDrop = model::drop,
         onRevert = model::revert,
         onOlder = model::older,
+        onCollection = onCollection,
         push = if (model.pushAvailable) pushOn else null,
         costs = costs,
         ledger = ledger,
@@ -134,6 +138,7 @@ fun ProfileContent(
     onRevert: (Long) -> Unit,
     onOlder: () -> Unit,
     onBuild: () -> Unit,
+    onCollection: (Long, String) -> Unit = { _, _ -> },
     push: Boolean? = null,
     onPush: (Boolean) -> Unit = {},
     costs: CostWindow? = null,
@@ -197,7 +202,7 @@ fun ProfileContent(
                 item { Text("No interests yet, so every verdict is scored without them.", style = MaterialTheme.typography.bodyLarge) }
             }
             items(profile.entries.sortedByDescending { it.weight }, key = { "entry-${it.id}" }) { entry ->
-                Entry(entry, busy = ui.busy) { onDrop(entry.id) }
+                Entry(entry, ui.collections[entry.id], busy = ui.busy, onCollection = { onCollection(entry.id, entry.text) }) { onDrop(entry.id) }
             }
             item { Text("History", style = MaterialTheme.typography.titleMediumEmphasized, modifier = Modifier.padding(top = 16.dp, start = 4.dp)) }
             if (ui.events.isEmpty()) item { Text("No change yet.", style = MaterialTheme.typography.bodyMedium) }
@@ -216,7 +221,7 @@ private fun entryStyle() = MaterialTheme.typography.titleMedium.copy(lineHeight 
 
 /** One interest: its text whole, and the note that put it there, folded to two lines until tapped. */
 @Composable
-private fun Entry(entry: ProfileEntry, busy: Boolean, onDrop: () -> Unit) {
+private fun Entry(entry: ProfileEntry, collection: CollectionSummary?, busy: Boolean, onCollection: () -> Unit, onDrop: () -> Unit) {
     var open by rememberSaveable(entry.id) { mutableStateOf(false) }
     Surface(
         onClick = { open = !open },
@@ -234,6 +239,13 @@ private fun Entry(entry: ProfileEntry, busy: Boolean, onDrop: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 entry.evidence?.let { Note(it, open) }
+                // Its best moments across videos (companion.md §6.2), a tap away.
+                collection?.let { c ->
+                    TextButton(onClick = onCollection, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                        Text((if (c.moments == 1) "1 moment" else "${c.moments} moments") + ", " + minutes(c.momentsS))
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
+                    }
+                }
             }
             IconButton(onClick = onDrop, enabled = !busy) { Icon(Icons.Rounded.Close, contentDescription = "Drop ${entry.text}") }
         }

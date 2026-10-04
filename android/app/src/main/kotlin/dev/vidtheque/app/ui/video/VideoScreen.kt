@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.vidtheque.app.data.Moment
+import dev.vidtheque.app.data.SeenVideo
 import dev.vidtheque.app.data.Verdict
 import dev.vidtheque.app.data.claudeUri
 import dev.vidtheque.app.data.videoPrompt
@@ -109,6 +110,7 @@ fun VideoScreen(
     pages: List<FeedItem> = emptyList(),
     onMore: () -> Unit = {},
     onShown: (String) -> Unit = {},
+    onOpenVideo: (VideoKey) -> Unit = {},
 ) {
     // The still runs under the status bar, behind a dark scrim: light icons in both modes.
     val window = LocalActivity.current?.window
@@ -122,7 +124,7 @@ fun VideoScreen(
     val start = pages.indexOfFirst { it.videoId == key.videoId }
     // Not in the feed's list (a notification opened it): this one video, no pager.
     if (start < 0) {
-        VideoPage(key, settled = true, still = still, container = card(key.videoId, 0.dp), onBack = onBack)
+        VideoPage(key, settled = true, still = still, container = card(key.videoId, 0.dp), onBack = onBack, onOpenVideo = onOpenVideo)
         return
     }
     // The feed's order, swiped like Gmail's messages. A swipe only moves: no signal
@@ -135,12 +137,12 @@ fun VideoScreen(
     LaunchedEffect(nearEnd) { if (nearEnd) onMore() }
     HorizontalPager(pager, modifier = card(shown, 0.dp), key = { pages[it].videoId }) { page ->
         val item = pages[page]
-        VideoPage(VideoKey(item.videoId, item.title, item.channel.orEmpty()), settled = pager.settledPage == page, still = still, onBack = onBack)
+        VideoPage(VideoKey(item.videoId, item.title, item.channel.orEmpty()), settled = pager.settledPage == page, still = still, onBack = onBack, onOpenVideo = onOpenVideo)
     }
 }
 
 @Composable
-private fun VideoPage(key: VideoKey, settled: Boolean, still: Still, onBack: () -> Unit, container: Modifier = Modifier) {
+private fun VideoPage(key: VideoKey, settled: Boolean, still: Still, onBack: () -> Unit, onOpenVideo: (VideoKey) -> Unit, container: Modifier = Modifier) {
     val model = hiltViewModel<VideoViewModel, VideoViewModel.Factory>(key = "video-${key.videoId}", creationCallback = { it.create(key.videoId) })
     val ui by model.ui.collectAsStateWithLifecycle()
     LaunchedEffect(settled, ui.verdict != null || ui.unjudged != null) { if (settled) model.shown() }
@@ -177,9 +179,10 @@ private fun VideoPage(key: VideoKey, settled: Boolean, still: Still, onBack: () 
             else scope.launch { snackbar.showSnackbar(NO_APP) }
         },
         onMoment = { moment ->
-            if (context.openLink(Uri.parse(moment.url))) model.watched(moment.offsetS)
+            if (context.openLink(Uri.parse(moment.url))) model.watched(moment.linkS)
             else scope.launch { snackbar.showSnackbar(NO_APP) }
         },
+        onSeen = { seen -> onOpenVideo(VideoKey(seen.videoId, seen.title, seen.channel.orEmpty(), alone = true)) },
         onAsk = { verdict ->
             // The Claude app opens claude.ai/new with `q` filled in (checked on Tom's phone,
             // 2026-10-03); the clipboard is only for a phone where nothing opens the link.
@@ -207,6 +210,7 @@ fun VideoContent(
     onPlay: () -> Unit = {},
     onMoment: (Moment) -> Unit,
     onAsk: (Verdict) -> Unit,
+    onSeen: (SeenVideo) -> Unit = {},
 ) {
     val verdict = ui.verdict
     val video = verdict?.video ?: ui.unjudged
@@ -235,7 +239,7 @@ fun VideoContent(
                 if (byline.isNotEmpty()) Text(byline, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (title.isNotEmpty()) Text(title, style = MaterialTheme.typography.headlineSmallEmphasized)
                 when {
-                    verdict != null -> Loaded(verdict, onMoment)
+                    verdict != null -> Loaded(verdict, onMoment, onSeen)
                     ui.unjudged != null -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(duration(ui.unjudged.durationS), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("No verdict yet: this video has not been scored against your profile.", style = MaterialTheme.typography.bodyLarge)
@@ -260,7 +264,7 @@ fun VideoContent(
 }
 
 @Composable
-private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
+private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit, onSeen: (SeenVideo) -> Unit) {
     val shown = verdict.tier ?: verdict.score
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ScoreDial(shown, size = 48.dp)
@@ -279,15 +283,12 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
     Text(verdict.summary, style = MaterialTheme.typography.bodyLarge)
     Text("Moments", style = MaterialTheme.typography.titleMediumEmphasized, modifier = Modifier.padding(top = 8.dp))
     verdict.moments.forEach { moment ->
-        Surface(onClick = { onMoment(moment) }, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Text(duration(moment.offsetS) + (moment.endS?.let { "–" + duration(it) } ?: ""), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                }
-                Text(moment.why, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open on YouTube", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        MomentRow(
+            span = duration(moment.linkS) + (moment.endS?.let { "–" + duration(it) } ?: ""),
+            why = moment.why,
+            note = moment.repeat?.let { repeatNote("“${it.title}”", it.whole, moment.linkS - moment.offsetS) },
+            onClick = { onMoment(moment) },
+        )
     }
     val quiet = MaterialTheme.typography.bodyMedium
     if (verdict.moments.isEmpty() && verdict.momentsDropped == 0) {
@@ -297,6 +298,50 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
         val n = if (verdict.momentsDropped == 1) "1 moment is" else "${verdict.momentsDropped} moments are"
         Text("$n left out: a reindex removed the transcript line it cited, and the verdict will be rewritten.", style = quiet, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    // The stretches said before in videos you saw (companion.md §3.2); each opens that video here.
+    if (verdict.overlaps.isNotEmpty()) {
+        Text("Seen before", style = MaterialTheme.typography.titleMediumEmphasized, modifier = Modifier.padding(top = 8.dp))
+        verdict.overlaps.forEach { overlap ->
+            Surface(onClick = { onSeen(overlap.video) }, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(duration(overlap.startS) + "–" + duration(overlap.endS), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 2.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(overlap.video.title.ifEmpty { overlap.video.videoId }, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            listOfNotNull(overlap.video.channel, "said there from ${duration(overlap.seenS)}").joinToString(" · "),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A moment as a link out: its span, why, and what it repeats, when it does. */
+@Composable
+fun MomentRow(span: String, why: String, note: String?, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
+                Text(span, style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(why, style = MaterialTheme.typography.bodyMedium)
+                note?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open on YouTube", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** What a moment repeats, and what its link skips (companion.md §3.2). [where] is the
+ *  video you saw it in, or, on a collection, the moment above it. */
+fun repeatNote(where: String, whole: Boolean, skippedS: Double): String = when {
+    whole -> "You saw all of it in $where"
+    skippedS > 0 -> "Skips ${duration(skippedS)} you saw in $where"
+    else -> "You saw part of it in $where"
 }
 
 /** One feedback button: the state it sets (companion.md §2.3), its label, and what the snackbar says once set. */
