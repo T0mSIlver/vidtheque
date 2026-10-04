@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -29,27 +30,19 @@ fun SunkBy(match: Match?, modifier: Modifier = Modifier) {
     Text("Sunk by “${match.text}”", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error, modifier = modifier)
 }
 
-/** Under a skipped row in the feed: what sank it, and "I'd watch this". */
+/** Under a skipped row in the feed: what sank it, "I'd watch this", then the reweight it proposes. */
 @Composable
 fun SkipFix(videoId: String, matches: List<Match>) {
-    Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SunkBy(sunkBy(matches))
-        WouldWatch(videoId)
-    }
-}
-
-/** The feed's skipped row: "I'd watch this", then the reweight it proposes. */
-@Composable
-fun WouldWatch(videoId: String, modifier: Modifier = Modifier) {
     val model: SkipViewModel = hiltViewModel()
     val skips by model.skips.collectAsStateWithLifecycle()
     val state = skips[videoId]
-    Column(modifier) {
-        if (state?.answer == null) {
-            OutlinedButton(onClick = { model.answer(videoId, "wrong", "row") }) { Text("I’d watch this") }
-        } else {
-            Outcome(state) { proposal -> model.ease(videoId, proposal) }
+    Column(Modifier.padding(start = 12.dp, end = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SunkBy(sunkBy(matches), Modifier.weight(1f))
+            if (sunkBy(matches) == null) Spacer(Modifier.weight(1f))
+            if (state?.answer == null) TextButton(onClick = { model.answer(videoId, "wrong", "row") }) { Text("I’d watch this") }
         }
+        if (state?.answer != null) Outcome(state) { proposal -> model.ease(videoId, proposal) }
         state?.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }
