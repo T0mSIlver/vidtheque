@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 # About 10k tokens: a one-hour talk whole, the two ends of anything longer.
 TRANSCRIPT_CHARS = 40_000
+# The cheap verdict, the scout's input: title, channel, chapters and a quarter
+# of the transcript (discover/scout.py). The public sample feed uses it.
+CHEAP_TRANSCRIPT_CHARS = 12_000
+CHEAP_CHAPTERS = 30
 
 # About one low verdict in ten is rescored without the negative entries.
 EXPLORE_RATE = 0.1
@@ -174,8 +178,8 @@ def build_verdicts(
 
     Off unless the companion model is configured, and off when
     `VIDTHEQUE_VERDICTS=0` even then. `sample` is the public box's feed
-    (demo-site.md §8): no push, no week ranking, no exploration, one model
-    call per video.
+    (demo-site.md §8): the cheap input, and no push, week ranking or
+    exploration, so one small model call per video.
     """
     settings = configured()
     if settings is None:
@@ -186,7 +190,7 @@ def build_verdicts(
     assert model is not None
     label = model_label(settings)
     if sample:
-        return VerdictStage(deps, model, label, explore_rate=0.0), http
+        return VerdictStage(deps, model, label, explore_rate=0.0, cheap=True), http
     # Push rides on the verdict (companion.md §6): no key, no notifier.
     from ..push.notify import PushSettings, build_notifier
 
@@ -210,6 +214,7 @@ class VerdictStage:
         push: "Notifier | None" = None,
         ranker: "week.WeekRanker | None" = None,
         explore_rate: float = EXPLORE_RATE,
+        cheap: bool = False,
     ) -> None:
         self.deps = deps
         self.push = push
@@ -219,6 +224,7 @@ class VerdictStage:
         # Injected so tests decide which verdicts explore.
         self.rng = rng or random.Random()
         self.explore_rate = explore_rate
+        self.cheap = cheap
 
     async def run_item(self, ctx: ItemContext) -> None:
         db = self.deps.db
@@ -322,16 +328,20 @@ class VerdictStage:
             raise _as_failure(exc) from None
 
     async def _inputs(self, video_id: int, public_id: str) -> "Inputs":
-        token = CALL_CONTEXT.set(TRIAGE)
-        try:
-            summary = await video_summary(
-                self.deps, public_id, include_links=False, include_guidance=False
-            )
-        finally:
-            CALL_CONTEXT.reset(token)
-        if summary.is_error:
-            raise ItemSkipped("video-summary refused this video; no verdict.", "E_NOT_INDEXED")
-        summary_text = "\n".join(b.text for b in summary.content if isinstance(b, TextContent))
+        if self.cheap:
+            summary_text = await self.deps.db.read(lambda c: _cheap_summary(c, video_id))
+        else:
+            token = CALL_CONTEXT.set(TRIAGE)
+            try:
+                summary = await video_summary(
+                    self.deps, public_id, include_links=False, include_guidance=False
+                )
+            finally:
+                CALL_CONTEXT.reset(token)
+            if summary.is_error:
+                raise ItemSkipped("video-summary refused this video; no verdict.", "E_NOT_INDEXED")
+            summary_text = "\n".join(b.text for b in summary.content if isinstance(b, TextContent))
+        budget = CHEAP_TRANSCRIPT_CHARS if self.cheap else TRANSCRIPT_CHARS
 
         def read(c: sqlite3.Connection) -> Inputs:
             cues = c.execute(
@@ -343,7 +353,7 @@ class VerdictStage:
                     f"[cue {q['id']} {float(q['start_s']):.1f}–{float(q['end_s']):.1f}] {q['text']}"
                     for q in cues
                 ],
-                TRANSCRIPT_CHARS,
+                budget,
             )
             seen = novelty.seen(c, video_id)
             return Inputs(
@@ -404,6 +414,23 @@ class Inputs:
             f"{seen}"
             f"Transcript:\n{self.transcript or '(no transcript)'}"
         )
+
+
+def _cheap_summary(conn: sqlite3.Connection, video_id: int) -> str:
+    """Title, channel and chapters, as the scout reads a candidate."""
+    row = conn.execute(
+        "SELECT title, channel_name FROM videos WHERE id = ?", (video_id,)
+    ).fetchone()
+    chapters = conn.execute(
+        "SELECT start_s, title FROM chapters WHERE video_id = ? ORDER BY seq LIMIT ?",
+        (video_id, CHEAP_CHAPTERS),
+    ).fetchall()
+    text = f"Title: {row['title'] or ''}\nChannel: {row['channel_name'] or 'unknown'}"
+    if chapters:
+        text += "\nChapters:\n" + "\n".join(
+            f"  {float(c['start_s']):.0f}s {c['title']}" for c in chapters
+        )
+    return text
 
 
 def middle_lines(lines: list[str], budget: int) -> str:
