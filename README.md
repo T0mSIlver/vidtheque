@@ -3,7 +3,8 @@
   <img src="https://raw.githubusercontent.com/T0mSIlver/vidtheque/main/docs/assets/wordmark.svg" alt="vidtheque." width="220">
 </picture>
 
-Knowledge is announced on video. vidtheque puts it on tap.
+vidtheque watches the channels you follow and tells you which videos, and
+which minutes, will teach you something.
 
 **You don't have time to watch everything — your agent does.** Follow the
 builders whose talks, streams and deep-dives matter: vidtheque turns them into
@@ -11,8 +12,9 @@ solid, timestamped knowledge — every sentence spoken, every line that crossed
 the screen, every frame — and every answer comes with its receipt: the
 sentence, the slide, and the second it happened (`https://youtu.be/ID?t=123`).
 
-**See it live:** [vidtheque.dev](https://vidtheque.dev) · [the demo](https://vidtheque.dev/demo)
-— the first shelf: every talk AI Engineer published in 2026, all 310, on tap.
+**See it live:** [the sample feed](https://vidtheque.dev/demo) judges every
+talk AI Engineer published in 2026 for one published sample profile, and you
+can ask the same talks a question.
 
 ## Quickstart
 
@@ -50,8 +52,8 @@ Agents plug in over MCP and consume the corpus mid-task: ask for the SOTA,
 get what was said on stage three weeks ago — search across transcript,
 on-screen text and frames, then drill into any moment. A web demo and a
 management dashboard sit over the same corpus on one origin: `/` is the
-landing, `/demo` searches and answers for visitors, `/dashboard` is the
-operator's instrument.
+landing, `/demo` is the sample feed with search and Ask below it, and
+`/dashboard` is the operator's instrument (absent on the public box).
 
 ## Receipts, always
 

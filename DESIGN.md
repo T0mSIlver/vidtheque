@@ -575,6 +575,12 @@ is an extension rather than a readout it says so in the prose. When this file
 and the landing disagree, **this file wins**; but say why in the amending
 commit, because that page is the thing Tom actually approved.
 
+*Amended 2026-10-04 (Tom, #196):* the landing keeps the projection room's
+wall, faces and tokens and drops its light table, stills, wall band and booth
+log; it now leads with the positioning sentence and three live
+recommendations (demo-site.md §8.4). The wall's frames stay under
+`web/public/landing/grid/`.
+
 **The amendment rule.** The frontmatter tokens above are normative. Any agent
 may **use** any token and may **add** a `components:` entry for a component it
 is the first to build. No agent may introduce a raw colour, a font size outside

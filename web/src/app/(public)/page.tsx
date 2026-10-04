@@ -1,21 +1,37 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { Rail } from "@/components/public/Rail";
+import { RailFacts } from "@/components/public/facts";
 import { Landing } from "@/components/public/landing/Landing";
+import { readFeed } from "@/lib/api/search";
 
-// The landing (DESIGN.md's reference surface). Copy is bound by positioning.md;
-// the markup is the landing kit's `Landing`, and the page fetches nothing.
+// The landing (DESIGN.md's reference surface). Copy is bound by positioning.md.
+
+const LEAD =
+  "vidtheque watches the channels you follow and tells you which videos, and which minutes, will teach you something.";
 
 export const metadata: Metadata = {
-  title: { absolute: "vidtheque — Builders talk. Your agent listens." },
-  description: "Empowering AI with the knowledge of the builders and creators.",
+  title: { absolute: "vidtheque — which videos, and which minutes" },
+  description: LEAD,
   openGraph: {
     type: "website",
     siteName: "vidtheque",
-    title: "vidtheque — Builders talk. Your agent listens.",
-    description: "Empowering AI with the knowledge of the builders and creators.",
+    title: "vidtheque — which videos, and which minutes",
+    description: LEAD,
   },
   twitter: { card: "summary" },
 };
 
-export default function LandingPage() {
-  return <Landing />;
+export default async function LandingPage() {
+  const feed = await readFeed({ limit: 3 });
+  return (
+    <>
+      <Rail>
+        <Suspense fallback={null}>
+          <RailFacts showCount />
+        </Suspense>
+      </Rail>
+      <Landing feed={feed} />
+    </>
+  );
 }
