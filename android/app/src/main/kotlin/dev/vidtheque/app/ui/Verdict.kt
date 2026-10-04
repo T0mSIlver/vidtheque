@@ -84,6 +84,16 @@ fun duration(seconds: Double): String {
     return if (h > 0) "%d:%02d:%02d".format(java.util.Locale.ROOT, h, m, r) else "%d:%02d".format(java.util.Locale.ROOT, m, r)
 }
 
+/** "6 of 42 min" when the moments have spans and cover part of the video, else its length. */
+fun asked(momentsS: Double?, durationS: Double): String {
+    if (momentsS == null || momentsS <= 0 || durationS <= 0) return duration(durationS)
+    val whole = maxOf(1L, Math.round(durationS / 60))
+    // A short moment still costs a minute; never more than the video.
+    val part = minOf(whole, maxOf(1L, Math.round(momentsS / 60)))
+    // Non-breaking, so a wrapped meta line never strands "min".
+    return "$part\u00A0of\u00A0$whole\u00A0min"
+}
+
 /** YouTube serves stills for every public video; the server sends none. 4:3 with bars, so crop to 16:9. */
 fun thumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 

@@ -45,6 +45,8 @@ data class FeedItem(
     val reason: String = "",
     val explored: Boolean = false,
     val matches: List<Match> = emptyList(),
+    /** Seconds the moments cover; null for moments written before spans (companion.md §3.1). */
+    @SerialName("moments_s") val momentsS: Double? = null,
 )
 
 @Serializable
@@ -84,7 +86,13 @@ data class VideoRow(
 )
 
 @Serializable
-data class Moment(@SerialName("cue_id") val cueId: Long, @SerialName("offset_s") val offsetS: Double, val why: String, val url: String)
+data class Moment(
+    @SerialName("cue_id") val cueId: Long,
+    @SerialName("offset_s") val offsetS: Double,
+    val why: String,
+    val url: String,
+    @SerialName("end_s") val endS: Double? = null,
+)
 
 @Serializable
 data class Verdict(
@@ -98,6 +106,7 @@ data class Verdict(
     val summary: String = "",
     val moments: List<Moment> = emptyList(),
     @SerialName("moments_dropped") val momentsDropped: Int = 0,
+    @SerialName("moments_s") val momentsS: Double? = null,
 )
 
 @Serializable

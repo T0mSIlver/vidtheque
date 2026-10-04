@@ -91,6 +91,7 @@ import dev.vidtheque.app.ui.NO_APP
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.VideoKey
 import dev.vidtheque.app.ui.dated
+import dev.vidtheque.app.ui.asked
 import dev.vidtheque.app.ui.duration
 import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Still
@@ -264,7 +265,7 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
         ScoreDial(verdict.score, size = 48.dp)
         Column {
             Text(scoreWord(verdict.score), style = MaterialTheme.typography.titleMediumEmphasized, color = scoreColor(verdict.score))
-            Text(duration(verdict.video.durationS), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(asked(verdict.momentsS, verdict.video.durationS), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     if (verdict.explored) {
@@ -280,7 +281,7 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
         Surface(onClick = { onMoment(moment) }, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Text(duration(moment.offsetS), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                    Text(duration(moment.offsetS) + (moment.endS?.let { "–" + duration(it) } ?: ""), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                 }
                 Text(moment.why, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open on YouTube", tint = MaterialTheme.colorScheme.onSurfaceVariant)
