@@ -4,10 +4,10 @@
 
 /* ------------------------------------------------------------- page head */
 
+/* No rule under the head: the first panel's hairline is the page's first
+   rule, so a page never opens on two. */
 .pagehead {
-  padding: var(--s6) 0 var(--s4);
-  margin-bottom: var(--s6);
-  border-bottom: 1px solid var(--seam);
+  padding: var(--s6) 0 var(--s2);
 }
 
 .pageheadLine {
@@ -65,10 +65,12 @@
   border-top: 1px solid var(--seam);
 }
 
+/* A heading, not an eyebrow: sans, sentence case, the ink colour. */
 .panelTitle {
-  composes: t-label from global;
+  composes: t-cell-strong from global;
+  font-size: 0.9375rem;
   margin-bottom: var(--s3);
-  color: var(--muted);
+  color: var(--fg);
 }
 
 /* The one rule thicker than 1px: a panel whose halves disagree. */
@@ -86,6 +88,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--s1) var(--s4);
+}
+
+/* A short sentence beside a panel's heading, in the heading's line. */
+.panelAside {
+  composes: t-cell from global;
+  font-size: 0.8125rem;
+  color: var(--muted);
 }
 
 .clock {
@@ -199,7 +208,8 @@
 }
 
 .figureLabel {
-  composes: t-label from global;
+  composes: t-cell from global;
+  font-size: 0.8125rem;
   color: var(--muted);
 }
 
@@ -541,6 +551,49 @@
    answer will take, so nothing under it moves when it lands. */
 .pending {
   min-block-size: var(--pending, 70dvh);
+}
+
+/* ---------------------------------------------------------------- column */
+
+/* A page reads in a centred column; `wide` lets a table use the whole main
+   area (DESIGN.md, dashboard section). */
+.page {
+  display: grid;
+  grid-template-columns:
+    [wide-start] minmax(0, 1fr)
+    [read-start] minmax(0, var(--console-read))
+    [read-end] minmax(0, 1fr)
+    [wide-end];
+}
+
+.page > * {
+  grid-column: read;
+  min-width: 0;
+}
+
+.page > .wide {
+  grid-column: wide;
+}
+
+/* ------------------------------------------------------------- all clear */
+
+/* Nothing to act on, said once in a short line. The square is the tone; the
+   sentence is the word. */
+.allClear {
+  composes: t-cell from global;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  color: var(--fg2);
+}
+
+.allClear::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: var(--tone-ok);
+  transform: translateY(-1px);
 }
 
 /* --------------------------------------------------------------- widths */

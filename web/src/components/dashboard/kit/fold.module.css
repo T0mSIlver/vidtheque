@@ -5,8 +5,38 @@
   min-width: 0;
 }
 
+/* A quiet text control: what sits behind it is read on demand. The chevron
+   is drawn, and turns down when open; it does not animate. */
 .toggle {
-  margin-bottom: var(--s3);
+  composes: t-cell from global;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 2rem;
+  margin-bottom: var(--s2);
+  padding: 0;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.toggle::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+[data-open] > .toggle::before {
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.toggle:hover {
+  color: var(--fg);
 }
 
 .fold:not([data-open]) > .body {

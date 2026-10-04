@@ -259,6 +259,7 @@ layout:
   note: "74ch"
   query-w: "72rem"
   console-w: "92rem"
+  console-read: "60rem"
   bp-stack: "1120px"
   bp-hand: "780px"
 elevation:
@@ -1049,6 +1050,21 @@ operator is scanning sixty rows at 03:00 over an SSH tunnel.
   rail and footer — and is the only brand gesture on the surface.
 - **No shadow at all**, corner ticks used at most once per page (the signature
   panel), and no card ever.
+- **Quiet when fine, loud when not** (Tom, 2026-10-04, #182). A zero count is
+  not printed. A section with nothing to act on says so in one line
+  (`AllClear`, a 7px `--tone-ok` square before the sentence). A problem is a
+  toned `Notice` at the top of the page: a `--tone-*-bg` band inside a 1px
+  `--tone-*-line` border, its title in the tone, its detail in `--fg`.
+- **Human labels.** Panel headings, table heads and figure labels are sans,
+  sentence case, at 13–15px. Mono is for ids, hashes, model names and aligned
+  numbers; a key that reads like an identifier is a bug. The `t-label` caps
+  stay on the pills and controls.
+- **A reading width.** `Page` lays a page's body on a centred
+  `--console-read` (60rem) column; only `Wide` blocks, a table that needs the
+  room, use the whole main area. The page head has no rule under it, so the
+  first panel's hairline is the page's first rule.
+- **Statistics on demand.** Counts and breakdowns that act on nothing sit
+  behind `Fold`, a text toggle with a drawn chevron, closed by default.
 - `docs/design/dashboard.md` wins on function, data, clamps and copy.
 
 ### The Android app — Material 3 Expressive (Tom, 2026-10-03)

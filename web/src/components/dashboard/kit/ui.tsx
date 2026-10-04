@@ -42,6 +42,21 @@ export function PageHead({
   );
 }
 
+/** A page's body in the centred reading column. */
+export function Page({ children }: { children: ReactNode }) {
+  return <div className={styles.page}>{children}</div>;
+}
+
+/** Inside `Page`, a block allowed past the reading column: a wide table. */
+export function Wide({ children }: { children: ReactNode }) {
+  return <div className={styles.wide}>{children}</div>;
+}
+
+/** The one line a section shows when there is nothing to act on. */
+export function AllClear({ children }: { children: ReactNode }) {
+  return <p className={styles.allClear}>{children}</p>;
+}
+
 /** A label and the machine string it names, wrapping as one unit. */
 export function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
