@@ -1,27 +1,19 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Corpus } from "@/lib/dashboard/schemas";
-import { at, bytes, count, hours, iso } from "@/lib/format";
+import { bytes, count, day, hours } from "@/lib/format";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import { ReadFailure } from "@/components/dashboard/kit/notice";
+import { DashLink, Page, PageHead, Panel, Pending, Sep, ui } from "@/components/dashboard/kit/ui";
+import styles from "./corpus.module.css";
 import { ValuedTimePanel } from "./ValuedTime";
-import {
-  CountLink,
-  DashLink,
-  Fact,
-  Figure,
-  PageHead,
-  Panel,
-  Pending,
-  Slot,
-  publishedNote,
-  ui,
-  Unit,
-} from "@/components/dashboard/kit/ui";
 
-// What is in it (dashboard.md §24.1): every count of the corpus, in one reading
-// stamped once. No chart, no history (§1 non-goal 5).
+// What is in it (dashboard.md §24.1, §28.3): the size in one sentence, the
+// feed against YouTube, the channels and tags as doors into the videos table,
+// and every other count on demand. No chart, no history (§1 non-goal 5).
 
 const read = (signal: AbortSignal) => dashboard.corpus(signal);
 
@@ -36,140 +28,147 @@ export function CorpusView() {
     return <ReadFailure error={corpus.error} onRetry={corpus.reload} />;
   }
 
-  // UTC minutes like every other clock here (§24.6); the attribute keeps
-  // the instant.
-  const counted = data ? iso(data.counted_at) : undefined;
+  return (
+    <Page>
+      <PageHead title="Corpus" note={data ? <Size data={data} /> : <>&nbsp;</>} />
+      {data ? <Loaded data={data} /> : <Pending />}
+    </Page>
+  );
+}
+
+/** `669 videos, 290 hours, published 2025-12-27 – 2026-10-03`. */
+function Size({ data }: { data: Corpus }) {
+  const { corpus } = data;
+  const { oldest, newest } = corpus.published;
   return (
     <>
-      <PageHead title="Corpus">
-        <Fact
-          label="counted"
-          value={
-            counted && data ? (
-              <time dateTime={counted}>{at(data.counted_at)}</time>
-            ) : (
-              <Slot ch={16} />
-            )
-          }
-        />
-      </PageHead>
-      {data ? <Loaded data={data} /> : <Pending />}
+      <DashLink href={`${ROOT}/videos?index_state=all`}>
+        {count(corpus.videos)} {corpus.videos === 1 ? "video" : "videos"}
+      </DashLink>
+      , {hours(corpus.duration_s)} hours
+      {oldest !== null || newest !== null ? (
+        <>
+          , published{" "}
+          <span className={ui.nowrap}>
+            {day(oldest)}
+            <Sep>–</Sep>
+            {day(newest)}
+          </span>
+        </>
+      ) : null}
     </>
   );
 }
 
 function Loaded({ data }: { data: Corpus }) {
-  const { corpus } = data;
-
   return (
     <>
-      <section aria-labelledby="corpus">
-        <h2 className={ui.srOnly} id="corpus">
-          The corpus
-        </h2>
-        <dl className={ui.ledger}>
-          <Figure label="videos" notes={publishedNote(corpus.published)}>
-            <DashLink href={`${ROOT}/videos?index_state=all`}>{count(corpus.videos)}</DashLink>
-          </Figure>
-          <Figure label="runtime" notes={[<>{count(corpus.duration_s)} seconds indexed</>]}>
-            {hours(corpus.duration_s)}
-            <Unit>h</Unit>
-          </Figure>
-          <Figure label="transcript cues" notes={[<>in {count(corpus.chunks)} embedding chunks</>]}>
-            {count(corpus.cues)}
-          </Figure>
-          <Figure label="keyframes" notes={[<>after near-duplicate removal</>]}>
-            {count(corpus.keyframes)}
-          </Figure>
-          <Figure label="on-screen lines" notes={[<>read off those keyframes</>]}>
-            {count(corpus.ocr_lines)}
-          </Figure>
-        </dl>
-      </section>
-
       <ValuedTimePanel />
-
-      <div className={ui.split}>
-        <Panel id="states" title="Videos by state">
-          <dl className={`${ui.figures} ${ui.figuresTight}`}>
-            {VIDEO_STATES.map((state) => (
-              <Figure label={state} key={state}>
-                <CountLink
-                  href={`${ROOT}/videos?index_state=${state}`}
-                  n={data.videos_by_state[state]}
-                />
-              </Figure>
-            ))}
-          </dl>
-        </Panel>
-
-        {/* §2.4: the projection does not take the byte read at all. */}
-        {data.storage ? (
-          <Panel id="storage" title="Storage">
-            <dl className={`${ui.figures} ${ui.figuresTight}`}>
-              <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
-              <Figure label="index file">{bytes(data.storage.database_bytes)}</Figure>
-            </dl>
-          </Panel>
-        ) : null}
-      </div>
-
-      <div className={ui.split}>
-        <Panel id="channels" title="Channels">
-          {data.channels.rows.length ? (
-            <ul className={`${ui.rowlist} ${ui.tight}`}>
-              {data.channels.rows.map((entry) => (
-                <li className={ui.minirow} key={entry.channel}>
-                  <DashLink
-                    href={`${ROOT}/videos?channel=${encodeURIComponent(entry.channel)}&index_state=all`}
-                  >
-                    {entry.channel}
-                  </DashLink>
-                  <span className={ui.minirowFigure}>
-                    {count(entry.videos)}
-                    <Unit> vid</Unit>
-                  </span>
-                  <span className={`${ui.minirowFigure} ${ui.dim}`}>
-                    {hours(entry.seconds)}
-                    <Unit>h</Unit>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={ui.emptyNote}>No channels yet.</p>
-          )}
-          {data.channels.has_more ? (
-            <p className={ui.emptyNote}>
-              The largest {data.channels.rows.length};{" "}
-              <DashLink href={`${ROOT}/videos?index_state=all`}>the videos table</DashLink> filters
-              by any channel.
-            </p>
-          ) : null}
-        </Panel>
-
-        <Panel id="tags" title="Tags">
-          {data.tags.rows.length ? (
-            <ul className={ui.chiplist}>
-              {data.tags.rows.map((entry) => (
-                <li key={entry.tag}>
-                  <DashLink
-                    className={ui.chip}
-                    href={`${ROOT}/videos?tags=${encodeURIComponent(entry.tag)}&index_state=all`}
-                  >
-                    {entry.tag} <span className={ui.chipN}>{entry.videos}</span>
-                  </DashLink>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={ui.emptyNote}>no tags</p>
-          )}
-          {data.tags.has_more ? (
-            <p className={ui.emptyNote}>The {data.tags.rows.length} most used.</p>
-          ) : null}
-        </Panel>
-      </div>
+      <Lists data={data} />
+      <Counts data={data} />
     </>
+  );
+}
+
+/** The channels and the tags, each one a filter on the videos table. */
+function Lists({ data }: { data: Corpus }) {
+  return (
+    <div className={ui.split}>
+      <Panel id="channels" title="Channels">
+        {data.channels.rows.length ? (
+          <ul className={`${ui.rowlist} ${ui.tight}`}>
+            {data.channels.rows.map((entry) => (
+              <li className={ui.minirow} key={entry.channel}>
+                <DashLink
+                  href={`${ROOT}/videos?channel=${encodeURIComponent(entry.channel)}&index_state=all`}
+                >
+                  {entry.channel}
+                </DashLink>
+                <span className={styles.rowFigure}>
+                  {count(entry.videos)} {entry.videos === 1 ? "video" : "videos"} ·{" "}
+                  {hours(entry.seconds)} h
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={ui.emptyNote}>No channels yet.</p>
+        )}
+        {data.channels.has_more ? (
+          <p className={ui.emptyNote}>The largest {data.channels.rows.length}.</p>
+        ) : null}
+      </Panel>
+
+      <Panel id="tags" title="Tags">
+        {data.tags.rows.length ? (
+          <ul className={ui.chiplist}>
+            {data.tags.rows.map((entry) => (
+              <li key={entry.tag}>
+                <DashLink
+                  className={ui.chip}
+                  href={`${ROOT}/videos?tags=${encodeURIComponent(entry.tag)}&index_state=all`}
+                >
+                  {entry.tag} <span className={ui.chipN}>{entry.videos}</span>
+                </DashLink>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={ui.emptyNote}>No tags yet.</p>
+        )}
+        {data.tags.has_more ? (
+          <p className={ui.emptyNote}>The {data.tags.rows.length} most used.</p>
+        ) : null}
+      </Panel>
+    </div>
+  );
+}
+
+/** Every other count, read on demand. A state with no video is left out.
+ *  §2.4: the projection does not take the byte read. */
+function Counts({ data }: { data: Corpus }) {
+  const { corpus } = data;
+  const states = VIDEO_STATES.filter((state) => data.videos_by_state[state] > 0);
+  const rows: [string, ReactNode][] = [
+    [
+      "Videos by state",
+      states.length ? (
+        <span className={styles.states}>
+          {states.map((state) => (
+            <DashLink key={state} href={`${ROOT}/videos?index_state=${state}`}>
+              {count(data.videos_by_state[state])} {state}
+            </DashLink>
+          ))}
+        </span>
+      ) : (
+        "none"
+      ),
+    ],
+    [
+      "Transcript cues",
+      <>
+        {count(corpus.cues)} <span className={ui.muted}>in {count(corpus.chunks)} chunks</span>
+      </>,
+    ],
+    ["Keyframes", count(corpus.keyframes)],
+    ["On-screen text lines", count(corpus.ocr_lines)],
+  ];
+  if (data.storage) {
+    rows.push(["Keyframe images", bytes(data.storage.keyframe_bytes)]);
+    rows.push(["Index file", bytes(data.storage.database_bytes)]);
+  }
+  return (
+    <section className={styles.more} aria-label="Counts">
+      <Fold label="every count">
+        <dl className={styles.counts}>
+          {rows.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Fold>
+    </section>
   );
 }
