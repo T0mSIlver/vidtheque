@@ -4252,8 +4252,8 @@ leg is named in the warn tone (`no ocr`, `no frames`).
 
 ### 28.7 One video (#181)
 
-Top to bottom: the head, the timeline, the keyframes, the transcript,
-Provenance, the indexing runs, the folded statistics, and re-index.
+Top to bottom: the head, the timeline, the keyframes, Provenance, the
+indexing runs, the folded statistics, re-index, and the transcript (#190).
 
 - **Head.** The state words show only when the video is not ready or its
   `data_status` is not `ok`. Tags are chips under the facts; with a write side
@@ -4261,9 +4261,17 @@ Provenance, the indexing runs, the folded statistics, and re-index.
   `tag_video`. The constraint sentence is gone; a refused tag prints
   `tag_video`'s own refusal.
 - **Timeline.** Chapters ride on the shot band as a row of segments on the
-  same scale, titled where a segment is wide enough (56 px), each linking to
-  its own start on YouTube. The scrub preview names the chapter of the shot
-  under the pointer. Under the band: the kept keyframe count, and "timeline
+  same scale, shaded in turn, so each one's extent shows without a label. A
+  segment draws its title only where the whole title fits, else its number
+  where that fits (20 px), else its shade alone. The line above the band
+  names one chapter whole: its number of the total, its start linked to
+  YouTube, and its title. That chapter is the one under the pointer or the
+  keyboard, else the one under the scrub preview, else the last one tapped.
+  With none of these, the line gives the chapter count. A segment is a button
+  that names its chapter there, so a tap on a phone reads the title rather
+  than leaving the page. "Show chapters" under the band folds the numbered
+  list, each start linked (#190). The scrub preview names the chapter of the
+  shot under the pointer. Under the band: the kept keyframe count, and "timeline
   capped" in the warn tone when `shots.capped`. The Chapters panel is gone.
 - **Keyframes.** One strip that scrolls sideways, kept keyframes only, with
   drawn arrows over its ends on a pointer device. With no `?frames=` the read
@@ -4272,15 +4280,24 @@ Provenance, the indexing runs, the folded statistics, and re-index.
   "Earlier keyframes". A selected duplicate (`?select=` or a shot bar) selects
   the frame it duplicates. A card is the frame, its OCR boxes, its timecode
   and ordinal, and a pill only when OCR did not finish (`done` and `empty` say
-  nothing). Each box's title is its text and confidence; the per-card line
+  nothing). Where the page's OCR line budget ran out (§5.3's double cap), the
+  frames it cut say "text cut": the budget is spent in frame order, so the cut
+  starts at the last frame with any line and takes every read frame after it.
+  The panel prints no sentence about the budget (#190). Each box's title is its text and confidence; the per-card line
   list is gone, and the enlarged frame keeps its own.
-- **Transcript.** Consecutive cues are paragraphs: a new one starts at a new
-  speaker, a pause of 2 s or more, after 60 s, or past 600 characters. The
+- **Transcript.** Consecutive cues are paragraphs. A cue is a caption line,
+  not a sentence, so a paragraph closes only at a sentence end (`.`, `?`, `!`
+  or `…`, before any closing quote or bracket), once it has run 60 s or 600
+  characters or a pause of 2 s follows. A new speaker always closes one, and a
+  run-on closes at 1,800 characters. A transcript with no sentence end in it
+  at all (auto captions) closes at a pause, 60 s or 600 characters. The
   paragraph's first second is the YouTube link and every cue keeps its own
   second as a title. Chunk marks, the in-chunk rule and `avg_logprob` are not
-  drawn. The box reads on as it scrolls, in batches of the endpoint's
-  `max_limit`, and reads again by itself while a batch does not fill it; the
-  "Read on" link at its foot is the same batch as a real address.
+  drawn. The transcript has no box of its own: it flows in the page at the
+  reading measure, last, so the page is the one scroll, and it reads on in
+  batches of the endpoint's `max_limit` while its end is within a screen of
+  the viewport. The "Read on" link at its foot is the same batch as a real
+  address (#190).
 - **Statistics.** "What was stored" is folded as "statistics": one figure per
   count and per cue origin, with words and characters from the transcript
   block, and no sentence under any figure.
