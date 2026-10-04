@@ -44,7 +44,9 @@ describe("the transcript", () => {
     expect(screen.queryByText("-0.42")).toBeNull();
   });
 
-  it("starts a paragraph at a pause or a new speaker", () => {
+  // Auto captions carry no punctuation, so there is no sentence end to wait
+  // for: a pause, a new speaker or a reading length closes the paragraph.
+  it("starts a paragraph at a pause or a new speaker without punctuation", () => {
     const cue = (start_s: number, speaker: string | null = null) => ({
       ...OWNER_CUES.cues[1],
       start_s,
@@ -66,6 +68,49 @@ describe("the transcript", () => {
       [11, 12],
     ]);
     expect(paragraphs[2].speaker).toBe("SPEAKER_01");
+  });
+
+  // Caption lines end mid-sentence; a paragraph does not (Tom on YiFqcu9YA38).
+  it("closes a paragraph only at a sentence end once it is long", () => {
+    const lines = [
+      "So we built the dashboard first.",
+      "The problem was I had genuinely",
+      "never opened the dashboard.",
+      "Read the context in",
+      "Slack.",
+    ];
+    const cues = lines.map((text, index) => ({
+      ...OWNER_CUES.cues[1],
+      start_s: index * 40,
+      end_s: index * 40 + 39,
+      t: index * 40,
+      text,
+      speaker: null,
+    }));
+    const texts = paragraphsOf(cues).map((p) => p.cues.map((c) => c.text).join(" "));
+    // Past 60 s by the second cue, but that cue ends mid-sentence.
+    expect(texts).toEqual([
+      "So we built the dashboard first. The problem was I had genuinely never opened the dashboard.",
+      "Read the context in Slack.",
+    ]);
+  });
+
+  it("closes at a new speaker even mid-sentence, and at a pause after a sentence", () => {
+    const cue = (start_s: number, text: string, speaker: string | null = null) => ({
+      ...OWNER_CUES.cues[1],
+      start_s,
+      end_s: start_s + 1,
+      t: Math.floor(start_s),
+      text,
+      speaker,
+    });
+    const paragraphs = paragraphsOf([
+      cue(0, "It is fast."),
+      cue(4, "Is it"),
+      cue(10, "cheap?"),
+      cue(11, "Yes, and", "SPEAKER_01"),
+    ]);
+    expect(paragraphs.map((p) => p.cues.map((c) => c.start_s))).toEqual([[0], [4, 10], [11]]);
   });
 
   it("appends the next batch rather than reloading the page", async () => {

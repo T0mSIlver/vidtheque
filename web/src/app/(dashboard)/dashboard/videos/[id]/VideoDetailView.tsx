@@ -177,6 +177,15 @@ function Loaded({
           />
         </Wide>
 
+        <Provenance stages={data.stages} />
+
+        <JobHistory history={data.job_history} />
+
+        <Stored counts={data.counts} origins={data.cue_origins} transcript={data.transcript} />
+
+        <ManagePanel videoId={video.video_id} />
+
+        {/* Last: it reads on as the page scrolls, so nothing may sit under it. */}
         <Transcript
           key={video.video_id}
           search={search}
@@ -185,14 +194,6 @@ function Loaded({
           transcript={data.transcript}
           videoId={video.video_id}
         />
-
-        <Provenance stages={data.stages} />
-
-        <JobHistory history={data.job_history} />
-
-        <Stored counts={data.counts} origins={data.cue_origins} transcript={data.transcript} />
-
-        <ManagePanel videoId={video.video_id} />
 
         <FrameOverlay onClose={closeFrame} shot={open ? frameShot(open, video.video_id) : null} />
       </Page>
