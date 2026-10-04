@@ -33,6 +33,8 @@ STT_POLICIES = (
 )
 
 AUDIO_CODECS = ("opus", "wav", "flac")
+# What `channels` may name, `all` aside. The order is the one printed back.
+INDEX_CHANNELS = ("transcript", "ocr", "frames")
 DETECTORS = ("screencast", "talking_head")
 
 
@@ -135,6 +137,10 @@ class PipelineSettings:
     # serves and a check is still a request against a source that rate-limits.
     follow_interval_s: int = 21_600
 
+    # The most this instance indexes, whatever a job asks for. `transcript` is
+    # the captions-only preset's: no video download and no keyframes on disk.
+    index_channels: str = "all"
+
     @classmethod
     def from_env(cls) -> "PipelineSettings":
         langs = tuple(
@@ -188,6 +194,9 @@ class PipelineSettings:
             follow_checks=_bool_env("VIDTHEQUE_FOLLOW_CHECKS", True),
             follow_daily_hours=_float_env("VIDTHEQUE_FOLLOW_DAILY_HOURS", 16.0),
             follow_interval_s=_int_env("VIDTHEQUE_FOLLOW_INTERVAL_S", 21_600),
+            index_channels=(_env("VIDTHEQUE_INDEX_CHANNELS", "all") or "all")
+            .strip()
+            .lower(),
         )
         settings.validate()
         return settings
@@ -204,6 +213,13 @@ class PipelineSettings:
         # A pool of zero extracts nothing and a negative one raises inside
         # ThreadPoolExecutor several minutes into a job, which is the worst
         # place to learn about a typo. Refuse it at boot, like every other knob.
+        if not channel_set(self.index_channels) or any(
+            part not in ("all", *INDEX_CHANNELS) for part in _parts(self.index_channels)
+        ):
+            raise ConfigError(
+                "VIDTHEQUE_INDEX_CHANNELS must be 'all' or a subset of "
+                f"{','.join(INDEX_CHANNELS)}, got {self.index_channels!r}"
+            )
         if self.extract_workers < 1:
             raise ConfigError(
                 "VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS must be >= 1, "
@@ -242,3 +258,38 @@ class PipelineSettings:
     @property
     def captions_first(self) -> bool:
         return self.stt_policy in ("prefer_captions", "captions_only")
+
+    def narrow_channels(self, requested: str) -> str:
+        """`requested` within VIDTHEQUE_INDEX_CHANNELS, spelled as `channels` is.
+
+        Empty when none of it is allowed here."""
+        kept = channel_set(requested) & channel_set(self.index_channels)
+        if kept == set(INDEX_CHANNELS):
+            return "all"
+        return ",".join(c for c in INDEX_CHANNELS if c in kept)
+
+    def channels_note(self, requested: str) -> str | None:
+        """The `note:` for a request this instance narrows, None when it does not."""
+        dropped = [
+            c
+            for c in INDEX_CHANNELS
+            if c in channel_set(requested) - channel_set(self.index_channels)
+        ]
+        if not dropped:
+            return None
+        return (
+            f"note: this server indexes {self.index_channels} only "
+            f"(VIDTHEQUE_INDEX_CHANNELS), so {', '.join(dropped)} will not be indexed."
+        )
+
+
+def _parts(raw: str) -> list[str]:
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def channel_set(raw: str) -> set[str]:
+    """`all`, or a comma list of channels, as the set of channels it means."""
+    parts = set(_parts(raw or "all")) or {"all"}
+    if "all" in parts:
+        return set(INDEX_CHANNELS)
+    return parts & set(INDEX_CHANNELS)

@@ -10,6 +10,7 @@ model, needs a GPU, or reaches the network.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -617,6 +618,46 @@ async def test_captions_only_never_asks_the_worker_to_transcribe(
     finally:
         await parts.db.close()
         parts.parts.auth.close()
+
+
+async def test_a_transcript_only_server_narrows_an_all_channels_job(
+    settings: Settings, clip: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """VIDTHEQUE_INDEX_CHANNELS binds the job, and the tool says so (`all` means all)."""
+    monkeypatch.setenv("VIDTHEQUE_INDEX_CHANNELS", "transcript")
+    parts = await harness(
+        settings,
+        clip,
+        pipeline_settings=PipelineSettings(
+            between_videos_s=0.0, sleep_subtitles_s=0.0, index_channels="transcript"
+        ),
+    )
+    try:
+        result = await indexing.index_video(parts.deps, url=VIDEO_URL)
+        assert "VIDTHEQUE_INDEX_CHANNELS), so ocr, frames will not be indexed" in body(result)
+        assert await parts.run() is True
+        stages = await parts.stages()
+        assert stages["keyframe"]["state"] == "skipped"
+        assert "video" not in parts.source.downloads
+        assert not await parts.rows("SELECT id FROM keyframes")
+        assert await parts.rows("SELECT id FROM cues")
+    finally:
+        await parts.db.close()
+        parts.parts.auth.close()
+
+
+async def test_worker_url_none_runs_without_a_worker(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WORKER_URL", "none")
+    assert Settings.from_env().worker_url == ""
+    parts = assemble(replace(settings, worker_url=""), run_pipeline=False)
+    try:
+        assert isinstance(parts.runner.pipeline, IndexingPipeline)
+        assert parts.runner.pipeline.worker is None
+        assert "WORKER_URL=none" in (parts.db.vectors.note() or "")
+    finally:
+        parts.auth.close()
 
 
 async def test_whisperx_only_refuses_to_index_a_caption_track(

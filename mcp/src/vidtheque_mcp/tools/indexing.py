@@ -21,6 +21,7 @@ from ..db import queries
 from ..errors import ToolError, bad_param, unknown_job
 from ..jobs import store as jobs_store
 from ..jobs.store import DuplicateInFlight
+from ..pipeline.settings import PipelineSettings
 from ..pipeline.sources import is_indexable_url, source_ref_of
 from ..text import (
     clamp,
@@ -189,6 +190,9 @@ async def index_video(
             "for a stage that is already current."
         )
     lines.append("Stages: download → transcribe → keyframes → ocr → embed")
+    channels_note = PipelineSettings.from_env().channels_note(channels)
+    if channels_note:
+        lines.append(channels_note)
     lines.append(f"Queue position {active} · estimated 1-3 minutes per hour of video")
     if tag_list:
         lines.append("Tags to apply: " + ", ".join(tag_list))
