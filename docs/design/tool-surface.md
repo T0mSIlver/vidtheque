@@ -2020,7 +2020,7 @@ at most every 15 seconds.
 | `max_items` | int | `25` | clamped 1..200 | Hard ceiling on expansion. Exceeded → indexes the first `max_items` and says so. |
 | `tags` | string | — | ≤ 10, §3.7 validation | Applied to every video in the job. |
 | `force_reindex` | bool | `false` | | Re-runs the pipeline over an existing video. |
-| `channels` | string | `all` | `all` \| subset of `transcript,ocr,frames` | Skip stages (e.g. transcript-only for a podcast). |
+| `channels` | string | `all` | `all` \| subset of `transcript,ocr,frames` | Skip stages (e.g. transcript-only for a podcast). Narrowed to `VIDTHEQUE_INDEX_CHANNELS`, with a `note:` naming what was dropped. |
 | `priority` | enum `normal\|high` | `normal` | | `high` jumps the queue; rate-limited per client. |
 
 **Return shape:**
@@ -2369,7 +2369,7 @@ table below, where a caller who cares is already looking.*
 | `tabs` | string | `videos` | subset of `videos,streams,shorts` | Each tab watched is one more listing request per check. |
 | `min_duration` / `max_duration` | string \| number | — | §3.2 offset axis (`480`, `8:00`, `1:30:00`) | Length rule. `min > max` is a typed error, not a follow that can never match. |
 | `title_include` / `title_exclude` | string | — | ≤ 50 terms, ≤ 80 chars each | Plain case-insensitive substrings, **not** regex. Exclude wins. |
-| `channels` | string | `all` | `all` \| subset of `transcript,ocr,frames` | Same values as `index-video` (§4.7), applied to everything this follow brings in. |
+| `channels` | string | `all` | `all` \| subset of `transcript,ocr,frames` | Same values as `index-video` (§4.7), applied to everything this follow brings in, and narrowed the same way. |
 | `tags` | string | — | ≤ 10, §3.7 validation | Applied to every video this follow brings in. |
 | `backfill` | int | `0` | clamped 0..25 | Uploads to reach back for at the moment of following. `0` = start from now. |
 | `max_per_check` | int | `5` | clamped 1..25 | Ceiling on one check's acceptances. Overflow is held, not dropped. |

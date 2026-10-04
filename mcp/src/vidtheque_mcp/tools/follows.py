@@ -241,6 +241,9 @@ async def _follow(
     ]
     if tab_note:
         lines.append(tab_note)
+    channels_note = settings.channels_note(rules.channels)
+    if channels_note:
+        lines.append(channels_note)
     lines.extend(await _state_lines(deps, row, rules, settings))
     nxt = (
         'next: job-status state="active" — the first check is queued as a '

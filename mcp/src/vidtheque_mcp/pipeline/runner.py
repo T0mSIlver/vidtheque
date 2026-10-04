@@ -238,7 +238,16 @@ class IndexingPipeline:
             # verdicts were on, claimed after they were turned off.
             raise ItemSkipped("verdicts are off on this server.", "E_VERDICTS_OFF")
         args = await self.db.read(lambda c: store.job_args(c, ctx.job_id))
-        run = ItemRun(ctx=ctx, args=args)
+        # Here rather than at each door: follows, the console and the tools
+        # all queue jobs, and VIDTHEQUE_INDEX_CHANNELS has to bind every one.
+        channels = self.settings.narrow_channels(str(args.get("channels") or "all"))
+        if not channels:
+            raise ItemSkipped(
+                f"this server indexes {self.settings.index_channels} only "
+                "(VIDTHEQUE_INDEX_CHANNELS), and the job asked for none of it.",
+                "E_FEATURE_DISABLED",
+            )
+        run = ItemRun(ctx=ctx, args={**args, "channels": channels})
         self.layout.ensure()
         try:
             await self._stages(run)
