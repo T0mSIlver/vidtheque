@@ -34,8 +34,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      # One stable key, so each build installs over the last and the instance's
-      # assetlinks.json fingerprint keeps matching. Absent (forks): the debug key.
+      # One stable key, so each build installs over the last and matches the
+      # fingerprint the release notes publish. Absent (forks): the debug key.
       - name: Signing key
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -54,17 +54,18 @@ jobs:
           FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
           FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
           FIREBASE_PROJECT_NUMBER: ${{ vars.FIREBASE_PROJECT_NUMBER }}
-        run: ./gradlew --console=plain assembleRelease verifyRoborazziDebug
+        run: ./gradlew --console=plain assembleRelease verifyRoborazziDebug lintDebug
 
       - name: Screenshot diffs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: screenshot-diffs
+          name: screenshot-diffs-and-lint
           if-no-files-found: ignore
           path: |
             android/app/screenshots/*_compare.png
             android/app/build/outputs/roborazzi/
+            android/app/build/reports/lint-results-debug.html
 
       - uses: actions/upload-artifact@v7
         with:

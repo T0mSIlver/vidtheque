@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -154,6 +155,8 @@ private fun Head(week: FittedWeek, budgetFailed: Boolean, onWeek: (String?) -> U
 private fun Days(week: FittedWeek) {
     val daily = week.budgetMin * 60.0 / 7
     val most = maxOf(daily, week.days.maxOfOrNull { it.asksS } ?: 0.0, 1.0)
+    // The configuration's locale, so the day letters follow a language change.
+    val locale = LocalConfiguration.current.locales[0]
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         week.days.forEach { d ->
             Column(
@@ -170,7 +173,7 @@ private fun Days(week: FittedWeek) {
                         Spacer(Modifier.weight((daily / most).toFloat().coerceAtLeast(0.001f)))
                     }
                 }
-                Text(LocalDate.parse(d.day).dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(LocalDate.parse(d.day).dayOfWeek.getDisplayName(TextStyle.NARROW, locale), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (d.asksS > 0) "${Math.round(d.asksS / 60)}" else " ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
