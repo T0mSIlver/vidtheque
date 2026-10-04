@@ -82,6 +82,7 @@ fun WeekScreen(
     card: Lift = { _, _ -> Modifier },
     list: LazyListState = rememberLazyListState(),
     actions: @Composable () -> Unit = {},
+    outside: @Composable () -> Unit = {},
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val week = ui.week
@@ -115,6 +116,7 @@ fun WeekScreen(
                 itemsIndexed(week.items, key = { _, it -> "week-${it.videoId}" }) { index, item ->
                     if (index == 0) Hero(item, still, card) { onOpen(item) } else Row(item, still, card) { onOpen(item) }
                 }
+                item(key = "outside") { outside() }
                 item(key = "end") { End(week, current, onShowAll) }
             }
         }

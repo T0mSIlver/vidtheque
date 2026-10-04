@@ -72,9 +72,15 @@ class WeekViewModelTest {
         model.go("2026-09-21")
         settle { !model.ui.value.refreshing }
         model.budget(45)
-        settle { sent.size == 4 && !model.ui.value.refreshing }
+        settle { sent.size == 7 && !model.ui.value.refreshing }
+        // Each week read is followed by its outside picks, asked by the Monday the week answered.
         assertEquals(
-            listOf("GET week? ", "GET week?week=2026-09-21 ", """POST budget? {"week_budget_min":315}""", "GET week?week=2026-09-21 "),
+            listOf(
+                "GET week? ", "GET outside?week=2026-09-28 ",
+                "GET week?week=2026-09-21 ", "GET outside?week=2026-09-28 ",
+                """POST budget? {"week_budget_min":315}""",
+                "GET week?week=2026-09-21 ", "GET outside?week=2026-09-28 ",
+            ),
             sent.toList(),
         )
     }

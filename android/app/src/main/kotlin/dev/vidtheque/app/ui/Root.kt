@@ -44,7 +44,13 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import dev.vidtheque.app.data.OutsidePick
 import dev.vidtheque.app.ui.brief.BriefScreen
+import dev.vidtheque.app.ui.outside.OutsideBand
+import dev.vidtheque.app.ui.outside.OutsideScreen
+import dev.vidtheque.app.ui.outside.OutsideViewModel
 import dev.vidtheque.app.ui.feed.FeedScreen
 import dev.vidtheque.app.data.FeedItem
 import dev.vidtheque.app.ui.feed.FeedViewModel
@@ -87,6 +93,10 @@ data object SearchKey : NavKey
 
 @Serializable
 data object BriefKey : NavKey
+
+/** A pick from outside the follows, carried whole: it is not a corpus video, and the band already read it. */
+@Serializable
+data class OutsideKey(val pick: OutsidePick) : NavKey
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
@@ -205,6 +215,16 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                             onShowAll = { stack.add(AllKey) },
                             card = sharedCard,
                             list = weekList,
+                            outside = {
+                                weekUi.outside?.takeIf { !it.empty }?.let { band ->
+                                    val outsideModel: OutsideViewModel = hiltViewModel()
+                                    val speakers by outsideModel.speakers.collectAsStateWithLifecycle()
+                                    val context = LocalContext.current
+                                    OutsideBand(band, speakers, { stack.add(OutsideKey(it)) }, outsideModel::follow, outsideModel::dismiss) {
+                                        context.openLink(Uri.parse(it))
+                                    }
+                                }
+                            },
                             actions = {
                                 IconButton(onClick = { stack.add(SearchKey) }) { Icon(Icons.Rounded.Search, contentDescription = "Search the corpus") }
                                 IconButton(onClick = { stack.add(BriefKey) }) { Icon(Icons.Rounded.CalendarMonth, contentDescription = "Weekly brief") }
@@ -234,7 +254,14 @@ fun SignedIn(opening: MutableStateFlow<String?>, openingBrief: MutableStateFlow<
                             card = sharedCard,
                         )
                     }
-                    entry<BriefKey> { BriefScreen(onBack = { stack.removeLastOrNull() }, onOpen = { id, title, channel -> stack.add(VideoKey(id, title, channel)) }) }
+                    entry<BriefKey> {
+                        BriefScreen(
+                            onBack = { stack.removeLastOrNull() },
+                            onOpen = { id, title, channel -> stack.add(VideoKey(id, title, channel)) },
+                            onOutside = { stack.add(OutsideKey(it)) },
+                        )
+                    }
+                    entry<OutsideKey> { key -> OutsideScreen(key.pick, onBack = { stack.removeLastOrNull() }) }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
                     entry<VideoKey>(metadata = containerOnly) { key ->
                         // The list the video was opened from: the pager swipes through it and

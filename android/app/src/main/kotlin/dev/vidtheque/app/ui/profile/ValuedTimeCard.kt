@@ -83,5 +83,6 @@ fun percent(rate: Double?): String = rate?.let { "${(it * 100).roundToInt()}%" }
 
 fun detail(week: Week, target: Double): String {
     val pending = if (week.misses.pending > 0) " · ${week.misses.pending} shared, not judged yet" else ""
-    return "Kept ${week.hits.kept} of ${week.hits.offered} scored 2–3 · regretted ${week.regret.down} of ${week.regret.watched} watched, target under ${percent(target)}$pending"
+    val outside = week.outside?.takeIf { it.shown > 0 }?.let { " · kept ${it.kept} of ${it.shown} from outside" } ?: ""
+    return "Kept ${week.hits.kept} of ${week.hits.offered} scored 2–3 · regretted ${week.regret.down} of ${week.regret.watched} watched, target under ${percent(target)}$pending$outside"
 }

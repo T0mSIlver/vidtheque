@@ -14,8 +14,19 @@ data class Regret(val down: Int, val watched: Int, val rate: Double? = null)
 @Serializable
 data class Misses(val count: Int, val pending: Int = 0, val shared: Int = 0)
 
+/** Discovery's picks shown that week and how many were kept (§27.7). */
 @Serializable
-data class Week(val start: Long, val current: Boolean = false, val hits: Hits, val regret: Regret, val misses: Misses)
+data class OutsideHits(val shown: Int = 0, val kept: Int = 0, val rate: Double? = null)
+
+@Serializable
+data class Week(
+    val start: Long,
+    val current: Boolean = false,
+    val hits: Hits,
+    val regret: Regret,
+    val misses: Misses,
+    val outside: OutsideHits? = null,
+)
 
 @Serializable
 data class ValuedTime(@SerialName("regret_target") val regretTarget: Double = 0.1, val weeks: List<Week> = emptyList())
