@@ -5,25 +5,17 @@ import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { pick } from "@/lib/dashboard/query";
 import { isRateLimited, useResource } from "@/lib/dashboard/resource";
 import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
-import { at, count, DASH } from "@/lib/format";
+import { at, count } from "@/lib/format";
 import { notice, Notice, ReadFailure } from "@/components/dashboard/kit/notice";
-import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
-import {
-  Body,
-  CountLink,
-  DashLink,
-  Figure,
-  PageHead,
-  Sep,
-  ui,
-} from "@/components/dashboard/kit/ui";
+import { Notes, Pager, table } from "@/components/dashboard/kit/table";
+import { Body, DashLink, Page, PageHead, Sep, ui, Wide } from "@/components/dashboard/kit/ui";
 import { refusalOf, useWriteSide } from "@/components/dashboard/kit/write";
 import { usePatchedRows } from "@/components/dashboard/polling";
 import { useSession } from "@/components/dashboard/session";
 import { CancelControl } from "./CancelControl";
 import { DEFAULTS, FILTERS, Filters } from "./Filters";
 import styles from "./jobs.module.css";
-import { countsOf, jobHeadline, JobStates, livePoll, Progress, WallClock } from "./parts";
+import { countsOf, jobHeadline, JobStates, KINDS, livePoll, Progress, WallClock } from "./parts";
 
 // The jobs table and its tick (dashboard.md §5.4, §16.3). The filters are the
 // URL; every bound and predicate is `list_jobs`'s, and the page shows what the
@@ -31,14 +23,14 @@ import { countsOf, jobHeadline, JobStates, livePoll, Progress, WallClock } from 
 
 const PAGE_KEYS = [...FILTERS, "offset"];
 
-// The five `jobs.state` words and the state filter each opens: `queued` and
-// `running` both open `active`; `cancelled` has no filter (§4.5).
-const JOB_STATES = [
-  { state: "queued", filter: "active" },
-  { state: "running", filter: "active" },
-  { state: "done", filter: "done" },
-  { state: "failed", filter: "failed" },
-  { state: "cancelled", filter: null },
+// The state filter as tabs, each with its count under the listing's kind:
+// `queued` and `running` are both `active`; `cancelled` has no filter (§4.5),
+// so it is counted in `all` only.
+const TABS = [
+  { filter: "active", label: "Active", count: (n: Jobs["by_state"]) => n.queued + n.running },
+  { filter: "failed", label: "Failed", count: (n: Jobs["by_state"]) => n.failed },
+  { filter: "done", label: "Done", count: (n: Jobs["by_state"]) => n.done },
+  { filter: "all", label: "All", count: null },
 ] as const;
 
 export function JobsView() {
@@ -51,11 +43,11 @@ export function JobsView() {
   const moving = Boolean(data?.live) && (jobs.error === undefined || isRateLimited(jobs.error));
 
   return (
-    <>
+    <Page>
       <PageHead title="Jobs" />
 
+      <Tabs params={params} data={data} />
       <Filters params={params} data={data} />
-      {data ? <ByState data={data} /> : null}
 
       {!data && jobs.error !== undefined ? (
         <ReadFailure error={jobs.error} onRetry={jobs.reload} />
@@ -73,7 +65,7 @@ export function JobsView() {
           ) : null}
         </Body>
       )}
-    </>
+    </Page>
   );
 }
 
@@ -87,7 +79,9 @@ function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polli
   // A job queued since cannot be patched in, so the page says so — on an
   // empty listing too, which is the one most likely to grow a job.
   const arrival = arrived ? (
-    <span className={styles.staleNote}>a job was queued since this page loaded, so reload</span>
+    <span className={styles.staleNote}>
+      A job was queued since this page loaded; reload to see it.
+    </span>
   ) : null;
 
   if (!rows.length) {
@@ -104,56 +98,56 @@ function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polli
     );
   }
 
+  // The cancel column is there only while a row can be cancelled.
+  const cancellable = rendered && rows.some((job) => job.live);
+  const notes =
+    arrival ??
+    (stopped ? (
+      <span className={styles.staleNote}>The live view stopped: {refusalOf(stopped).message}</span>
+    ) : null);
+
   return (
     <>
       <Notes notes={data.notes} />
-      <TableCount shown={rows.length} hasMore={data.pagination.has_more}>
-        {arrival}
-        {stopped ? (
-          <span className={styles.staleNote}>
-            the live view stopped: {refusalOf(stopped).message}
-          </span>
-        ) : !data.live ? (
-          <span className={styles.staleNote}>nothing is running, so this is a snapshot</span>
-        ) : null}
-      </TableCount>
+      {notes ? (
+        <p className={table.tablecount} role="status">
+          {notes}
+        </p>
+      ) : null}
 
-      <div className={table.tablewrap}>
-        <table className={`${table.grid} ${styles.jobs}`}>
-          <caption className={ui.srOnly}>
-            Jobs in the selected triage order, with what each one is waiting on
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">job</th>
-              <th scope="col">state</th>
-              <th scope="col">progress</th>
-              <th scope="col">items</th>
-              <th scope="col">created</th>
-              <th scope="col">finished</th>
-              <th scope="col" className={table.num}>
-                wall clock
-              </th>
-              {rendered ? (
-                <th scope="col" className={styles.colActions}>
-                  action
+      <Wide>
+        <div className={table.tablewrap}>
+          <table className={`${table.grid} ${styles.jobs}`}>
+            <caption className={ui.srOnly}>
+              Jobs in the selected order, with what each one is waiting on
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">job</th>
+                <th scope="col">state</th>
+                <th scope="col">items</th>
+                <th scope="col" className={table.num}>
+                  wall clock
                 </th>
-              ) : null}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((job) => (
-              <Row
-                key={job.job_id}
-                job={job}
-                tickMs={data.poll_ms}
-                actions={rendered}
-                polling={polling}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+                <th scope="col">finished</th>
+                {cancellable ? <th scope="col" className={styles.colActions} /> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((job) => (
+                <Row
+                  key={job.job_id}
+                  job={job}
+                  tickMs={data.poll_ms}
+                  actions={cancellable}
+                  polling={polling}
+                  showPriority={data.filters.order === "priority"}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Wide>
 
       <Pager
         limit={data.pagination.limit}
@@ -178,17 +172,19 @@ function Row({
   tickMs,
   actions,
   polling,
+  showPriority,
 }: {
   job: JobCard;
   tickMs: number;
   actions: boolean;
   polling: boolean;
+  showPriority: boolean;
 }) {
   const headline = jobHeadline(job);
   return (
     <tr>
       {/* What the job contains, never its submitted URL (§2.4). */}
-      <th scope="row" className={styles.colJob} data-label="Job">
+      <th scope="row" className={styles.colJob}>
         <DashLink className={ui.rowTitle} href={`${ROOT}/jobs/${encodeURIComponent(job.job_id)}`}>
           {headline.muted ? (
             <span className={ui.muted} data-tone="muted">
@@ -201,13 +197,16 @@ function Row({
         {job.contents?.more ? (
           <span className={styles.rowMore}>+{job.contents.more} more</span>
         ) : null}
-        <span className={ui.rowMeta}>
-          <code>{job.job_id}</code>
-          <Sep /> {job.kind}
-          <Sep /> priority {job.priority}
+        <span className={styles.rowMeta}>
+          {KINDS[job.kind] ?? job.kind}
           {job.contents?.channel ? (
             <>
               <Sep /> {job.contents.channel}
+            </>
+          ) : null}
+          {showPriority ? (
+            <>
+              <Sep /> priority {job.priority}
             </>
           ) : null}
           {job.degraded ? (
@@ -215,57 +214,80 @@ function Row({
               <Sep /> <span className={styles.degraded}>{job.degraded} degraded</span>
             </>
           ) : null}
+          <Sep /> <code>{job.job_id}</code>
         </span>
       </th>
-      <td data-label="State">
+      <td className={styles.cellState} data-label="State">
         <span className={styles.colState}>
           <JobStates job={job} moving={polling} />
         </span>
       </td>
-      <td data-label="Progress">
-        <Progress job={job} tickMs={tickMs} />
+      <td className={styles.cellItems} data-label="Items">
+        {/* A bar only while it moves: a finished job's bar is always full. */}
+        {job.live ? (
+          <>
+            <Progress job={job} tickMs={tickMs} />
+            {job.n_items > 1 ? <span className={styles.liveCount}>{countsOf(job)}</span> : null}
+          </>
+        ) : (
+          countsOf(job)
+        )}
       </td>
-      <td data-label="Items">{countsOf(job)}</td>
-      <td data-label="Created">
-        <time className={ui.nowrap}>{at(job.created_at)}</time>
-      </td>
-      <td data-label="Finished">
-        <time className={ui.nowrap}>{job.finished_at ? at(job.finished_at) : DASH}</time>
-      </td>
-      <td className={table.num} data-label="Wall clock">
+      <td className={`${table.num} ${styles.cellClock}`} data-label="Wall clock">
         <WallClock seconds={job.wall_s} live={job.live && polling} />
+      </td>
+      <td className={styles.cellWhen} data-label="Finished">
+        {job.finished_at ? <time className={ui.nowrap}>{at(job.finished_at)}</time> : null}
       </td>
       {actions ? (
         <td className={styles.colActions} data-label="Action">
-          {job.live ? <CancelControl job={job} /> : <span className={ui.muted}>{DASH}</span>}
+          {job.live ? <CancelControl job={job} /> : null}
         </td>
       ) : null}
     </tr>
   );
 }
 
-/** Every job under this kind, by state: each count is the state filter's door. */
-function ByState({ data }: { data: Jobs }) {
-  const kind = data.filters.kind;
-  const href = (state: string) =>
-    `${ROOT}/jobs?${new URLSearchParams(kind === DEFAULTS.kind ? { state } : { state, kind })}`;
+/** The state filter as tabs, each with its count; the other filters keep
+ *  their values across a tab. */
+function Tabs({ params, data }: { params: URLSearchParams; data?: Jobs }) {
+  const filters = data?.filters;
+  const current = filters?.state ?? params.get("state") ?? DEFAULTS.state;
+  // What the listing ran with, the URL until it answers.
+  const kept: Record<string, string | null> = {
+    kind: filters?.kind ?? params.get("kind"),
+    error_code: filters ? filters.error_code : params.get("error_code"),
+    order: filters?.order ?? params.get("order"),
+    degraded: filters ? (filters.degraded ? "1" : null) : params.get("degraded"),
+    limit: params.get("limit"),
+  };
+  const href = (state: string) => {
+    const next = new URLSearchParams();
+    for (const key of FILTERS) {
+      const value = key === "state" ? state : kept[key];
+      if (value && value !== DEFAULTS[key]) next.set(key, value);
+    }
+    const query = next.toString();
+    return query ? `${ROOT}/jobs?${query}` : `${ROOT}/jobs`;
+  };
   return (
-    <section aria-labelledby="by-state">
-      <h2 className={ui.srOnly} id="by-state">
-        Jobs by state
-      </h2>
-      <dl className={`${ui.figures} ${ui.figuresTight} ${styles.byState}`}>
-        {JOB_STATES.map(({ state, filter }) => (
-          <Figure label={state} key={state}>
-            {filter ? (
-              <CountLink href={href(filter)} n={data.by_state[state]} />
-            ) : (
-              count(data.by_state[state])
-            )}
-          </Figure>
-        ))}
-      </dl>
-    </section>
+    <nav className={styles.tabs} aria-label="Job state">
+      {TABS.map((tab) => {
+        const n = data && tab.count ? tab.count(data.by_state) : null;
+        return (
+          <DashLink
+            key={tab.filter}
+            className={styles.tab}
+            href={href(tab.filter)}
+            aria-current={current === tab.filter ? "page" : undefined}
+            scroll={false}
+          >
+            {tab.label}
+            {n ? <span className={styles.tabCount}>{count(n)}</span> : null}
+          </DashLink>
+        );
+      })}
+    </nav>
   );
 }
 

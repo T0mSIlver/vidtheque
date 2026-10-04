@@ -35,6 +35,7 @@ export function tallyOf(job: JobCard): string {
 
 /** `1/2 done · 1 failed` */
 export function countsOf(job: JobCard): string {
+  if (!job.n_items) return "no items";
   const parts = [`${job.n_done}/${job.n_items} done`];
   if (job.n_failed) parts.push(`${job.n_failed} failed`);
   if (job.n_skipped) parts.push(`${job.n_skipped} skipped`);
@@ -117,11 +118,21 @@ export function JobStates({
   );
 }
 
+/** `jobs.kind` in words. */
+export const KINDS: Record<string, string> = {
+  index: "Index",
+  reindex: "Reindex",
+  delete: "Delete",
+  follow_check: "Follow check",
+  verdict: "Verdict",
+};
+
 /** The first item's title, or the payload's sentence for a job with nothing
- *  fetched yet — muted, because it is a count standing in for a name. */
+ *  fetched — muted, because it is a count standing in for a name. */
 export function jobHeadline(job: JobCard): { text: string; muted: boolean } {
   const title = job.contents?.title;
   if (title) return { text: title, muted: false };
   const note = job.contents?.note;
-  return { text: note ?? `${count(job.n_items)} item(s), none fetched yet`, muted: true };
+  const items = `${count(job.n_items)} ${job.n_items === 1 ? "item" : "items"}`;
+  return { text: note ?? (job.live ? `${items}, none fetched yet` : items), muted: true };
 }

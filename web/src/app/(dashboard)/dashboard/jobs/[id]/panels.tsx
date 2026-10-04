@@ -5,6 +5,7 @@ import { ROOT } from "@/lib/dashboard/client";
 import type { JobDetail, JobEvent, JobItem } from "@/lib/dashboard/schemas";
 import { at, DASH, duration, hms, iso } from "@/lib/format";
 import { notice } from "@/components/dashboard/kit/notice";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import { table } from "@/components/dashboard/kit/table";
 import { DashLink, Panel, Sep, ui } from "@/components/dashboard/kit/ui";
 import { useArrivals } from "@/components/dashboard/polling";
@@ -190,9 +191,8 @@ export function Stages({ data }: { data: JobDetail }) {
       {focus.video_id ? (
         <p className={notice.panelNote}>
           <DashLink href={`${ROOT}/videos/${encodeURIComponent(focus.video_id)}`}>
-            This item&rsquo;s video page
+            Open this item&rsquo;s video
           </DashLink>
-          . Every other item&rsquo;s stages are on its own.
         </p>
       ) : null}
     </Panel>
@@ -222,10 +222,7 @@ export function Degraded({ data }: { data: JobDetail }) {
           </li>
         ))}
       </ul>
-      <p className={notice.panelNote}>
-        Only <code>fetch</code> and <code>stt</code> are essential, so these count as{" "}
-        <code>done</code>. Re-index to get the missing channel back.
-      </p>
+      <p className={notice.panelNote}>Re-index the video to fill what is missing.</p>
     </Panel>
   );
 }
@@ -246,25 +243,21 @@ export function Events({ events, redacted }: { events: JobEvent[]; redacted: boo
             ))}
           </ol>
           {older.length ? (
-            <details className={styles.digest}>
-              <summary>
-                <span className={styles.digestCount}>{older.length}</span> older event(s)
-              </summary>
+            <Fold label={`${older.length} older ${older.length === 1 ? "event" : "events"}`}>
               <ol className={styles.events}>
                 {older.map((event) => (
                   <Event event={event} key={event.id} isNew={arrived.has(event.id)} />
                 ))}
               </ol>
-            </details>
+            </Fold>
           ) : null}
         </>
       ) : (
         <p className={ui.emptyNote}>Nothing has been logged for this job.</p>
       )}
-      <p className={notice.panelNote}>
-        Newest first, {events.length} shown.
-        {redacted ? " Message text is not published on this instance." : null}
-      </p>
+      {redacted ? (
+        <p className={notice.panelNote}>Message text is not published on this instance.</p>
+      ) : null}
     </Panel>
   );
 }

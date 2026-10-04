@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deferred,
-  fullText,
   mountDashboard,
   type Answer,
   type MountOptions,
@@ -47,6 +46,9 @@ function rowOf(jobId: string) {
   return screen.getByText(jobId, { selector: "code" }).closest("tr") as HTMLElement;
 }
 
+/** The listing has landed: its first row's id is on screen. */
+const ready = (jobId = "job_running001") => screen.findByText(jobId, { selector: "code" });
+
 function cellOf(row: HTMLElement, label: string) {
   return row.querySelector(`[data-label="${label}"]`) as HTMLElement;
 }
@@ -59,7 +61,7 @@ describe("the jobs table", () => {
   it("shows every job, its progress and what it cost so far", async () => {
     await mount({ body: OWNER_JOBS });
 
-    expect(await screen.findByText(fullText(/^3 shown\./))).toBeInTheDocument();
+    await ready();
     expect(screen.getByRole("heading", { name: "Jobs" })).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(4);
 
@@ -80,7 +82,7 @@ describe("the jobs table", () => {
 
   it("prints the countdown a deferred job is held by, and the code that set it", async () => {
     await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
     const row = rowOf("job_deferred01");
 
     expect(within(row).getByText(/held/)).toHaveTextContent("held 4m 00s more");
@@ -90,9 +92,9 @@ describe("the jobs table", () => {
 
   it("names an unfetched job with the sentence the payload wrote for it, muted", async () => {
     await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
-    const headline = within(rowOf("job_deferred01")).getByText("1 item(s), none fetched yet");
+    const headline = within(rowOf("job_deferred01")).getByText("1 item, none fetched yet");
     expect(headline).toHaveAttribute("data-tone", "muted");
     const titled = within(rowOf("job_running001")).getByText("Let's build GPT: from scratch");
     expect(titled).not.toHaveAttribute("data-tone");
@@ -101,7 +103,7 @@ describe("the jobs table", () => {
   it("ticks a live job's wall clock and leaves a finished one alone", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
     expect(within(rowOf("job_running001")).getByText("20m 00s")).toBeInTheDocument();
     expect(within(rowOf("job_finished01")).getByText("26m 40s")).toBeInTheDocument();
@@ -121,7 +123,7 @@ describe("the jobs table", () => {
       ),
     };
     const { calls } = await mount([{ body: OWNER_JOBS }, { body: moved }]);
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
     expect(within(rowOf("job_running001")).getByText("10%")).toBeInTheDocument();
     expect(calls("/dashboard/api/jobs")).toHaveLength(1);
@@ -144,7 +146,7 @@ describe("the jobs table", () => {
       ],
     };
     await mount([{ body: OWNER_JOBS }, { body: arrived }]);
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
     expect(screen.getAllByRole("row")).toHaveLength(4);
 
     await act(() => vi.advanceTimersByTimeAsync(2000));
@@ -152,7 +154,7 @@ describe("the jobs table", () => {
     // The three rows are patched; the fourth is not invented.
     expect(within(rowOf("job_running001")).getByText("55%")).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(4);
-    expect(screen.getByText(/a job was queued since this page loaded/)).toBeInTheDocument();
+    expect(screen.getByText(/a job was queued since this page loaded/i)).toBeInTheDocument();
   });
 
   it("says a job arrived on a listing that loaded with none", async () => {
@@ -166,7 +168,7 @@ describe("the jobs table", () => {
 
     await act(() => vi.advanceTimersByTimeAsync(2000));
 
-    expect(screen.getByText(/a job was queued since this page loaded/)).toBeInTheDocument();
+    expect(screen.getByText(/a job was queued since this page loaded/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "No jobs to show." })).toBeInTheDocument();
   });
 
@@ -177,7 +179,7 @@ describe("the jobs table", () => {
     const { navigate } = await mount((request) =>
       request.url.includes("state=failed") ? failed.promise : { body: OWNER_JOBS },
     );
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
     await navigate("/dashboard/jobs?state=failed");
     expect(screen.queryByText("job_running001", { selector: "code" })).not.toBeInTheDocument();
@@ -193,7 +195,7 @@ describe("the jobs table", () => {
         },
       }),
     );
-    expect(await screen.findByText(fullText(/^1 shown\./))).toBeInTheDocument();
+    await ready("job_finished01");
     expect(rowOf("job_finished01")).toBeInTheDocument();
     expect(screen.queryByText("job_deferred01", { selector: "code" })).not.toBeInTheDocument();
     expect(screen.queryByText(/queued since this page loaded/)).not.toBeInTheDocument();
@@ -205,11 +207,11 @@ describe("the jobs table", () => {
       { body: OWNER_JOBS },
       { status: 500, body: { error: "E_INTERNAL", message: "the instance fell over." } },
     ]);
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
     expect(within(rowOf("job_running001")).getByText("20m 00s")).toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(2000));
-    expect(screen.getByText(/the live view stopped/)).toBeInTheDocument();
+    expect(screen.getByText(/the live view stopped/i)).toBeInTheDocument();
     const wall = cellOf(rowOf("job_running001"), "Wall clock").textContent;
     const held = within(rowOf("job_deferred01")).getByText(/held/).textContent;
 
@@ -219,15 +221,15 @@ describe("the jobs table", () => {
     expect(within(rowOf("job_deferred01")).getByText(/held/)).toHaveTextContent(held ?? "");
   });
 
-  it("stops reading once nothing is live, and says the page is a snapshot", async () => {
+  it("stops reading once nothing is live, without saying so", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { calls } = await mount({ body: SETTLED_JOBS });
-    await screen.findByText(/nothing is running/);
+    await screen.findAllByText(/done|failed/);
 
     await act(() => vi.advanceTimersByTimeAsync(10_000));
 
     expect(calls("/dashboard/api/jobs")).toHaveLength(1);
-    expect(screen.getByText(/nothing is running, so this is a snapshot/)).toBeInTheDocument();
+    expect(screen.queryByText(/snapshot/)).not.toBeInTheDocument();
   });
 
   it("backs off a 429 by its Retry-After and comes back", async () => {
@@ -241,7 +243,7 @@ describe("the jobs table", () => {
       },
       { body: OWNER_JOBS },
     ]);
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
     await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(calls("/dashboard/api/jobs")).toHaveLength(2);
@@ -344,38 +346,32 @@ describe("the jobs table", () => {
   // The filter band right under it says the same, so the head says nothing.
   it("keeps the head to its title", async () => {
     await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
     const head = screen.getByRole("heading", { name: "Jobs" }).closest("div") as HTMLElement;
     expect(head).toHaveTextContent(/^Jobs$/);
   });
 
-  // The counts moved here from the ledger (§24.2): beside the filter they
-  // open. Queued and running both open `active`; cancelled has no filter.
-  it("counts the jobs by state, without inventing a filter for cancelled", async () => {
+  // The counts are on the state tabs they open (§24.2, §28.4). Queued and
+  // running are both `active`; cancelled has no filter, so no tab.
+  it("puts the counts on the state tabs, without a tab for cancelled", async () => {
     await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
-    const counts = screen.getByRole("region", { name: "Jobs by state" });
-    const figure = (label: string) =>
-      [...counts.querySelectorAll("div")].find(
-        (div) => div.querySelector("dt")?.textContent === label,
-      );
-    expect(figure("queued")?.querySelector("a")).toHaveAttribute(
-      "href",
-      "/dashboard/jobs?state=active",
-    );
-    expect(figure("done")).toHaveTextContent("1");
-    expect(figure("cancelled")?.querySelector("a")).toBeNull();
-    expect(figure("cancelled")).toHaveTextContent("0");
+    const tabs = screen.getByRole("navigation", { name: "Job state" });
+    const tab = (name: RegExp) => within(tabs).getByRole("link", { name });
+    expect(tab(/^Active/)).toHaveAttribute("href", "/dashboard/jobs?state=active");
+    expect(tab(/^Done/)).toHaveTextContent("Done1");
+    expect(tab(/^All/)).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).queryByText(/cancelled/i)).not.toBeInTheDocument();
   });
 
-  it("keeps a narrowed kind on the counts' links", async () => {
+  it("keeps a narrowed kind on the tabs' links", async () => {
     await mount({ body: { ...OWNER_JOBS, filters: { ...OWNER_JOBS.filters, kind: "all" } } });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
-    const counts = screen.getByRole("region", { name: "Jobs by state" });
-    expect(counts.querySelector("a")).toHaveAttribute(
+    const tabs = screen.getByRole("navigation", { name: "Job state" });
+    expect(within(tabs).getByRole("link", { name: /^Active/ })).toHaveAttribute(
       "href",
       "/dashboard/jobs?state=active&kind=all",
     );
@@ -394,7 +390,7 @@ describe("the jobs table", () => {
     );
     await screen.findByText(/state='nonsense'/);
 
-    expect(screen.getByLabelText("State")).toHaveValue("all");
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByLabelText("Error code")).toHaveValue("E_SOURCE");
     expect(screen.getByLabelText("Rows")).toHaveValue(50);
   });
@@ -404,7 +400,7 @@ describe("the jobs table", () => {
       { body: { ...OWNER_JOBS, pagination: { limit: 100, offset: 0, has_more: true } } },
       { search: "state=failed&limit=100000&degraded=1&nonsense=1" },
     );
-    await screen.findByText(fullText(/^3 shown/));
+    await ready();
 
     expect(calls("/dashboard/api/jobs")[0].url).toBe(
       "/dashboard/api/jobs?state=failed&degraded=1&limit=100000",
@@ -414,14 +410,14 @@ describe("the jobs table", () => {
 
   it("submits the band as a navigation, dropping what says nothing, and keeps focus", async () => {
     const { push } = await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
-    await userEvent.selectOptions(screen.getByLabelText("State"), "failed");
+    await userEvent.click(screen.getByRole("button", { name: "Show more filters" }));
     await userEvent.type(screen.getByLabelText("Error code"), "E_SOURCE");
     const apply = screen.getByRole("button", { name: "Apply" });
     await userEvent.click(apply);
 
-    expect(push).toHaveBeenCalledWith("/dashboard/jobs?state=failed&error_code=E_SOURCE&limit=25", {
+    expect(push).toHaveBeenCalledWith("/dashboard/jobs?error_code=E_SOURCE&limit=25", {
       scroll: false,
     });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Apply" }));
@@ -432,7 +428,7 @@ describe("the jobs table", () => {
       { body: { ...OWNER_JOBS, pagination: { limit: 25, offset: 25, has_more: true } } },
       { search: "offset=25" },
     );
-    await screen.findByText(fullText(/^3 shown/));
+    await ready();
 
     expect(screen.getByRole("link", { name: /Newer/ })).toHaveAttribute(
       "href",
@@ -447,7 +443,7 @@ describe("the jobs table", () => {
   describe("the write column", () => {
     it("cancels a live job and shows the state it is now in", async () => {
       const { posts } = await mount({ body: OWNER_JOBS });
-      await screen.findByText(fullText(/^3 shown\./));
+      await ready();
       const row = rowOf("job_deferred01");
 
       await userEvent.click(within(row).getByRole("button", { name: "Cancel" }));
@@ -462,7 +458,7 @@ describe("the jobs table", () => {
 
     it("prints the refusal in the API's own words", async () => {
       await mount({ body: OWNER_JOBS }, { cancel: { status: 400, body: REFUSAL } });
-      await screen.findByText(fullText(/^3 shown\./));
+      await ready();
       const row = rowOf("job_running001");
 
       await userEvent.click(within(row).getByRole("button", { name: "Cancel" }));
@@ -476,7 +472,7 @@ describe("the jobs table", () => {
 
     it("is not drawn at all where the deployment registers no write side", async () => {
       await mount({ body: DEMO_JOBS }, { session: DEMO_SESSION });
-      await screen.findByText(fullText(/^3 shown\./));
+      await ready();
 
       expect(screen.queryByRole("columnheader", { name: "action" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
@@ -485,14 +481,14 @@ describe("the jobs table", () => {
 
     it("is absent for a signed-out reader of an instance that has one", async () => {
       await mount({ body: OWNER_JOBS }, { session: { ...OWNER_SESSION, write_side: false } });
-      await screen.findByText(fullText(/^3 shown\./));
+      await ready();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     });
   });
 
   it("renders the projection without the operator's own box in it", async () => {
     await mount({ body: DEMO_JOBS }, { session: DEMO_SESSION });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
 
     expect(screen.queryByText(/cookiefile/)).not.toBeInTheDocument();
     expect(within(rowOf("job_deferred01")).getByText("E_RATE_LIMIT")).toBeInTheDocument();
@@ -504,7 +500,7 @@ describe("the jobs table", () => {
 
   it("does not footnote a redaction an owner's instance is not making", async () => {
     await mount({ body: OWNER_JOBS });
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
     expect(screen.queryByText(/are not published on this instance/)).not.toBeInTheDocument();
   });
 
@@ -513,7 +509,7 @@ describe("the jobs table", () => {
       { body: { ...DEMO_JOBS, redacted: undefined } },
       { session: { ...DEMO_SESSION, readonly: true } },
     );
-    await screen.findByText(fullText(/^3 shown\./));
+    await ready();
     expect(
       screen.getByText("Source URLs and error text are not published on this instance."),
     ).toBeInTheDocument();

@@ -9,7 +9,6 @@ import {
   DEFERRED_JOB_DETAIL,
   DEFERRED_JOB_DETAIL_TICKED,
   DEMO_JOB_DETAIL,
-  EMPTY_JOB_DETAIL,
   FOCUSED_JOB_DETAIL,
   OWNER_JOB_DETAIL,
   PART_REFUSED_RETRY,
@@ -54,23 +53,18 @@ describe("one job's page", () => {
     vi.useRealTimers();
   });
 
-  it("shows the three clocks, and says what each of them measures", async () => {
+  it("shows the three clocks on one line, and the item states in the head", async () => {
     await mount({ body: OWNER_JOB_DETAIL });
 
     // The head is there while the read is out; the panels arrive with it.
     expect(screen.getByRole("heading", { name: /Job job_finished01/ })).toBeInTheDocument();
-    await screen.findByRole("region", { name: "What it cost" });
     // `started_at` is the *first* claim, so created -> finished is the honest
-    // wall clock and first claim -> finished is time on the runner. A deferred
-    // job spends the difference waiting, which is why both are printed.
-    const cost = screen.getByRole("region", { name: "What it cost" });
-    expect(within(cost).getByText("26m 40s")).toBeInTheDocument();
-    expect(within(cost).getByText("25m 00s")).toBeInTheDocument();
-    expect(within(cost).getByText("1m 40s")).toBeInTheDocument();
-    expect(within(cost).getByText("created → finished")).toBeInTheDocument();
-    // The states the items are actually in, from the payload's own grouped
-    // count — not the card's five buckets, which name the empty ones too.
-    expect(within(cost).getByText("1 done · 1 failed")).toBeInTheDocument();
+    // wall clock and first claim -> finished is time on the runner.
+    const time = await screen.findByRole("region", { name: "Time" });
+    expect(within(time).getByText("26m 40s")).toBeInTheDocument();
+    expect(within(time).getByText("25m 00s")).toBeInTheDocument();
+    expect(within(time).getByText("1m 40s")).toBeInTheDocument();
+    expect(screen.getByText(/1\/2 done · 1 failed, priority/)).toBeInTheDocument();
   });
 
   // A live job's wall clock is still being taken, and the figure that reports
@@ -79,7 +73,7 @@ describe("one job's page", () => {
   it("ticks the wall-clock figure on a live job", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await mount({ body: RUNNING_JOB_DETAIL }, { jobId: "job_running001" });
-    const cost = await screen.findByRole("region", { name: "What it cost" });
+    const cost = await screen.findByRole("region", { name: "Time" });
     expect(within(cost).getByText("20m 00s")).toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(3000));
@@ -89,18 +83,10 @@ describe("one job's page", () => {
   it("leaves a finished job's wall-clock figure where the measurement ended", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await mount({ body: OWNER_JOB_DETAIL });
-    const cost = await screen.findByRole("region", { name: "What it cost" });
+    const cost = await screen.findByRole("region", { name: "Time" });
 
     await act(() => vi.advanceTimersByTimeAsync(5000));
     expect(within(cost).getByText("26m 40s")).toBeInTheDocument();
-  });
-
-  // A job with no items has no states to list, and five zeroes would be a
-  // tally of nothing dressed as a reading.
-  it("says `none` when there are no item states to count", async () => {
-    await mount({ body: EMPTY_JOB_DETAIL });
-    const cost = await screen.findByRole("region", { name: "What it cost" });
-    expect(within(cost).getByText("none")).toBeInTheDocument();
   });
 
   it("draws each item as what it actually is", async () => {
@@ -142,8 +128,8 @@ describe("one job's page", () => {
   it("says a deferred job is waiting rather than stuck, and for how much longer", async () => {
     await mount({ body: DEFERRED_JOB_DETAIL }, { jobId: "job_deferred01" });
 
-    const notice = await screen.findByRole("region", { name: "Waiting, not stuck" });
-    expect(within(notice).getByText("4m 00s")).toBeInTheDocument();
+    const notice = await screen.findByRole("region", { name: /^Waiting to retry/ });
+    expect(notice).toHaveTextContent("Waiting to retry, 4m 00s left");
     expect(within(notice).getByText("E_RATE_LIMIT")).toBeInTheDocument();
     // And on the title's own baseline, where the countdown belongs on a job
     // whose only interesting fact is the wait.
@@ -160,11 +146,11 @@ describe("one job's page", () => {
   it("counts the deferral down inside the notice as well as on the pill", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await mount({ body: DEFERRED_JOB_DETAIL }, { jobId: "job_deferred01" });
-    const notice = await screen.findByRole("region", { name: "Waiting, not stuck" });
-    expect(within(notice).getByText("4m 00s")).toBeInTheDocument();
+    const notice = await screen.findByRole("region", { name: /^Waiting to retry/ });
+    expect(notice).toHaveTextContent("4m 00s left");
 
     await act(() => vi.advanceTimersByTimeAsync(3000));
-    expect(within(notice).getByText("3m 57s")).toBeInTheDocument();
+    expect(notice).toHaveTextContent("3m 57s left");
     expect(held()).toHaveTextContent("held 3m 57s more");
   });
 
@@ -178,10 +164,10 @@ describe("one job's page", () => {
       job: { ...DEFERRED_JOB_DETAIL.job, defer_s: 2 },
     };
     await mount({ body: brief }, { jobId: "job_deferred01" });
-    expect(await screen.findByRole("region", { name: "Waiting, not stuck" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: /^Waiting to retry/ })).toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(3000));
-    expect(screen.queryByRole("region", { name: "Waiting, not stuck" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /^Waiting to retry/ })).not.toBeInTheDocument();
   });
 
   // §5.4 asks for the countdown "with `error_code` beside it": the code is the
@@ -220,7 +206,6 @@ describe("one job's page", () => {
 
     expect(within(log).getByText("warn")).toBeInTheDocument();
     expect(within(log).getByText(/retrying in 300s after E_RATE_LIMIT/)).toBeInTheDocument();
-    expect(within(log).getByText(/Newest first, 1 shown/)).toBeInTheDocument();
   });
 
   it("keeps the tick running while the job is live, and drops it when it is not", async () => {
@@ -245,29 +230,6 @@ describe("one job's page", () => {
     await screen.findByRole("region", { name: "Items" });
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(settled.calls("/dashboard/api/jobs/")).toHaveLength(1);
-    // …and it says nothing about a final record: this page never watched the
-    // job run, so nothing under the reader went stale.
-    expect(screen.queryByText(/final record/)).toBeNull();
-  });
-
-  // The note is owed to the reader whose page *did* go stale under them, and
-  // only on the reading where it happened — `job.html` kept the sentence hidden
-  // in the markup and the ticker revealed it on the live→terminal transition.
-  it("says the record is final only where the page watched the job stop", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const finished = {
-      ...RUNNING_JOB_DETAIL,
-      live: false,
-      job: { ...RUNNING_JOB_DETAIL.job, state: "done", progress: 100 },
-    };
-    await mount([{ body: RUNNING_JOB_DETAIL }, { body: finished }], {
-      jobId: "job_running001",
-    });
-    await screen.findByRole("region", { name: "Items" });
-    expect(screen.queryByText(/final record/)).toBeNull();
-
-    await act(() => vi.advanceTimersByTimeAsync(2000));
-    expect(screen.getByText(/this is the final record/)).toBeInTheDocument();
   });
 
   // The other 429: refused on the first read, with no war story to keep on the
@@ -307,7 +269,7 @@ describe("one job's page", () => {
     await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(reads()).toBe(2);
     // The war story is still on the page; only the liveness stopped.
-    expect(screen.getByText(/the live view stopped/)).toBeInTheDocument();
+    expect(screen.getByText(/the live view stopped/i)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Items" })).toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(3000));
@@ -646,6 +608,6 @@ describe("one job's page", () => {
       "href",
       "/dashboard/videos/eMlx5fFNoYc",
     );
-    expect(screen.getByText(/item error codes/)).toBeInTheDocument();
+    expect(screen.getByText(/Item errors/)).toBeInTheDocument();
   });
 });
