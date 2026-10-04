@@ -4,8 +4,8 @@
 tree at `b0fd6aa`. If implementation must diverge, this document changes in
 the same commit and says why. `DECISIONS.md` outranks it.
 
-Sources it must not contradict: `positioning.md` (LOCKED; unchanged by this
-document, see §1), `following.md` (where new videos come from),
+Sources it must not contradict: `positioning.md` (LOCKED; its 2026-10-04
+amendment makes this document's loop the lead, see §1), `following.md` (where new videos come from),
 `dashboard.md` (the console this document slims down), `tool-surface.md` (the
 tool it adds), `index-schema.md` (the tables it adds).
 
@@ -18,8 +18,11 @@ companion adds one more agent on top of it, ours: a triage agent that reads
 each new video from the channels you follow and answers one question for you,
 **is this worth your time, and which part?**
 
-Positioning holds as written. The agent still watched it; this time it also
-tells you whether you should. "Second brain" stays out of public copy.
+*Amended 2026-10-04 (Tom):* this loop is now the product's lead.
+`positioning.md` opens with "vidtheque watches the channels you follow and
+tells you which videos, and which minutes, will teach you something." The
+verdict is what that sentence promises; "your agent watched it" stays as the
+second pillar. "Second brain" stays out of public copy.
 
 The loop, and the only thing v1 builds:
 
