@@ -29,12 +29,13 @@ WEEK = build.week_of(SUNDAY)
 
 
 class Phones:
-    def __init__(self) -> None:
+    def __init__(self, *reached: int) -> None:
         self.sent: list[tuple[str, str]] = []
+        self.reached = list(reached)
 
     async def brief(self, week: str, line: str) -> int:
         self.sent.append((week, line))
-        return 1
+        return self.reached.pop(0) if self.reached else 1
 
 
 def seed_week(conn: sqlite3.Connection, now: int) -> dict[str, int]:
@@ -126,6 +127,16 @@ async def test_a_failed_model_call_costs_only_its_section(assembled: Assembled) 
     assert body["picks"] and len(phones.sent) == 1
 
 
+async def test_a_push_that_reached_no_phone_is_tried_again(assembled: Assembled) -> None:
+    await assembled.db.write(lambda c: seed_week(c, int(SUNDAY.timestamp())))
+    phones = Phones(0)
+    weekly = Weekly(assembled.db, None, None, phones, clock=Clock(SUNDAY))
+    await weekly.run_once()
+    await weekly.run_once()
+    await weekly.run_once()
+    assert len(phones.sent) == 2  # FCM down once, then delivered once
+
+
 async def _title(parts: Assembled, vid: int) -> str:
     return (await parts.db.read(lambda c: c.execute("SELECT title FROM videos WHERE id = ?", (vid,)).fetchone()))[0]
 
@@ -156,6 +167,12 @@ def client(tmp_path: Path):
              json.dumps({"text": "Evals", "weight": 0.9, "live": True})),
         )
         conn.execute(
+            "INSERT INTO profile_events (at, actor, op, entry_id, before, after, reason)"
+            " VALUES (?, 'nightly', 'reweight', ?, ?, ?, 'a quiet week')",
+            (week.since_at + 120, ids["wanted"], json.dumps({"text": "Evals", "weight": 0.9, "live": True}),
+             json.dumps({"text": "Evals", "weight": 0.7, "live": True})),
+        )
+        conn.execute(
             "INSERT INTO briefs (week, since_at, until_at, body) VALUES (?, ?, ?, ?)",
             (week.key, week.since_at, week.until_at,
              json.dumps({"picks": ["kCc8FmEb1nY"], "audit": ["eMlx5fFNoYc", "skip0"], "said": [], "said_note": None})),
@@ -178,14 +195,18 @@ def test_the_brief_reads_live_parts_and_refuses_what_it_should(client: TestClien
     assert brief["picks"][0]["moments"][0]["url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
     sunk = {a["video_id"]: a["sunk_by"] for a in brief["audit"]}
     assert sunk["eMlx5fFNoYc"]["text"] == "Launch hype" and sunk["skip0"] is None
-    [change] = brief["profile_changes"]
-    assert change["reason"] == "3 searches on evals" and change["reverted"] is False
+    newer, older = brief["profile_changes"]
+    assert older["reason"] == "3 searches on evals" and not newer["reverted"] and not older["reverted"]
     flagged = [c["title"] for c in brief["channels"] if c["suggest_pause"]]
     assert flagged == ["Andrej Karpathy"]  # the paused one is never flagged
 
-    # Revert goes through the profile's own route, and the brief shows it.
-    client.post(f"{API}/profile/revert", json={"event_id": change["event_id"]}, headers=JSON_BEARER)
-    assert client.get(f"{API}/brief", headers=BEARER).json()["profile_changes"][0]["reverted"] is True
+    # Revert goes through the profile's own route; only the undone change reads reverted.
+    client.post(f"{API}/profile/revert", json={"event_id": newer["event_id"]}, headers=JSON_BEARER)
+    changes = client.get(f"{API}/brief", headers=BEARER).json()["profile_changes"]
+    assert [c["reverted"] for c in changes] == [True, False]
+    client.post(f"{API}/profile/revert", json={"revision": older["event_id"] - 1}, headers=JSON_BEARER)
+    changes = client.get(f"{API}/brief", headers=BEARER).json()["profile_changes"]
+    assert [c["reverted"] for c in changes] == [True, True]
 
     for query, code in (("?week=2026-10-06", "E_BAD_PARAM"), ("?week=2020-01-06", "E_NO_BRIEF")):
         assert client.get(f"{API}/brief{query}", headers=BEARER).json()["error"] == code

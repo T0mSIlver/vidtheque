@@ -418,11 +418,15 @@ def channel_report(conn: sqlite3.Connection, now: int, owner_id: int = 1) -> lis
 def profile_changes(conn: sqlite3.Connection, since: int, until: int, owner_id: int = 1) -> list[dict[str, Any]]:
     """What the nightly update changed this week, with its reasons, newest first.
 
-    `reverted` is true once a later revert put the entry's changed field back.
+    `reverted` is true once a revert undid this event: by its id, or by rolling
+    back to a revision before it.
     """
     rows = conn.execute(
+        # The store's own revert reasons name what they undid (`profile/store.py`).
         "SELECT e.*, (SELECT 1 FROM profile_events r WHERE r.entry_id = e.entry_id AND r.op = 'revert'"
-        "  AND r.id > e.id LIMIT 1) AS reverted"
+        "  AND r.id > e.id AND (r.reason = 'revert of event ' || e.id"
+        "   OR (r.reason LIKE 'revert to revision %' AND CAST(substr(r.reason, 20) AS INTEGER) < e.id))"
+        "  LIMIT 1) AS reverted"
         " FROM profile_events e JOIN profile_entries p ON p.id = e.entry_id"
         " WHERE p.owner_id = ? AND e.actor = 'nightly' AND e.at >= ? AND e.at < ?"
         " ORDER BY e.id DESC LIMIT ?",

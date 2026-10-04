@@ -83,7 +83,8 @@ export function BriefView({ week }: { week: string | null }) {
 
       {b.ledger ? <Ledger ledger={b.ledger} /> : null}
 
-      <Checkin week={b.week} stored={b.checkin} />
+      {/* Keyed: another week starts from its own answer. */}
+      <Checkin key={b.week} week={b.week} stored={b.checkin} />
 
       <details className={styles.more}>
         <summary className={styles.moreSummary}>What speakers said · {b.said.length}</summary>
