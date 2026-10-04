@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Protocol, Sequence
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 from .settings import PipelineSettings
 
@@ -177,6 +177,18 @@ class PlaylistEntry:
     # listing already answered for most of them.
     duration_s: float | None = None
     published_at: int | None = None
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    """One flat YouTube search result: what the scout filters on before any probe."""
+
+    source_id: str
+    title: str
+    channel_id: str | None
+    channel_name: str | None
+    channel_url: str | None
+    duration_s: float | None
 
 
 @dataclass
@@ -792,6 +804,41 @@ class YtDlpSource:
                 )
             ]
         return playlist_entries(info, max_items)
+
+    def search(self, query: str, max_items: int, *, newest: bool = False) -> list[SearchHit]:
+        """One flat search request, no per-video calls (companion.md §6.2).
+
+        ``newest`` sorts by upload date through the results page's own filter
+        (``sp=CAI%3D``): the installed yt-dlp has no ``ytsearchdate`` prefix.
+        """
+        n = max(1, max_items)
+        target = (
+            f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp=CAI%3D"
+            if newest
+            else f"ytsearch{n}:{query}"
+        )
+        opts = self._base_opts() | {
+            "noplaylist": False,
+            "extract_flat": "in_playlist",
+            "playlistend": n,
+            "skip_download": True,
+        }
+        info = self._run(opts, target, download=False)
+        hits: list[SearchHit] = []
+        for entry in info.get("entries") or []:
+            if not isinstance(entry, dict) or not entry.get("id") or entry.get("live_status") == "is_live":
+                continue
+            hits.append(
+                SearchHit(
+                    source_id=str(entry["id"]),
+                    title=str(entry.get("title") or ""),
+                    channel_id=_str_or_none(entry.get("channel_id")),
+                    channel_name=_str_or_none(entry.get("channel") or entry.get("uploader")),
+                    channel_url=_str_or_none(entry.get("uploader_url") or entry.get("channel_url")),
+                    duration_s=_float_or_none(entry.get("duration")),
+                )
+            )
+        return hits[:n]
 
     def fetch_subtitle(self, track: SubtitleTrack) -> str:
         """One request for the track we chose, and no others.
