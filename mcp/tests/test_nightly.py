@@ -316,3 +316,18 @@ async def test_a_first_tap_taken_back_while_the_model_answers_is_read_the_next_n
     second = FakeModel(ops())
     assert (await nightly(assembled, second, Clock(DAY + timedelta(days=1))).run_once()).state == "done"
     assert f'took back thumb_up\t"{title}"' in second.prompts[0]
+
+
+async def test_a_lapsed_project_retires_even_on_a_night_with_no_signals(assembled: Assembled) -> None:
+    month_ago = int((DAY - timedelta(days=31)).timestamp())
+    await assembled.db.write(
+        lambda c: store.apply(
+            c, store.Ops(add=[("Android video app", 0.5, "project")]), actor="agent", now=month_ago
+        )
+    )
+    outcome = await nightly(assembled, FakeModel()).run_once()
+    assert outcome is not None and outcome.state == "idle"
+    retired = await assembled.db.read(
+        lambda c: c.execute("SELECT retired_at FROM profile_entries").fetchone()[0]
+    )
+    assert retired is not None

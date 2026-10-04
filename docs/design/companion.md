@@ -71,6 +71,21 @@ Tables (one new migration; `index-schema.md` gets the entries):
   ("4 asks this week") is its `add` event's `reason`. "Entries the owner
   wrote" (§2.4) means `source` `owner` or `app`.
 
+*Amended 2026-10-04 (#159, 0020):* an entry has a `kind`, `topic` or
+`project`, and a project has an `expires_at`. A project is what the owner is
+building now: it lapses 30 days after it was last added unless added again,
+and adding a live project's text again restarts its 30 days without writing
+an event, since nothing the verdicts read has changed. Every read skips an
+entry past its expiry; the nightly update retires it with a `drop` event
+(§2.4), which a revert undoes like any other, with a fresh 30 days. A profile
+holds at most 10 live projects. Existing entries are topics that never lapse.
+
+**The server-side profile is topics only.** No companies, people, pay or
+job-search details, in an entry or in a reason, whoever writes it. Every
+prompt that asks Claude to write the profile says so, and the memory routine
+(§2.2) filters before anything leaves the box. The 32-character, 5-word cap
+keeps an entry too short to carry much else.
+
 ### 2.2 Who writes it
 
 - **Any agent, through one MCP tool, `profile`.** Called bare it returns the
@@ -85,6 +100,40 @@ Tables (one new migration; `index-schema.md` gets the entries):
   fallback is pasting text into one box, split into entries by line.
 - **The nightly update** (§2.4).
 - **The owner**, on the profile screen.
+
+*Amended 2026-10-04 (#159):* the profile learns from what the owner already
+tells Claude, not from repeated questions. Three paths:
+
+- **Ask Claude saves what it learned.** The video prompt (§6) ends by asking
+  Claude to call `profile` when the conversation shows a topic the owner
+  cares about or is tired of, with a weight and a one-line reason.
+- **The interview, on demand.** The profile screen's button is now "Ask
+  Claude to interview me": five questions (what you are building, what you
+  want to learn, what you already know, what you are tired of, what kind of
+  video is worth your time), then Claude shows the list and saves it, what
+  you are building as `kind=project`. Rare by design: nothing ever prompts
+  the owner to take it again.
+- **Current projects from Claude's memory.** `scripts/memory_projects.py`
+  runs where Claude Code keeps its memory (the dev box). It reads each
+  `~/.claude/projects/*/memory/` changed in the last 30 days (the
+  `MEMORY.md` index and the newest files, at most 8,000 characters a project
+  and 60,000 in all), skipping unread any project directory or memory file
+  whose name or description hits a deny list (job, interview, salary,
+  recruiter and the like, plus the owner's own terms in
+  `~/.config/vidtheque/memory-deny.txt`). `claude -p` with no tools, no MCP
+  servers and no settings turns that text into at most 8 topics against a
+  JSON schema. Each topic must then fit the entry caps, use plain characters
+  and miss the deny list; the survivors go to `profile` as `kind=project`,
+  weight 0.5, under a fixed reason, so the checked topic text is the only
+  thing that leaves the memory. A project still in the memory is refreshed
+  each run; one that drops out lapses after 30 days. Dry run by default;
+  `--send` writes and appends the run to
+  `~/.local/state/vidtheque/memory-projects.jsonl`.
+
+  *Proposed, not installed:* a user systemd timer on the dev box runs it
+  daily at 03:30, before the 04:00 nightly update, with `--send`, the
+  private instance's MCP URL and a token file. The orchestrator installs it
+  after reviewing a dry run.
 
 ### 2.3 Signals
 
@@ -166,6 +215,14 @@ the run claims it before the model call and marks it `done` in the
 transaction that applies the ops, so a restart never runs a day twice. A
 failed model call applies nothing and is retried up to 3 times that day, an
 hour apart. A day with no signals is `idle` and calls no model.
+
+*Amended 2026-10-04 (#159):* before it reads the signals, the run retires
+every project past its expiry (§2.1), one `drop` event each as
+`actor=nightly`, reason "project not written again in 30 days". Expiry is
+not one of the night's 5 operations, calls no model and happens on idle days
+too. It is not under the owner guard: an entry that carries an expiry was
+written to lapse. The model sees a project marked as one and is told to
+leave it be.
 
 ## 3. The verdict
 
@@ -455,7 +512,9 @@ Two surfaces, each answering one question. Nothing appears on both.
 
 **Ask Claude** opens `https://claude.ai/new?q=<prompt>`, with a prompt naming
 vidtheque, the video id, its title and channel, and leaving the question to
-you. Checked on Tom's phone on 2026-10-03: the Claude Android app opens that
+you. *Amended 2026-10-04 (#159):* the prompt also asks Claude to save to
+`profile` what the conversation shows the owner cares about or is tired of,
+topics only (§2.2). Checked on Tom's phone on 2026-10-03: the Claude Android app opens that
 link with the prompt filled in. The Android app copies the prompt only when no
 app opens the link.
 

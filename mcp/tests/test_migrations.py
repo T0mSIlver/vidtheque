@@ -625,9 +625,14 @@ def test_0013_adds_the_nightly_runs_and_leaves_the_profile_as_it_was(
         "INSERT INTO profile_events (actor, op, entry_id, after) VALUES ('owner', 'add', 1, '{}')"
     )
     tables = ("profile_entries", "profile_events")
+    # The columns as of 0012; later migrations add their own.
+    columns = {t: [r[1] for r in fresh.execute(f"PRAGMA table_info({t})")] for t in tables}
 
     def snapshot() -> dict[str, list[tuple]]:
-        return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
+        return {
+            t: [tuple(r) for r in fresh.execute(f"SELECT {', '.join(columns[t])} FROM {t} ORDER BY 1")]
+            for t in tables
+        }
 
     held = snapshot()
     assert migrations.migrate(fresh)[0] == 13
@@ -703,3 +708,17 @@ def test_0018_adds_watch_time_and_shares_and_keeps_every_signal(
     fresh.execute("INSERT INTO shares (source_id) VALUES ('aaaaaaaaaaa')")
     with pytest.raises(sqlite3.IntegrityError):
         fresh.execute("INSERT INTO shares (source_id) VALUES ('')")
+
+
+def test_0020_reads_every_existing_entry_as_a_topic_that_never_expires(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 19, tmp_path / "staged")
+    fresh.execute("INSERT INTO profile_entries (text, weight, source) VALUES ('Evals', 0.6, 'owner')")
+    held = [tuple(r) for r in fresh.execute("SELECT * FROM profile_entries")]
+    assert migrations.migrate(fresh)[0] == 20
+    rows = [tuple(r) for r in fresh.execute("SELECT * FROM profile_entries")]
+    assert [r[:-2] for r in rows] == held
+    assert [r[-2:] for r in rows] == [("topic", None)]
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("UPDATE profile_entries SET kind = 'company'")

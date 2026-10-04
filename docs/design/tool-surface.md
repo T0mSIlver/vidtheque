@@ -2637,7 +2637,7 @@ plain-word entries, each with a weight in [-1, 1], a negative weight meaning
 
 ```
 profile(
-  add:      list[{text: str, weight: float}] | None = None,
+  add:      list[{text: str, weight: float, kind: "topic" | "project" = "topic"}] | None = None,
   drop:     list[int] | None = None,          # entry ids
   reweight: list[{id: int, weight: float}] | None = None,
   reason:   str | None = None,                # kept on every event this call writes
@@ -2651,6 +2651,13 @@ anything is written, so a refused call changes nothing. Adding a text that is
 already a live entry (case-insensitive) is skipped with a `note:`, not added
 twice. Entry text is whitespace-collapsed and at most 200 characters.
 
+*Amended 2026-10-04 (#159, 0020):* `kind="project"` marks what the user is
+building now. A project lapses 30 days after it was last added
+(companion.md §2.1): adding a live project's text again restarts its 30 days
+and is reported under `refreshed`, with no event. Adding a project whose text
+is a live topic is a duplicate, not a conversion. At most 10 live projects
+(`E_PROFILE_GUARD`). Topics only: no company, person, pay or job search.
+
 **Guards, server-side (companion.md §2.4):** an entry the owner wrote
 (`source` `owner` or `app`) is never dropped through this tool, only
 reweighted; the profile holds at most 40 live entries, and a drop in the same
@@ -2658,8 +2665,9 @@ call makes room. The nightly update's own limits (5 operations, 0.3 per night)
 belong to that job, not to this tool.
 
 **Output:** a header (`Profile: N of 40 entries · revision R`), the entries as
-`id weight text source` rows, and a `next:` line. `structuredContent` carries
-`revision`, `entries`, `applied_events` and `duplicates`. Bounded by the
+`id weight text source kind` rows (`project until 2026-11-03` for a project),
+and a `next:` line. `structuredContent` carries `revision`, `entries` (each
+with `kind` and `expires_at`), `applied_events`, `duplicates` and `refreshed`. Bounded by the
 40-entry cap and the 200-character text cap, so it needs no pagination.
 
 **Annotations:** `{title: "Read or edit the interest profile", readOnlyHint:

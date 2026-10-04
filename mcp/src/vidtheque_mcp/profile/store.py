@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -27,6 +28,13 @@ MAX_TEXT_CHARS = 32
 MAX_TEXT_WORDS = 5
 MAX_REASON_CHARS = 300
 
+KINDS = ("topic", "project")
+# A project is what the owner is building now (#159): it lapses this long after
+# it was last written, so one nobody mentions any more leaves on its own.
+PROJECT_TTL_S = 30 * 86_400
+# Projects come from Claude's memory in bulk; this keeps them from crowding out topics.
+MAX_PROJECTS = 10
+
 
 class ProfileRefused(Exception):
     """An operation the store will not apply. Nothing in its batch was written."""
@@ -41,7 +49,8 @@ class ProfileRefused(Exception):
 class Ops:
     """One batch: applied together or not at all."""
 
-    add: Sequence[tuple[str, float]] = ()
+    # (text, weight) or (text, weight, kind); kind defaults to "topic".
+    add: Sequence[tuple[str, float] | tuple[str, float, str]] = ()
     drop: Sequence[int] = ()
     reweight: Sequence[tuple[int, float]] = ()
     reason: str | None = None
@@ -52,17 +61,26 @@ class Applied:
     event_ids: list[int] = field(default_factory=list)
     # Adds whose text matched a live entry; skipped rather than duplicated.
     duplicates: list[str] = field(default_factory=list)
+    # Adds of a live project's text: its expiry moved, nothing else did, so no event.
+    refreshed: list[str] = field(default_factory=list)
 
 
 # ----------------------------------------------------------------- reads
 
 
-def entries(conn: sqlite3.Connection, owner_id: int = 1) -> list[sqlite3.Row]:
+# Live: not retired, and not past its expiry even if the nightly update has
+# not retired it yet. Takes one parameter, the current time.
+LIVE = "retired_at IS NULL AND (expires_at IS NULL OR expires_at > ?)"
+
+
+def entries(
+    conn: sqlite3.Connection, owner_id: int = 1, now: int | None = None
+) -> list[sqlite3.Row]:
     return list(
         conn.execute(
-            "SELECT id, text, weight, source, created_at FROM profile_entries"
-            " WHERE owner_id = ? AND retired_at IS NULL ORDER BY weight DESC, id",
-            (owner_id,),
+            "SELECT id, text, weight, source, kind, expires_at, created_at FROM profile_entries"
+            f" WHERE owner_id = ? AND {LIVE} ORDER BY weight DESC, id",
+            (owner_id, _now(now)),
         )
     )
 
@@ -81,18 +99,20 @@ def revision(conn: sqlite3.Connection, owner_id: int = 1) -> int:
 
 
 def apply(
-    conn: sqlite3.Connection, ops: Ops, actor: str, owner_id: int = 1
+    conn: sqlite3.Connection, ops: Ops, actor: str, owner_id: int = 1, now: int | None = None
 ) -> Applied:
     """Apply one batch of add/drop/reweight in a single transaction."""
     _check_actor(actor)
+    now = _now(now)
     reason = _reason(ops.reason)
-    for _, weight in ops.add:
+    adds = [_new(item) for item in ops.add]
+    for _, weight, _ in adds:
         _check_weight(weight)
     for _, weight in ops.reweight:
         _check_weight(weight)
 
     done = Applied()
-    live = {int(r["id"]): r for r in entries(conn, owner_id)}
+    live = {int(r["id"]): r for r in entries(conn, owner_id, now)}
     touched = [*ops.drop, *(entry_id for entry_id, _ in ops.reweight)]
     unknown = [i for i in touched if i not in live]
     if unknown:
@@ -110,30 +130,61 @@ def apply(
     for entry_id in ops.drop:
         _guard_owner_entry(live[entry_id], actor)
 
-    texts = {str(r["text"]).casefold() for r in live.values()}
+    texts = {str(r["text"]).casefold(): r for r in live.values()}
     for entry_id, weight in ops.reweight:
         done.event_ids.append(_set(conn, entry_id, actor, "reweight", reason, weight=weight))
     for entry_id in ops.drop:
         done.event_ids.append(_set(conn, entry_id, actor, "drop", reason, live=False))
     n_live = len(live) - len(ops.drop)
-    for raw, weight in ops.add:
+    n_projects = sum(
+        1 for i, r in live.items() if r["kind"] == "project" and i not in ops.drop
+    )
+    for raw, weight, kind in adds:
         text = _text(raw)
-        if text.casefold() in texts:
-            done.duplicates.append(text)
+        same = texts.get(text.casefold())
+        if same is not None:
+            if kind == "project" and same["kind"] == "project":
+                # Writing a project again is what keeps it: its 30 days restart.
+                conn.execute(
+                    "UPDATE profile_entries SET expires_at = ? WHERE id = ?",
+                    (now + PROJECT_TTL_S, same["id"]),
+                )
+                done.refreshed.append(text)
+            else:
+                done.duplicates.append(text)
             continue
-        texts.add(text.casefold())
         n_live += 1
         _guard_cap(n_live)
+        expires_at = None
+        if kind == "project":
+            n_projects += 1
+            _guard_projects(n_projects)
+            expires_at = now + PROJECT_TTL_S
         entry_id = int(
             conn.execute(
-                "INSERT INTO profile_entries (owner_id, text, weight, source)"
-                " VALUES (?, ?, ?, ?)",
-                (owner_id, text, weight, actor),
+                "INSERT INTO profile_entries (owner_id, text, weight, source, kind, expires_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (owner_id, text, weight, actor, kind, expires_at),
             ).lastrowid
         )
+        texts[text.casefold()] = _entry(conn, entry_id)
         after = {"text": text, "weight": weight, "live": True}
         done.event_ids.append(_event(conn, actor, "add", entry_id, None, after, reason))
     return done
+
+
+def expire(conn: sqlite3.Connection, now: int | None = None, owner_id: int = 1) -> list[int]:
+    """Retire every project past its expiry, one `drop` event each, as the nightly update.
+
+    Not under the owner guard: an entry that carries an expiry was written to lapse.
+    """
+    lapsed = conn.execute(
+        "SELECT id FROM profile_entries WHERE owner_id = ? AND retired_at IS NULL"
+        " AND expires_at <= ? ORDER BY id",
+        (owner_id, _now(now)),
+    ).fetchall()
+    reason = f"project not written again in {PROJECT_TTL_S // 86_400} days"
+    return [_set(conn, int(r["id"]), "nightly", "drop", reason, live=False) for r in lapsed]
 
 
 def revert_event(
@@ -189,7 +240,10 @@ def _undo(
     if live is False and entry["retired_at"] is None:
         _guard_owner_entry(entry, actor)
     if live is True and entry["retired_at"] is not None:
-        _guard_cap(len(entries(conn, owner_id)) + 1)
+        live_now = entries(conn, owner_id)
+        _guard_cap(len(live_now) + 1)
+        if entry["kind"] == "project":
+            _guard_projects(sum(1 for r in live_now if r["kind"] == "project") + 1)
     return _set(conn, entry_id, actor, "revert", reason, weight=weight, live=live)
 
 
@@ -216,6 +270,12 @@ def _set(
         " WHERE id = ?",
         (after["weight"], after["live"], entry_id),
     )
+    if live is True and row["retired_at"] is not None and row["kind"] == "project":
+        # A project brought back gets a fresh 30 days, or it would lapse again overnight.
+        conn.execute(
+            "UPDATE profile_entries SET expires_at = ? WHERE id = ?",
+            (_now(None) + PROJECT_TTL_S, entry_id),
+        )
     return _event(conn, actor, op, entry_id, before, after, reason)
 
 
@@ -276,6 +336,28 @@ def _guard_cap(n_live: int) -> None:
             f"the profile is capped at {MAX_LIVE} live entries.",
             "drop an entry in the same call to make room.",
         )
+
+
+def _guard_projects(n_projects: int) -> None:
+    if n_projects > MAX_PROJECTS:
+        raise ProfileRefused(
+            "E_PROFILE_GUARD",
+            f"the profile holds at most {MAX_PROJECTS} live projects.",
+            "drop a project in the same call, or keep the ones that matter now.",
+        )
+
+
+def _new(item: tuple[Any, ...]) -> tuple[str, float, str]:
+    text, weight, kind = (*item, "topic")[:3]
+    if kind not in KINDS:
+        raise ProfileRefused(
+            "E_BAD_PARAM", f"kind {kind!r} is not one of {', '.join(KINDS)}.", "use topic or project."
+        )
+    return text, weight, kind
+
+
+def _now(now: int | None) -> int:
+    return int(time.time()) if now is None else now
 
 
 def _check_actor(actor: str) -> None:

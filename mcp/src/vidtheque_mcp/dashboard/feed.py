@@ -63,6 +63,7 @@ _LIVE_MATCH = (
     "SELECT 1 FROM json_each(d.matches) m JOIN profile_entries e"
     " ON e.id = json_extract(m.value, '$.entry_id')"
     f" WHERE e.owner_id = {OWNER_ID} AND e.retired_at IS NULL"
+    " AND (e.expires_at IS NULL OR e.expires_at > unixepoch())"
 )
 # Facets count over the band's newest verdicts only, and list the busiest channels.
 FACET_SCAN = 5000
@@ -386,6 +387,7 @@ async def feed_facets(request: Request) -> Response:
             " JOIN json_each(d.matches) m"
             " JOIN profile_entries e ON e.id = json_extract(m.value, '$.entry_id')"
             " WHERE e.owner_id = d.owner_id AND e.retired_at IS NULL"
+            " AND (e.expires_at IS NULL OR e.expires_at > unixepoch())"
             " GROUP BY e.id ORDER BY n DESC, abs(e.weight) DESC, e.id",
             scan_binds,
         ).fetchall()
@@ -672,17 +674,19 @@ def _profile_reads(conn: sqlite3.Connection, limit: int, before: int | None) -> 
             "text": r["text"],
             "weight": float(r["weight"]),
             "source": r["source"],
+            "kind": r["kind"],
+            "expires_at": r["expires_at"],
             "created_at": int(r["created_at"]),
             # §2.1: the evidence beside an entry is its `add` event's reason.
             "evidence": r["evidence"],
         }
         for r in conn.execute(
-            "SELECT p.id, p.text, p.weight, p.source, p.created_at,"
+            "SELECT p.id, p.text, p.weight, p.source, p.kind, p.expires_at, p.created_at,"
             " (SELECT reason FROM profile_events e WHERE e.entry_id = p.id AND e.op = 'add'"
             "  ORDER BY e.id LIMIT 1) AS evidence"
-            " FROM profile_entries p WHERE p.owner_id = ? AND p.retired_at IS NULL"
+            f" FROM profile_entries p WHERE p.owner_id = ? AND p.{profile_store.LIVE}"
             " ORDER BY p.weight DESC, p.id",
-            (OWNER_ID,),
+            (OWNER_ID, int(time.time())),
         )
     ]
     events = list(

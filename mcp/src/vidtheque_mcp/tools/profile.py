@@ -8,7 +8,8 @@ is written, so a refused call changes nothing.
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Literal
 
 from mcp_types import CallToolResult
 from pydantic import BaseModel, ConfigDict
@@ -23,6 +24,7 @@ class NewEntry(BaseModel):
 
     text: str
     weight: float
+    kind: Literal["topic", "project"] = "topic"
 
 
 class Reweight(BaseModel):
@@ -41,7 +43,7 @@ async def profile(
     reason: str | None = None,
 ) -> CallToolResult:
     ops = store.Ops(
-        add=[(e.text, e.weight) for e in add or ()],
+        add=[(e.text, e.weight, e.kind) for e in add or ()],
         drop=list(drop or ()),
         reweight=[(r.id, r.weight) for r in reweight or ()],
         reason=reason,
@@ -66,20 +68,31 @@ def _render(rows: list[sqlite3.Row], revision: int, applied: store.Applied) -> s
         lines.append(f"Applied {len(applied.event_ids)} change(s).")
     for text in applied.duplicates:
         lines.append(f"note: {text!r} is already an entry; not added twice.")
+    if applied.refreshed:
+        lines.append(f"Refreshed {len(applied.refreshed)} project(s) for another 30 days.")
     if rows:
         lines.append("")
-        lines.append("id\tweight\ttext\tsource")
+        lines.append("id\tweight\ttext\tsource\tkind")
         lines.extend(
-            f"{r['id']}\t{float(r['weight']):+.2f}\t{r['text']}\t{r['source']}" for r in rows
+            f"{r['id']}\t{float(r['weight']):+.2f}\t{r['text']}\t{r['source']}\t{_kind(r)}"
+            for r in rows
         )
     else:
         lines.append("The profile is empty.")
     lines.append("")
     lines.append(
         "next: add=[{text, weight}] for a new interest (weight -1..1, negative = less "
-        "of this); reweight=[{id, weight}] or drop=[id] to change one. Edit, never rewrite."
+        "of this), kind=project for what the user is building now; reweight=[{id, weight}] "
+        "or drop=[id] to change one. Edit, never rewrite."
     )
     return "\n".join(lines)
+
+
+def _kind(row: sqlite3.Row) -> str:
+    if row["expires_at"] is None:
+        return str(row["kind"])
+    until = datetime.fromtimestamp(int(row["expires_at"]), timezone.utc).date().isoformat()
+    return f"{row['kind']} until {until}"
 
 
 def _structured(rows: list[sqlite3.Row], revision: int, applied: store.Applied) -> dict[str, Any]:
@@ -91,9 +104,12 @@ def _structured(rows: list[sqlite3.Row], revision: int, applied: store.Applied) 
                 "weight": float(r["weight"]),
                 "text": r["text"],
                 "source": r["source"],
+                "kind": r["kind"],
+                "expires_at": r["expires_at"],
             }
             for r in rows
         ],
         "applied_events": applied.event_ids,
         "duplicates": applied.duplicates,
+        "refreshed": applied.refreshed,
     }
