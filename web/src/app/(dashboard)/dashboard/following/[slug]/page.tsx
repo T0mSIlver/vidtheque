@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Page } from "@/components/dashboard/kit/ui";
 import { FollowDetailView } from "./FollowDetailView";
 
 // The server cannot name the follow; the view renames the document (§18.4).
@@ -8,5 +9,9 @@ export default async function DashboardFollowPage({
   params,
 }: PageProps<"/dashboard/following/[slug]">) {
   const { slug } = await params;
-  return <FollowDetailView key={slug} slug={slug} />;
+  return (
+    <Page>
+      <FollowDetailView key={slug} slug={slug} />
+    </Page>
+  );
 }
