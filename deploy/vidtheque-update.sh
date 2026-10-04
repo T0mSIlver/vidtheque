@@ -58,6 +58,10 @@ DEPLOY_DIR=$(cd "$DEPLOY_DIR" && pwd)
 [ -f "$DEPLOY_DIR/compose.local.yml" ] || \
   fail "$DEPLOY_DIR/compose.local.yml is missing — copy deploy/compose.local.example.yml and edit the path"
 
+# A box running the captions-only preset (docs/self-host.md) has no worker; its
+# overlay is fetched and applied like the release one.
+CAPTIONS=0
+[ -f "$DEPLOY_DIR/compose.captions.yml" ] && CAPTIONS=1
 PREV=$(sed -n 's/^IMAGE_TAG=//p' "$DEPLOY_DIR/.env" | tail -1)
 echo "update: $DEPLOY_DIR — ${PREV:-<unset>} -> $TAG"
 
@@ -67,12 +71,16 @@ echo "update: $DEPLOY_DIR — ${PREV:-<unset>} -> $TAG"
 # release it names does not serve.
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-for f in docker-compose.yml compose.release.example.yml Caddyfile; do
+FETCH=(docker-compose.yml compose.release.example.yml Caddyfile)
+[ "$CAPTIONS" = 1 ] && FETCH+=(compose.captions.example.yml)
+for f in "${FETCH[@]}"; do
   curl -fsS -m 30 "$RAW/v$TAG/deploy/$f" -o "$TMP/$f" || fail "fetch $RAW/v$TAG/deploy/$f"
 done
 
 cd "$DEPLOY_DIR"
-FILES=(-f docker-compose.yml -f compose.release.yml -f compose.local.yml)
+FILES=(-f docker-compose.yml -f compose.release.yml)
+[ "$CAPTIONS" = 1 ] && FILES+=(-f compose.captions.yml)
+FILES+=(-f compose.local.yml)
 # --project-name adopts the running stack rather than starting a second one
 # beside it. The base file carries `name: vidtheque` too; saying it here means a
 # release that moved or renamed that key cannot orphan what is already up.
@@ -141,6 +149,9 @@ install -m 644 "$TMP/compose.release.example.yml"  "$DEPLOY_DIR/compose.release.
 # The edge's rule, pinned to the same tag as the images it routes to. The
 # compose file mounts it read-only from beside itself.
 install -m 644 "$TMP/Caddyfile"                    "$DEPLOY_DIR/Caddyfile"
+if [ "$CAPTIONS" = 1 ]; then
+  install -m 644 "$TMP/compose.captions.example.yml" "$DEPLOY_DIR/compose.captions.yml"
+fi
 
 # .env.prev is the rollback, so it is written before the edit and restored on
 # any failure below — a half-run leaves the box exactly as re-runnable as it
@@ -184,8 +195,10 @@ trap 'rm -rf "$TMP"' EXIT
 # http://worker:8081 and there is nothing on the host to curl.
 EDGE_PORT=$(sed -n 's/^EDGE_PORT=//p' .env | tail -1)
 WORKER_PORT=$(sed -n 's/^WORKER_PORT=//p' .env | tail -1)
+URLS=("http://127.0.0.1:${EDGE_PORT:-8080}/healthz")
+[ "$CAPTIONS" = 1 ] || URLS+=("http://127.0.0.1:${WORKER_PORT:-8081}/healthz")
 sleep 8
-for url in "http://127.0.0.1:${EDGE_PORT:-8080}/healthz" "http://127.0.0.1:${WORKER_PORT:-8081}/healthz"; do
+for url in "${URLS[@]}"; do
   curl -fsS -m 10 "$url" >/dev/null || {
     echo "update: healthz FAILED at $url — $TAG is up but not answering" >&2
     rollback_hint >&2
@@ -198,7 +211,11 @@ echo "update: OK — $TAG is live"
 echo "        edge    caddy (deploy/Caddyfile)                127.0.0.1:${EDGE_PORT:-8080}"
 echo "        web     ghcr.io/t0msilver/vidtheque-web:$TAG    (behind the edge)"
 echo "        mcp     ghcr.io/t0msilver/vidtheque-mcp:$TAG    (behind the edge)"
-echo "        worker  ghcr.io/t0msilver/vidtheque-worker:$TAG 127.0.0.1:${WORKER_PORT:-8081}"
+if [ "$CAPTIONS" = 1 ]; then
+  echo "        worker  none (captions-only)"
+else
+  echo "        worker  ghcr.io/t0msilver/vidtheque-worker:$TAG 127.0.0.1:${WORKER_PORT:-8081}"
+fi
 echo
 rollback_hint
 echo
