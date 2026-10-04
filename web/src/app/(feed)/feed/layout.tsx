@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { refuseWithoutDashboard } from "@/lib/dashboard/presence";
 import { FeedShell } from "@/components/feed/FeedShell";
 
 // The phone feed (companion.md §6), behind the console's sign-in. `noindex`:
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function FeedLayout({ children }: LayoutProps<"/feed">) {
+export default async function FeedLayout({ children }: LayoutProps<"/feed">) {
+  await refuseWithoutDashboard();
   return <FeedShell>{children}</FeedShell>;
 }

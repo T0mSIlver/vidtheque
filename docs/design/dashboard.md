@@ -149,6 +149,12 @@ are two different questions and §3 answers the second one.
 
 ### 2.4 Demo mode = welcome page + read-only projection
 
+*Amended 2026-10-04 (Tom, #196):* the public box serves no dashboard. It runs
+`VIDTHEQUE_DASHBOARD=0`, `/api/meta` then says `browse: null`, and the Next
+pages under `/dashboard` and `/feed` answer 404 when `/dashboard/api/session`
+does (`web/src/lib/dashboard/presence.ts`). The projection below stays for any
+other read-only deployment, and every self-hosted instance keeps its dashboard.
+
 `/demo` serves the welcome page (amended 2026-08-11: the landing owns `/`
 since commit `4ddd45d`'s topology swap; amended 2026-09-05: the page left the
 Python package for the Next.js front end at `web/src/app/(public)/demo/` — the route is

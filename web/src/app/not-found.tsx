@@ -12,9 +12,9 @@ export default function NotFound() {
           vidtheque<i className={styles.dot}>.</i>
         </b>
       </p>
-      <h1 className={styles.sentence}>No such page. The demo is where the corpus is.</h1>
+      <h1 className={styles.sentence}>No such page. The sample feed is where the talks are.</h1>
       <p className={styles.next}>
-        <Link href="/demo">go to the demo</Link>
+        <Link href="/demo">see the sample feed</Link>
       </p>
     </main>
   );
