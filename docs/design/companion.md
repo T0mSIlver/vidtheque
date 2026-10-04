@@ -433,7 +433,7 @@ consent. v1 builds no auth.
 Two surfaces, each answering one question. Nothing appears on both.
 
 - **The feed** (new, phone-first, web and Android): *what should I watch?*
-  Three screens and nothing else:
+  Three screens and nothing else (and, since #158, the weekly brief, §6.1):
   - **Feed**: verdicts, newest first, scores 2–3 on top, 0–1 collapsed into
     "skipped (n)". A row is the channel, title, score, reason and duration.
     *Amended 2026-10-04 (#146, #128):* a search on title and channel, a
@@ -490,12 +490,61 @@ The message is FCM HTTP v1, data only (video id, title, channel, score,
 reason, best moment), and the app draws the notification. A token FCM calls
 unregistered is deleted from `devices`.
 
+*Amended 2026-10-04 (#158, Tom):* no daily cap. Every verdict that meets the
+threshold is still pushed, and the app groups them with Android's notification
+grouping, so a busy upload day collapses into one stack with a summary line
+("4 new verdicts"). The Sunday brief is its own notification, on its own
+channel, outside the group.
+
 **Endpoints**: under the existing owner-only `/dashboard/api/*`, behind the
 existing credential order (bearer or session) and write guard, so no new
 prefix and no new guard: `feed`, `feed/facets`, `verdicts/{video_id}`, `signals` (POST),
 `feedback` (POST, 0016), `watched` and `shares` (POST, 0018), `valued-time` (GET),
 `profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
 `dashboard.md` gets their contract.
+
+### 6.1 The weekly brief
+
+*Added 2026-10-04 (#158), taking the brief out of §8:* one page and one push on
+Sunday morning, so nothing asks the owner to check the feed daily. It is a
+fourth screen of the feed (`/feed/brief`, the app's brief screen), kept to
+about one phone screen: long parts open on a tap.
+
+- **The week's three videos** most worth the time, with their moments. Until
+  #156's weekly ranks land, by score, then how strongly wanted entries hit
+  them, then newest.
+- **What speakers said** about the top three wanted entries: one model call a
+  week (`purpose=weekly_brief`) reads the week's videos that hit each entry and
+  the cues under their moments, and writes up to three points per entry and a
+  disagreement between two videos when there is one. Every point cites one of
+  those cues or is dropped, never repaired (§3.1's rule). No model, or a failed
+  call, and the brief comes without the section and says why: a late brief is
+  worth less than a short one.
+- **Channel report card**: per followed channel, over 30 days, the videos, the
+  share scored 2+, and the share watched, asked about or thumbed up. A channel
+  with at least 4 judged videos and none of either is flagged with a **Pause**
+  button. The brief never pauses a channel itself.
+- **Profile changes**: the week's nightly events with their reasons, each with
+  revert (§2.4's revert).
+- **Skip audit**: three random skipped videos of the week, "would you have
+  watched it?", yes or no each.
+- **Check-in**: "Was last week's feed worth the time? 1–5", plus an optional
+  "what was missing" line.
+- **The ledger**'s weekly numbers (#157), once it lands.
+
+**Why skipped, with a fix.** Every skipped row, in the feed and in the audit,
+names the "less of this" entry that sank it (its strongest `down` match).
+"I'd watch this" (an audit "yes" is the same answer) sets the video's thumb up,
+the strong signal the nightly update reads, and proposes easing that entry by
+0.3 toward 0; the owner applies the proposal with one tap, or ignores it.
+
+As built (0019): the brief is built on the job runner's tick on Sunday from
+`VIDTHEQUE_BRIEF_HOUR` (default 9, local), for the calendar week #156 uses
+(Monday to Sunday, keyed by its Monday), and pushed once to every device. Its
+three picks, audit picks and "what speakers said" are kept as they were on
+Sunday; the channel report, the profile changes and the answers are read when
+the page opens. `VIDTHEQUE_BRIEF=0` turns it off. A box down all Sunday has no
+brief that week. Endpoints: dashboard.md §26; tables: index-schema §1.20.
 
 ## 7. The console overhaul
 
@@ -513,9 +562,9 @@ and Tom picks. Then one PR per page.
 
 Kept out on purpose, so the loop ships polished:
 
-- **The weekly brief** (what changed across your channels this week) and
-  **talking points over time** per channel. Both read the verdicts and
-  signals v1 stores; they need nothing v1 must build differently.
+- **Talking points over time** per channel. It reads the verdicts and
+  signals v1 stores; it needs nothing v1 must build differently. *(The weekly
+  brief, deferred here with it, is built: §6.1.)*
 - Videos from channels you do not follow.
 - An in-app chat. Questions go to Claude, which has the corpus.
 - A memory system of our own beyond the profile. Claude's memory reaches

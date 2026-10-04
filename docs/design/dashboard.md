@@ -3889,3 +3889,69 @@ so a thumb given this week to last week's video moves last week's hit rate.
 Each cohort reads at most 500 videos a week and says `capped` past that. No
 parameters. The time budget (#156) adds its minutes asked against budget to
 each week.
+
+## 26. The weekly brief's endpoints (2026-10-04)
+
+The brief (companion.md §6.1) for the web feed's `/feed/brief` and the app's
+brief screen. Code: `dashboard/brief.py`, `brief/build.py`. Access, JSON rules
+and refusals are §25.1's; the two writes are in `WRITE_ROUTES`.
+
+### 26.1 `GET /dashboard/api/brief`
+
+The latest week's brief, or `?week=YYYY-MM-DD` (a Monday) for an older one;
+any other `week` is `400 E_BAD_PARAM`, a week with no brief `404 E_NO_BRIEF`,
+and so is the latest before the first Sunday.
+
+```json
+{"week": "2026-09-28", "since": 1790546400, "until": 1791151200,
+ "built_at": 1791108000, "previous_week": "2026-09-21",
+ "picks": [{"video_id": "kCc8FmEb1nY", "title": "…", "channel": "…", "duration_s": 7000.0,
+            "published_at": 1790900000, "score": 3, "reason": "…",
+            "moments": [{"cue_id": 812, "offset_s": 842.0, "why": "…", "url": "https://youtu.be/kCc8FmEb1nY?t=840"}]}],
+ "said": [{"entry_id": 15, "text": "Evals for coding agents",
+           "points": [{"video_id": "…", "title": "…", "channel": "…", "cue_id": 812,
+                       "offset_s": 842.0, "url": "…", "said": "…"}],
+           "disagreement": {"about": "…", "sides": [{"video_id": "…", "cue_id": 812, "url": "…"}, {"…": "…"}]}}],
+ "said_note": null,
+ "channels": [{"slug": "…", "title": "…", "state": "active", "videos": 6, "judged": 6,
+               "worth_share": 0.0, "engaged_share": 0.0, "suggest_pause": true}],
+ "profile_changes": [{"event_id": 88, "at": 1790600000, "op": "reweight", "entry_id": 15,
+                      "before": {"text": "…", "weight": 0.6, "live": true},
+                      "after": {"text": "…", "weight": 0.9, "live": true},
+                      "reason": "3 searches on evals", "reverted": false}],
+ "audit": [{"video_id": "…", "title": "…", "score": 0, "reason": "…",
+            "sunk_by": {"entry_id": 36, "text": "Launch hype", "direction": "down", "strength": 2},
+            "answer": null}],
+ "checkin": {"rating": 4, "missing": "more GPU talks", "at": 1791110000},
+ "ledger": null}
+```
+
+`picks`, `audit` and `said` are what the brief kept on Sunday; a video deleted
+since drops out. `said` is `[]` with `said_note` saying why when there was
+nothing to say, no model, or a failed call. Every `said` point and
+disagreement side cites a cue that was given to the model for that entry.
+`channels`, `profile_changes`, the audit `answer`s and `checkin` are read when
+asked: the channel report covers the last 30 days, at most 100 follows,
+flagged ones first; `profile_changes` are the week's `nightly` events, at
+most 20, newest first, `reverted` once a later revert touched the entry; the
+page reverts one through `POST profile/revert` (§25.5) and pauses a channel
+through `POST /dashboard/following/{slug}/state` (§21). `ledger` stays `null`
+until #157's ledger lands.
+
+### 26.2 `POST /dashboard/api/brief/checkin`
+
+`{"week", "rating", "missing"}`: `rating` 1–5, `missing` optional, whitespace
+collapsed and cut at 500 characters. One answer per week; another replaces it.
+Answers what it stored; `404 E_NO_BRIEF` for a week with no brief.
+
+### 26.3 `POST /dashboard/api/skips`
+
+`{"video_id", "answer", "source"}`: the owner's word on a skipped video
+(score 0–1; a higher one is `400 E_BAD_PARAM`). `answer` `wrong` is "I'd watch
+this", `right` says the skip was fair; `source` is `audit` (the brief) or
+`row` (the feed, the default). `wrong` sets the video's feedback to `up`
+(§25.4), and `right` after a `wrong` takes that thumb back. Answers
+`{"video_id", "answer", "feedback", "proposal"}`; for `wrong`, `proposal` is
+`{entry_id, text, weight, to}`, the entry that sank the video eased by 0.3
+toward 0, or `null` when no live negative entry sank it. Nothing is reweighted
+here: the page applies a proposal through `POST profile` (§25.5).
