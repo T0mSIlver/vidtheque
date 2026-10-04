@@ -3746,8 +3746,9 @@ the app keeps until it comes back from YouTube (§25.10).
 ### 25.5 `GET|POST /dashboard/api/profile`, `POST /dashboard/api/profile/revert`
 
 `GET` answers `revision`, `max_entries` (40), `entries`
-(`{id, text, weight, source, created_at, evidence}`, `evidence` being the
-reason on the entry's `add` event) and one page of `history`, newest first:
+(`{id, text, weight, source, kind, expires_at, created_at, evidence}`,
+`evidence` being the reason on the entry's `add` event; `kind` is `topic` or
+`project`, and a project lapses at `expires_at`, companion.md §2.1) and one page of `history`, newest first:
 `{events, limit, has_more, next_before}`, where an event is
 `{id, at, actor, op, entry_id, before, after, reason}`. `limit` 1–100
 (default 20); pass `before=<next_before>` for the next page.

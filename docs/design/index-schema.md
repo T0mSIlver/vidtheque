@@ -1252,6 +1252,19 @@ CREATE TABLE signals (
 ) STRICT;
 ```
 
+0020 adds two columns to `profile_entries` (companion.md §2.1, #159):
+
+```sql
+ALTER TABLE profile_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'topic'
+  CHECK (kind IN ('topic','project'));
+ALTER TABLE profile_entries ADD COLUMN expires_at INTEGER;  -- projects only; NULL never lapses
+```
+
+A live entry is one with `retired_at IS NULL` and no `expires_at` in the past
+(`store.LIVE`): reads skip a lapsed project before the nightly update retires
+it with a `drop` event. Re-adding a live project moves `expires_at` 30 days on
+without an event; a revert that revives a project gives it a fresh 30 days.
+
 `source` is the actor that created the entry; the evidence for it ("4 asks this
 week") is the `reason` on its `add` event. Every write goes through
 `profile/store.py`, which writes the entry and an event carrying its state

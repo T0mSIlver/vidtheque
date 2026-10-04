@@ -86,7 +86,8 @@ dropped, only reweighted; the profile holds at most {store.MAX_LIVE} entries.
 Searches say what the person is working on; thumbs, mutes and asks are explicit
 (a mute means "less like this"); "took back" undoes a thumb or mute an earlier
 update read. An open is a mild interest and a dismiss a mild disinterest. Prefer reweighting
-an entry to adding a near-duplicate. An entry's text is a short topic, 2-4 words
+an entry to adding a near-duplicate. A project (marked after its source) is what the person is building now; it
+lapses by itself, so leave it be. An entry's text is a short topic, 2-4 words
 (at most {store.MAX_TEXT_CHARS} characters and {store.MAX_TEXT_WORDS} words); split a compound topic
 into separate entries."""
 
@@ -178,6 +179,10 @@ class Nightly:
         claim = await self.db.write(lambda c: claim_day(c, day, at, self.owner_id))
         if claim is None:
             return None
+        # Lapsed projects retire first, whatever the day's signals: no model involved.
+        expired = await self.db.write(lambda c: store.expire(c, at, self.owner_id))
+        if expired:
+            logger.info("nightly profile update: %d project(s) expired", len(expired))
         prompt, n_signals, read = await self.db.read(
             lambda c: _prompt(c, claim.since_at, claim.until_at, self.owner_id)
         )
@@ -377,7 +382,8 @@ def _prompt(
     profile = (
         "\n".join(
             f"{e['id']}\t{float(e['weight']):+.2f}\t"
-            f"{'owner' if e['source'] in store.OWNER_ACTORS else e['source']}\t{e['text']}"
+            f"{'owner' if e['source'] in store.OWNER_ACTORS else e['source']}"
+            f"{' project' if e['kind'] == 'project' else ''}\t{e['text']}"
             for e in entries
         )
         or "(empty)"

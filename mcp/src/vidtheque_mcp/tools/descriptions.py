@@ -205,19 +205,18 @@ one succeeds and reports no change.
 
 
 PROFILE = """
-Read or edit the user's interest profile: topics of 2-4 words (split compound
-ones), each weighted -1 (less of this) to 1 (more of this). It steers which new videos
-reach the user.
+Read or edit the user's interest profile: topics of 2-4 words, each weighted
+-1 (less of this) to 1 (more of this). It steers which new videos they see.
 
-USE WHEN: the user tells you what they care about or are tired of, asks you to
-build or tune their profile, or asks what it says. Call it bare first to see
-the entries and their ids.
+USE WHEN: the conversation shows what the user cares about or is tired of, or
+they ask to build, tune or read it. Call it bare first for the ids.
 
-DO NOT USE: to record one search or read — those are noted on their own; to
-rewrite the list. Change only what the user meant.
+DO NOT USE: to record a search or read (logged on their own); to rewrite the
+list. Topics only: no company, person, pay or job search.
 
-add=[{text, weight}], drop=[id], reweight=[{id, weight}]; reason= says why.
-Entries the user wrote can be reweighted but not dropped; at most 40 entries.
+add=[{text, weight, kind}], drop=[id], reweight=[{id, weight}]; reason= says why.
+kind="project" is what they are building now: it lapses after 30 days unless
+added again. The user's own entries cannot be dropped; at most 40 entries.
 """.strip()
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,7 @@ async def test_add_reweight_drop_round_trip(assembled: Assembled) -> None:
         "entries": [],
         "applied_events": [],
         "duplicates": [],
+        "refreshed": [],
     }
 
     added = await profile(
@@ -211,6 +213,91 @@ async def test_an_agent_revert_cannot_retire_an_owner_entry(assembled: Assembled
     with pytest.raises(store.ProfileRefused):
         await deps.db.write(lambda c: store.revert_event(c, add_event, actor="agent"))
     assert await live_state(deps) == {"Local inference": 0.6}
+
+
+# ---------------------------------------------------------------- projects
+
+T0 = 1_790_000_000
+DAYS = 86_400
+
+
+async def write_projects(deps, *texts: str, now: int, actor: str = "agent") -> store.Applied:
+    adds = [(t, 0.5, "project") for t in texts]
+    return await deps.db.write(
+        lambda c: store.apply(c, store.Ops(add=adds, reason="memory"), actor=actor, now=now)
+    )
+
+
+async def live_at(deps, now: int) -> list[str]:
+    return [r["text"] for r in await deps.db.read(lambda c: store.entries(c, now=now))]
+
+
+async def test_a_project_lapses_after_30_days_unless_written_again(assembled: Assembled) -> None:
+    deps = assembled.deps
+    await write_projects(deps, "Android video app", "MCP server design", now=T0)
+    assert await live_at(deps, T0 + 29 * DAYS) == ["Android video app", "MCP server design"]
+
+    again = await write_projects(deps, "android video app", now=T0 + 20 * DAYS)
+    assert again.refreshed == ["android video app"] and again.event_ids == []
+
+    # Read before the nightly update has run: the lapsed one is already gone.
+    assert await live_at(deps, T0 + 31 * DAYS) == ["Android video app"]
+    expired = await deps.db.write(lambda c: store.expire(c, T0 + 31 * DAYS))
+    assert len(expired) == 1
+    event = await deps.db.read(
+        lambda c: c.execute("SELECT actor, op, reason FROM profile_events WHERE id = ?", expired).fetchone()
+    )
+    assert (event["actor"], event["op"]) == ("nightly", "drop")
+    assert await live_at(deps, T0 + 51 * DAYS) == []
+
+
+async def test_a_project_the_owner_wrote_still_lapses(assembled: Assembled) -> None:
+    deps = assembled.deps
+    await write_projects(deps, "Home lab rebuild", now=T0, actor="owner")
+    assert len(await deps.db.write(lambda c: store.expire(c, T0 + 31 * DAYS))) == 1
+
+
+async def test_a_topic_never_lapses_and_a_project_does_not_replace_it(assembled: Assembled) -> None:
+    deps = assembled.deps
+    await owner_writes(deps, ("Local inference", 0.6))
+    same = await write_projects(deps, "Local inference", now=T0)
+    assert same.duplicates == ["Local inference"] and same.refreshed == []
+    assert await deps.db.write(lambda c: store.expire(c, T0 + 400 * DAYS)) == []
+    assert await live_at(deps, T0 + 400 * DAYS) == ["Local inference"]
+
+
+async def test_the_profile_holds_at_most_ten_live_projects(assembled: Assembled) -> None:
+    deps = assembled.deps
+    await write_projects(deps, *(f"project {i}" for i in range(store.MAX_PROJECTS)), now=T0)
+    with pytest.raises(store.ProfileRefused) as refused:
+        await write_projects(deps, "one more", now=T0)
+    assert refused.value.code == "E_PROFILE_GUARD"
+    # A topic still fits.
+    await owner_writes(deps, ("Local inference", 0.6))
+
+
+async def test_reverting_an_expiry_brings_the_project_back_for_30_days(assembled: Assembled) -> None:
+    deps = assembled.deps
+    now = int(time.time())
+    await write_projects(deps, "Video triage agent", now=now - 31 * DAYS)
+    [expiry] = await deps.db.write(lambda c: store.expire(c, now))
+    await deps.db.write(lambda c: store.revert_event(c, expiry, actor="owner"))
+    rows = await deps.db.read(store.entries)
+    assert [r["text"] for r in rows] == ["Video triage agent"]
+    assert rows[0]["expires_at"] >= now + 29 * DAYS
+
+
+async def test_the_tool_adds_a_project_and_says_when_it_lapses(assembled: Assembled) -> None:
+    result = await profile(
+        assembled.deps, add=[NewEntry(text="Android video app", weight=0.5, kind="project")]
+    )
+    [entry] = structured(result)["entries"]
+    assert entry["kind"] == "project" and entry["expires_at"] > time.time() + 29 * DAYS
+    assert "project until 20" in result.content[0].text
+    again = await profile(
+        assembled.deps, add=[NewEntry(text="Android video app", weight=0.5, kind="project")]
+    )
+    assert structured(again)["refreshed"] == ["Android video app"]
 
 
 # ------------------------------------------------------------------ signals
