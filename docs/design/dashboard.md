@@ -3491,6 +3491,11 @@ rather than a total. The rollups run over every `index_state`, like the band,
 so a channel whose only video is mid-pipeline is listed. The read count stays a
 constant, and a test pins it.
 
+*Added 2026-10-04 (#157).* Under the band, **Against YouTube**: one row a
+week for eight weeks, hit rate, regret (flagged past its target) and misses,
+from `GET /dashboard/api/valued-time` (§25.12), its own read. The panel is
+absent where that route is (no write side).
+
 **Cut.** "Recently indexed" leaves the console for the feed (#90, not built
 yet; accepted). Health loses the band, the channels, the tags and the storage
 panel; Corpus loses readiness, the gaps, the "indexed" stamp in its head and the
