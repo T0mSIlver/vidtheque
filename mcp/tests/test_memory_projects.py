@@ -57,6 +57,7 @@ def test_collect_skips_denied_and_stale_projects_and_files_unread(tmp_path: Path
         ("Acme Corp data platform", "hits 'acme corp'"),
         ("A very long project name over the cap", "over 32 characters or 5 words"),
         ("Pay: 120k€", "characters outside letters, digits and . + # / -"),
+        ("Cloudflare-style tunnel deploys", "hits 'cloudflare'"),
     ],
 )
 def test_check_refuses_what_must_not_leave(text: str, why: str) -> None:

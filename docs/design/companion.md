@@ -122,8 +122,9 @@ tells Claude, not from repeated questions. Three paths:
   recruiter and the like, plus the owner's own terms in
   `~/.config/vidtheque/memory-deny.txt`). `claude -p` with no tools, no MCP
   servers and no settings turns that text into at most 8 topics against a
-  JSON schema. Each topic must then fit the entry caps, use plain characters
-  and miss the deny list; the survivors go to `profile` as `kind=project`,
+  JSON schema, and is told to name no company or vendor. Each topic must then
+  fit the entry caps, use plain characters, and miss the deny list and a
+  built-in list of vendor names; the survivors go to `profile` as `kind=project`,
   weight 0.5, under a fixed reason, so the checked topic text is the only
   thing that leaves the memory. A project still in the memory is refreshed
   each run; one that drops out lapses after 30 days. Dry run by default;
