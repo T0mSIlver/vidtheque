@@ -47,7 +47,10 @@ class Week:
 
 
 def week_of(now: datetime) -> Week:
-    """The calendar week (Monday to Sunday, local time) that holds ``now``."""
+    """The calendar week (Monday to Sunday, local time) that holds ``now``.
+
+    TODO(#156): use `verdicts/week.py`'s helper once it lands; #156 owns the week.
+    """
     monday = now.date() - timedelta(days=now.weekday())
     start = datetime.combine(monday, time(), now.tzinfo)
     end = datetime.combine(monday + timedelta(days=7), time(), now.tzinfo)
