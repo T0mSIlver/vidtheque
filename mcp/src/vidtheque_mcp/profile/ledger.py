@@ -248,13 +248,15 @@ def _misses(conn: sqlite3.Connection, start: int, end: int, owner_id: int) -> di
         elif miss:
             missed.add(str(r["source_id"]))
     skipped = _skipped_wrong(conn, start, end, owner_id)
+    capped = capped or len(skipped) > COHORT_CAP
+    skipped = set(sorted(skipped)[:COHORT_CAP])
     return {
         # A video both shared and called a wrong skip is one miss.
         "count": len(missed | skipped),
         "pending": pending,
         "shared": min(len(rows), COHORT_CAP),
         "skipped": len(skipped),
-        "capped": capped or len(skipped) >= COHORT_CAP,
+        "capped": capped,
     }
 
 
@@ -267,7 +269,7 @@ def _skipped_wrong(conn: sqlite3.Connection, start: int, end: int, owner_id: int
         for r in conn.execute(
             "SELECT v.source_id FROM skip_verdicts k JOIN videos v ON v.id = k.video_id"
             " WHERE k.owner_id = ? AND k.answer = 'wrong' AND k.at >= ? AND k.at < ? LIMIT ?",
-            (owner_id, start, end, COHORT_CAP),
+            (owner_id, start, end, COHORT_CAP + 1),
         )
     }
 
