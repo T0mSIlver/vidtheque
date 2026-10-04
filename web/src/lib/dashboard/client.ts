@@ -28,6 +28,7 @@ import {
   Following,
   FollowQueued,
   FollowWritten,
+  Channels,
   Health,
   IndexOutcome,
   JobDetail,
@@ -38,6 +39,7 @@ import {
   ProfileApplied,
   ProfileReverted,
   type ProfileOps,
+  ReadinessRead,
   ReindexOutcome,
   RetryOutcome,
   SearchResponse,
@@ -260,6 +262,14 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     jobs(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/jobs${suffix(query)}`, Jobs, { signal });
     },
+    /** The worker's model state, asked while a search is slow (§28.1). */
+    readiness(signal?: AbortSignal) {
+      return get(`${ROOT}/api/readiness`, ReadinessRead, { signal });
+    },
+    /** Every channel name, for the channel pickers (§28.1). */
+    channels(signal?: AbortSignal) {
+      return get(`${ROOT}/api/channels`, Channels, { signal });
+    },
     /** The facade's search handler behind the read gate (§14.2). */
     search(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/search${suffix(query)}`, SearchResponse, { signal });
@@ -339,7 +349,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     profileRevert(target: { event_id: number } | { revision: number }) {
       return postJson(`${ROOT}/api/profile/revert`, target, ProfileReverted);
     },
-    /** The latest week's brief, or `week` (a Monday) for an older one (§26.1). */
+    /** The latest week's brief, or `week` (a Monday) for an older one (§28.1). */
     brief(week: string | null, signal?: AbortSignal) {
       const query = week === null ? "" : `?week=${encodeURIComponent(week)}`;
       return get(`${ROOT}/api/brief${query}`, Brief, { signal });
@@ -347,7 +357,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     checkin(week: string, rating: number, missing: string) {
       return postJson(`${ROOT}/api/brief/checkin`, { week, rating, missing }, CheckinStored);
     },
-    /** The owner's word on a skipped video; `wrong` is "I'd watch this" (§26.3). */
+    /** The owner's word on a skipped video; `wrong` is "I'd watch this" (§28.3). */
     skip(videoId: string, answer: SkipAnswer, source: "audit" | "row") {
       return postJson(`${ROOT}/api/skips`, { video_id: videoId, answer, source }, SkipAnswered);
     },

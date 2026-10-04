@@ -37,7 +37,7 @@ export function momentKey(hit: Hit): string {
   return `${hit.source}-${hit.match_start ?? hit.start}-${hit.frame_id ?? ""}`;
 }
 
-/** One ranked hit: the frame (which opens in place), the moment, the receipt. */
+/** One ranked hit: the frame (which opens in place), then the moment and its receipt. */
 export function Moment({
   hit,
   onOpen,
@@ -83,9 +83,8 @@ export function Moment({
           />
         </button>
       ) : (
-        <span aria-hidden="true" className={`${styles.shot} ${styles.shotEmpty}`}>
-          {evidence.pills[0]?.label ?? "video"}
-        </span>
+        // The badge already names the channel; the slot only keeps the column.
+        <span aria-hidden="true" className={`${styles.shot} ${styles.shotEmpty}`} />
       )}
 
       <div className={styles.body}>
@@ -110,6 +109,20 @@ export function Moment({
           ) : (
             <span className={styles.at}>{at}</span>
           )}
+          {/* The receipt sits with the moment it proves, not across the row. */}
+          {receipt ? (
+            <>
+              <Sep />
+              <a
+                className={styles.receipt}
+                href={receipt.href}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                {receipt.label} ↗
+              </a>
+            </>
+          ) : null}
         </p>
 
         {runs.length ? (
@@ -123,12 +136,6 @@ export function Moment({
           <p className={`${styles.snippet} ${styles.isFrame}`}>visual match, no text hit</p>
         ) : null}
       </div>
-
-      {receipt ? (
-        <a className={styles.receipt} href={receipt.href} rel="noopener noreferrer" target="_blank">
-          {receipt.label} ↗
-        </a>
-      ) : null}
     </li>
   );
 }
