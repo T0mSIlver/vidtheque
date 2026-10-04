@@ -3,6 +3,10 @@
 // token: a same-origin `fetch` carries `Sec-Fetch-Site` (dashboard.md §3.3).
 import type { ZodType } from "zod";
 import {
+  Brief,
+  CheckinStored,
+  type SkipAnswer,
+  SkipAnswered,
   CancelOutcome,
   Corpus,
   Costs,
@@ -309,6 +313,18 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     /** Undo one event, or roll back to a revision. */
     profileRevert(target: { event_id: number } | { revision: number }) {
       return postJson(`${ROOT}/api/profile/revert`, target, ProfileReverted);
+    },
+    /** The latest week's brief, or `week` (a Monday) for an older one (§26.1). */
+    brief(week: string | null, signal?: AbortSignal) {
+      const query = week === null ? "" : `?week=${encodeURIComponent(week)}`;
+      return get(`${ROOT}/api/brief${query}`, Brief, { signal });
+    },
+    checkin(week: string, rating: number, missing: string) {
+      return postJson(`${ROOT}/api/brief/checkin`, { week, rating, missing }, CheckinStored);
+    },
+    /** The owner's word on a skipped video; `wrong` is "I'd watch this" (§26.3). */
+    skip(videoId: string, answer: SkipAnswer, source: "audit" | "row") {
+      return postJson(`${ROOT}/api/skips`, { video_id: videoId, answer, source }, SkipAnswered);
     },
     /** Outside the read gate: a signed-out browser may ask. */
     session(signal?: AbortSignal) {
