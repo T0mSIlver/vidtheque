@@ -3891,6 +3891,39 @@ Each cohort reads at most 500 videos a week and says `capped` past that. No
 parameters. The time budget (#156) adds its minutes asked against budget to
 each week.
 
+### 25.13 `GET /dashboard/api/week`, `POST /dashboard/api/budget` (2026-10-04, #156)
+
+The week the feed fits to the owner's time (companion.md §3.4, §6).
+
+```json
+{"week": "2026-09-28", "previous": "2026-09-21", "next": null,
+ "budget_min": 210, "asks_s": 9420.0,
+ "items": [{…the §25.2 row…, "asks_s": 3000.0}],
+ "days": [{"day": "2026-09-28", "asks_s": 1200.0, "fitted": 1, "candidates": 3}, …],
+ "rest": {"count": 9, "asks_s": 14100.0}, "capped": false}
+```
+
+`week` is the Monday that starts it, local, as YYYY-MM-DD, the current week by
+default; a day that is not a Monday, or a week not yet begun, is
+`400 E_BAD_PARAM`. `previous` is the week before, `next` the week after or
+`null` for the current week.
+
+`items` are the week's 2+ verdicts in rank order (`week_rank`) that fit
+`budget_min`: each in turn is kept while the total stays under the budget,
+and one that would pass it is left for a shorter one after it. A row is the
+§25.2 row plus `asks_s`, what it asks of you: the whole video for a 3, its
+moments for a 2, the whole video when the moments have no span or there are
+none. `asks_s` at the top is their total, never above `budget_min × 60`.
+`rest` counts the candidates that did not fit and what they ask. `days` are
+the week's seven local days: what the fitted rows published that day ask,
+how many there are, and how many candidates came out that day. `capped` is
+`true` when the week holds 40 candidates or more, the most it compares.
+
+`POST /dashboard/api/budget` takes `{"week_budget_min"}`, whole minutes from
+0 to 10,080, stores it (`owners.week_budget_min`, index-schema §1.18) and
+answers it back; anything else, or another field, is `400 E_BAD_PARAM`. The
+default is 210, 30 a day. It is in `WRITE_ROUTES`.
+
 ## 26. The weekly brief's endpoints (2026-10-04)
 
 The brief (companion.md §6.1) for the web feed's `/feed/brief` and the app's
