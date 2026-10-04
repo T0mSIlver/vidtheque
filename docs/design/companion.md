@@ -505,7 +505,8 @@ consent. v1 builds no auth.
 Two surfaces, each answering one question. Nothing appears on both.
 
 - **The feed** (new, phone-first, web and Android): *what should I watch?*
-  Three screens and nothing else (and, since #158, the weekly brief, §6.1):
+  Three screens and nothing else (and, since #158, the weekly brief, §6.1;
+  since #170, an outside pick's page, §6.2):
   - **Feed**: verdicts, newest first, scores 2–3 on top, 0–1 collapsed into
     "skipped (n)". A row is the channel, title, score, reason and duration.
     *Amended 2026-10-04 (#146, #128):* a search on title and channel, a
@@ -639,6 +640,78 @@ the page opens. A push that reaches no phone is tried again on the next tick
 that Sunday. `VIDTHEQUE_BRIEF=0` turns it off. A box down all Sunday has no
 brief that week. Endpoints: dashboard.md §26; tables: index-schema §1.20.
 
+### 6.2 Discovery outside your follows
+
+*Added 2026-10-04 (#170), amending §8, which kept v1 to followed channels;
+Tom accepted the change the same day.* A small, labelled dose of videos from
+channels the owner does not follow, judged on what they say. Three parts,
+one migration (0022, index-schema §1.22), all server-side capped.
+
+**Topic scouting.** Once a night, from `VIDTHEQUE_SCOUT_HOUR` (default 5,
+local), the scout takes the three live profile entries with the highest
+positive weight and runs one YouTube search for each, newest uploads first
+(`ytsearchdate`), 8 results, flat: one request, no per-video call. It takes
+the first result per entry that is new to it, not in the corpus, not from a
+followed channel, and 5 to 120 minutes long, then fetches its metadata and one
+caption track: two requests, no audio, no GPU, nothing written to `videos`.
+A video with no captions is recorded and costs no model call. The rest get a
+cheap verdict (`llm_calls.purpose` `scout_verdict`): the verdict prompt of
+§3.2 with the captions cut to 12,000 characters and the title, channel and
+chapters, so about a quarter of a verdict's tokens. Its moments pass the same
+receipt check against the fetched cues, which are then dropped. A pick
+scored 2 or more is shown; view counts, thumbnails and popularity are never
+read, so they cannot enter the score.
+
+Server-side caps, per calendar week (§3.4's): at most 3 picks shown, at most
+12 candidates judged, and at most 15 model calls across `scout_verdict` and
+`speaker_names`, counted from `llm_calls`. Once 3 are shown, the week's
+scouting stops. Per night: at most 3 searches, 3 metadata fetches and 3
+caption fetches.
+
+**Backing off.** A bot check or a 429 (`RateLimited`) stops the night at
+once and is logged in `scout_runs`; nothing retries it that night. After
+blocked nights the scout waits 1, 2, 4, then 7 days before it asks again, so
+the box's indexing, which shares the IP, keeps its requests.
+
+**Where picks show.** A band at the end of the fitted week (§6), before
+the stop line, and a section of the weekly brief (§6.1), each pick labelled
+"from outside, because of: <entry>". It does not count against the time
+budget and is never pushed. A pick opens its own page: summary, moments as
+`youtu.be/ID?t=` links, thumbs up and down. `GET /dashboard/api/outside`
+(dashboard.md §27).
+
+**Speaker suggestions.** Once a week, during a scout run, the scout reads the
+owner's liked talks of the last 30 days: thumbed up, or kept per the ledger
+(§3.3), at most 10. One model call (`speaker_names`) reads each talk's title,
+channel, chapter titles and on-screen text from its first two minutes, and
+names at most 5 people who presented, never the host. For at most 2 names not
+suggested before, one flat YouTube search each (`ytsearch10:"<name>"`) looks
+for a channel of their own (channel name equal to the name) or other talks
+(at least 2 videos with the name in the title, on other channels). The first
+name that has either, and whose channel is not followed, becomes the week's
+one suggestion, with a reason the server writes ("Spoke in <talk>, which you
+thumbed up; has a channel of their own"). It shows in the same band and in
+the brief, with **Follow for 14 days** when there is a channel and the talks
+as links when there is not. A week with no suggestion makes no second model
+call.
+
+**Trial follows.** Thumbing up a pick, or following a suggested speaker,
+offers a **14-day follow** of the channel: a follow like any other
+(following.md), with `follows.trial_until`. It ends by itself at that time,
+as an unfollow (the videos it brought in stay), unless a video it brought in
+got a thumbs up or a full watch (the hand-offs cover 80% of its length)
+during the trial; then it becomes a lasting follow. Following the channel
+outright (`action="follow"`) also makes it lasting. The verb is
+`follow-channel action="trial"` (tool-surface §4.10).
+
+**Works if** outside picks' hit rate (§3.3: thumbed up, or watched past half
+the moments) stays within 10 points of the followed videos', and the follow
+list stays short. `GET /dashboard/api/valued-time` carries the outside hit
+rate beside the followed one.
+
+`VIDTHEQUE_SCOUT=0` turns scouting and speaker suggestions off; both need the
+companion model (§4). Trial follows end whether scouting is on or not.
+
 ## 7. The console overhaul
 
 The console shows too much and repeats itself: the overview's "recently
@@ -658,7 +731,8 @@ Kept out on purpose, so the loop ships polished:
 - **Talking points over time** per channel. It reads the verdicts and
   signals v1 stores; it needs nothing v1 must build differently. *(The weekly
   brief, deferred here with it, is built: §6.1.)*
-- Videos from channels you do not follow.
+- Videos from channels you do not follow, beyond the small labelled dose of
+  §6.2 (*amended 2026-10-04, #170, Tom*).
 - An in-app chat. Questions go to Claude, which has the corpus.
 - A memory system of our own beyond the profile. Claude's memory reaches
   vidtheque through the profile tool, never the other way.

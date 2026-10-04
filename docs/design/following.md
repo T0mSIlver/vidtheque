@@ -389,9 +389,9 @@ the summary rather than being its own tool, and that half of the sketch survives
 intact. It is the one `include_*` that defaults **off**, so no existing payload
 grew when it arrived. See tool-surface §4.3.
 
-**Writing is one tool, `follow-channel`, dispatching on `action`** (follow |
+**Writing is one tool, `follow-channel`, dispatching on `action`** (follow | trial |
 unfollow | pause | resume | check_now), with `url` as the single handle for all
-five. Specified in tool-surface §4.10. **Nothing in the tool reaches the
+six. Specified in tool-surface §4.10. **Nothing in the tool reaches the
 network**: creating a follow is a database row and the display name is read off
 the URL, because a probe would make `action="follow"` a call that can get the box
 rate-limited before the follow exists — and the first check is the request that
@@ -496,6 +496,20 @@ matching entry is in DECISIONS.md.
    flat listing, and §4's ordering is the reason that matters.
 
 6. **A check is a job at priority 10.** §3.
+
+7. **A follow can be a trial** (*added 2026-10-04, #170, companion.md §6.2*).
+   The field is `follows.trial_until` (0022): unix seconds, `NULL` for a
+   lasting follow. The verb is `follow-channel action="trial"`, which takes
+   the same arguments as `follow` and sets `trial_until` 14 days out; on a
+   channel already followed it changes nothing and says so. `action="follow"`
+   on a trial follow makes it lasting. The follow clock settles trials on its
+   tick (`follows/trials.py`): a trial past `trial_until` becomes lasting when
+   a video it brought in got a thumbs up or a full watch (the `watch`
+   hand-offs cover 80% of its length) after it began, and is unfollowed
+   otherwise, which keeps the videos it brought in like any unfollow. A trial
+   is checked and budgeted like any other follow; it is a way to try a
+   channel without a decision to undo, not a second kind of follow. The
+   Following page and `corpus-summary include_follows` print the end date.
 
 ## 11. Open questions for Tom
 

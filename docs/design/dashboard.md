@@ -3997,3 +3997,82 @@ this", `right` says the skip was fair; `source` is `audit` (the brief) or
 `{entry_id, text, weight, to}`, the entry that sank the video eased by 0.3
 toward 0, or `null` when no live negative entry sank it. Nothing is reweighted
 here: the page applies a proposal through `POST profile` (§25.5).
+
+## 27. Discovery's endpoints (2026-10-04, #170)
+
+Owner routes under `/dashboard/api/`, with §25.1's access, JSON rules and
+refusals. They serve companion.md §6.2: the week's picks from outside the
+follows, the week's speaker suggestion, and the trial follows both offer.
+Nothing here asks YouTube anything; the scout does that at night.
+
+### 27.1 `GET /dashboard/api/outside`
+
+`?week=` a Monday as YYYY-MM-DD, this week by default (§25.13's week).
+
+```json
+{"week": "2026-10-05",
+ "picks": [{"id": 4, "video_id": "dQw4w9WgXcQ", "url": "https://youtu.be/dQw4w9WgXcQ",
+            "title": "…", "channel": "…", "channel_url": "https://www.youtube.com/channel/UC…",
+            "duration_s": 2410.0, "published_at": 1791110000,
+            "because": "Coding agent evals", "score": 2, "reason": "…", "summary": "…",
+            "moments": [{"offset_s": 812.0, "end_s": 1104.5, "why": "…",
+                         "url": "https://youtu.be/dQw4w9WgXcQ?t=812"}],
+            "feedback": "none", "follow": {"state": "none", "until": null}}],
+ "speaker": {"id": 2, "name": "…", "reason": "…", "state": "open",
+             "talk": {"video_id": "…", "title": "…"},
+             "channel": {"name": "…", "url": "…"},
+             "talks": [{"video_id": "…", "title": "…", "channel": "…", "url": "https://youtu.be/…"}],
+             "follow": {"state": "none", "until": null}},
+ "scouting": true}
+```
+
+`picks` are the week's shown picks, at most 3, oldest first. `speaker` is the
+week's suggestion, `null` when there is none or it was dismissed; `channel`
+is `null` when the speaker has no channel of their own. `follow.state` is
+`none`, `trial` (with `until`, unix seconds), `lasting`, or `ended` for a
+trial that ended unkept. `scouting` is whether the scout runs on this
+instance (`VIDTHEQUE_SCOUT` and the model). `400 E_BAD_PARAM` for a week that
+is not a Monday.
+
+### 27.2 `GET /dashboard/api/outside/{id}`
+
+One pick in 27.1's shape, any week. `404 E_UNKNOWN_PICK` for an id that is not
+a shown pick.
+
+### 27.3 `POST /dashboard/api/outside/feedback`
+
+`{"id", "state"}`, `state` one of `up`, `down`, `none`; a second tap sends
+`none`. Answers `{"id", "state", "offer"}`. `offer` is
+`{"channel", "url", "days": 14}` when the state is `up`, the pick names its
+channel, and no follow covers it; the page then shows **Follow for 14 days**.
+Otherwise `null`.
+
+### 27.4 `POST /dashboard/api/outside/watched`
+
+`{"id", "offset_s", "watched_s"}`: the time in YouTube after a moment's
+hand-off, as §25.10 does for followed videos. Capped at what is left of the
+video from `offset_s`; at most 20 are kept a pick. Answers
+`{"id", "watched_s"}`, the stored figure.
+
+### 27.5 `POST /dashboard/api/outside/follow`
+
+`{"pick": id}` or `{"speaker": id}`: a 14-day trial follow of that channel,
+through `follow-channel action="trial"` with the channel's name as its title
+(following.md §10.7). Answers `{"url", "title", "trial_until", "already"}`;
+`already` is true when a follow covered the channel, which is left as it
+was. `404 E_UNKNOWN_PICK` for an unknown id, `409 E_NO_CHANNEL` for a pick or
+speaker with no channel.
+
+### 27.6 `POST /dashboard/api/outside/speaker`
+
+`{"id", "state": "dismissed"}`: the week's suggestion is not wanted. Answers
+`{"id", "state"}`. The name is never suggested again.
+
+### 27.7 Where else they show
+
+`GET /dashboard/api/brief` (§26.1) carries `outside`, 27.1's payload for the
+brief's week, read when asked. `GET /dashboard/api/valued-time` (§25.12)
+carries `outside` beside `hits` for each week: `{"shown", "kept", "rate"}`,
+the week's shown picks and the share thumbed up or watched past half their
+moments. `corpus-summary include_follows` and the Following page print a
+trial's end date.
