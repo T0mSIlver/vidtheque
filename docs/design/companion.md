@@ -512,6 +512,20 @@ consent. v1 builds no auth.
   fingerprints (`auth/android.py`). They sit under `/auth/` because the
   deploy proxies already send that prefix to Python. The server answers the
   app's client_id in-process instead of fetching its own public URL.
+
+  *Amended 2026-10-04 (#180):* the app signs in to any instance, so its
+  redirect is the private-use scheme `dev.vidtheque.app:/oauth/callback`
+  (RFC 8252 §7.1): an App Link verifies only for the host in the manifest.
+  Auth Tab returns that redirect to the app that opened it, as an activity
+  result, so no other app sees it; a browser without Auth Tab delivers it as
+  an intent, which another app could claim, so PKCE S256, `state` and the
+  RFC 9207 `iss` check carry the defence there. What a scheme cannot do is
+  prove which app is asking: any app can start a flow with this client_id,
+  as any app can already register its own client at `/register`. The consent
+  page therefore names the Android app and asks the owner to allow it only
+  after tapping Sign in in it. The client document is served by every oauth
+  instance; the App Link callback and assetlinks.json stay, for builds before
+  the scheme, while `VIDTHEQUE_ANDROID_CERT_SHA256` is set.
 - The feed's web pages reuse the existing owner session cookie.
 
 ## 6. The surfaces
@@ -592,7 +606,11 @@ last_seen)`). When a verdict meets the threshold (default 3,
 score, and the reason with the best moment ("Theo · 3 · his eval setup,
 14:02–22:40"). Below the threshold, nothing is sent. Firebase is free; its
 service-account key is `VIDTHEQUE_FCM_CREDENTIALS`, and with it unset no push
-is sent. *Amended 2026-10-03 (Tom):* the default is 3, not 2. The first
+is sent. *Amended 2026-10-04 (#180):* FCM tokens belong to one
+Firebase project, and only a server holding that project's key can send to
+them, so an APK has push on one instance only, the one its build names
+(`vidtheque.pushInstance`, Tom's). Signed in elsewhere, the profile says so
+and offers no switch. *Amended 2026-10-03 (Tom):* the default is 3, not 2. The first
 backfill scored 83 of 100 videos 2 or more, so 2 would ping on almost
 everything.
 
