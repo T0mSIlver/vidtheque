@@ -712,7 +712,9 @@ def test_the_week_fits_the_ranked_videos_under_the_budget(client: TestClient, tm
     assert before["next"] == body["week"] and before["budget_min"] == 60
 
 
-@pytest.mark.parametrize("query", ["week=2026-10-06", "week=next", "week=2026-02-30", "week=2999-01-07"])
+@pytest.mark.parametrize(
+    "query", ["week=2026-10-06", "week=next", "week=2026-02-30", "week=2999-01-07", "week=0001-01-01"]
+)
 def test_week_refuses_a_day_that_starts_no_past_week(client: TestClient, query: str) -> None:
     # 2026-10-06 is a Tuesday; 2999-01-07 a Monday not yet begun.
     assert client.get(f"{API}/week?{query}", headers=BEARER).json()["error"] == "E_BAD_PARAM"
