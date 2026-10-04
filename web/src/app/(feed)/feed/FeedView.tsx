@@ -9,7 +9,7 @@ import styles from "@/components/feed/feed.module.css";
 import { dashboard, FEED } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Feed, FeedFacets, FeedItem } from "@/lib/dashboard/schemas";
-import { asked, count } from "@/lib/format";
+import { asked, clock, count } from "@/lib/format";
 
 // Every judged video, newest first, one tap from the end of the week's fitted
 // list (companion.md §6): never mixed into it. The search, channel, order and
@@ -262,8 +262,8 @@ function BandPage({
   );
 }
 
-/** One video; `label` replaces what it asks of you, as the week's 3s ask the whole video. */
-export function Row({ item, label }: { item: FeedItem; label?: string }) {
+/** One video and what it asks of you: the whole video for the week's 3, else its moments. */
+export function Row({ item }: { item: FeedItem }) {
   // A skipped verdict says what sank it and takes an "I'd watch this" (§6.1).
   const skipped = item.score <= 1;
   return (
@@ -274,7 +274,9 @@ export function Row({ item, label }: { item: FeedItem; label?: string }) {
         <span className={styles.meta}>
           <Score score={item.tier ?? item.score} />
           {item.explored ? <Outside /> : null}
-          <span className={styles.duration}>{label ?? asked(item.moments_s, item.duration_s)}</span>
+          <span className={styles.duration}>
+            {item.tier === 3 ? clock(item.duration_s) : asked(item.moments_s, item.duration_s)}
+          </span>
         </span>
         {item.reason ? <span className={styles.reason}>{item.reason}</span> : null}
         <Matches matches={item.matches} />
