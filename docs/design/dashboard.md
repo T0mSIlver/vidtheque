@@ -3619,7 +3619,10 @@ the `{error, message, next}` envelope; every response is `no-store`.
 
 ### 25.2 `GET /dashboard/api/feed`
 
-Verdicts, newest first (`order: "newest"`), one band per page. *Amended
+Verdicts, newest first (`order: "newest"`), one band per page.
+*Amended 2026-10-04 (#156):* `band=all` lists every verdict, 0–3, in one
+list, the list behind the feed's "Show all videos" (companion.md §6); the
+facets take it too. *Amended
 2026-10-03:* newest means the video's `published_at`, not when the verdict was
 written: a backfill judges old videos today, and sorting by `judged_at` put them
 on top. Videos with no `published_at` come last; `video_id` breaks ties, so
@@ -3779,7 +3782,9 @@ it is in `WRITE_ROUTES` like the rest.
 ### 25.7 The feed's pages
 
 `/feed`, `/feed/{video_id}` and `/feed/profile` are Next pages outside the
-console's chassis, phone-first (companion.md §6). They read the routes above
+console's chassis, phone-first (companion.md §6). *Amended 2026-10-04 (#156):*
+`/feed` is the fitted week (§25.10), `?week=YYYY-MM-DD` an earlier one, and
+`/feed/all` every judged video (`band=all`) with the search and filters. They read the routes above
 with the console's session, so a sign-in from them returns there: `_safe_next`
 accepts `/feed` and its subpaths beside `/dashboard`, judged the same way.
 
