@@ -22,7 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-// The week is one read (dashboard.md §25.10); the budget is set per day and sent per week.
+// The week is one read (dashboard.md §25.13); the budget is set per day and sent per week.
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class WeekViewModelTest {

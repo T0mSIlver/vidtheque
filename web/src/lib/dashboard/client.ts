@@ -283,7 +283,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     feedFacets(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/feed/facets${suffix(query)}`, FeedFacets, { signal });
     },
-    /** The week fitted to the budget; the current one without `week` (§25.10). */
+    /** The week fitted to the budget; the current one without `week` (§25.13). */
     week(week: string | null, signal?: AbortSignal) {
       const query = new URLSearchParams(week ? { week } : {});
       return get(`${ROOT}/api/week${suffix(query)}`, Week, { signal });
