@@ -1,0 +1,11 @@
+[Unit]
+Description=vidtheque: Claude's daily picks at 07:30
+
+[Timer]
+# After the nightly update (04:00) and the scout (05:00), before the owner's morning.
+OnCalendar=*-*-* 07:30
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
