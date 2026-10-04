@@ -394,7 +394,7 @@ def _ranked_json(conn: sqlite3.Connection, items: list[verdicts_week.Ranked]) ->
                 "duration_s": c.duration_s,
                 "published_at": c.published_at,
                 "score": c.score,
-                **_place(c.score, r),
+                **_place(c.score, c.published_at, r),
                 "reason": c.reason,
                 "explored": c.explored,
                 "matches": row_matches,
