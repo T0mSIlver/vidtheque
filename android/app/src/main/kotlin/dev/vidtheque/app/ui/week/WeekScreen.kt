@@ -66,7 +66,7 @@ import java.util.Locale
 
 /**
  * What should I watch this week? The week's ranked verdicts that fit the budget, then
- * a stop (companion.md §6). Every other video is one tap away, under "Show all videos",
+ * a stop (companion.md §6). Every other video is one tap away, under "Show all videos" or the bar's "All videos",
  * and never mixed into this list.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)

@@ -536,6 +536,9 @@ Two surfaces, each answering one question. Nothing appears on both.
     above (`band=all`); it is the only way to the rest, one tap away, and
     never mixed into the fitted list. Tom: he must still be able to see every
     video when he wants to.
+    *Amended 2026-10-04 (#175):* the same list is also **All videos** in the
+    week's top bar, so the latest videos and a title search need no scroll to
+    the end. The week stays the start screen; the bar holds four actions.
   - **Video**: summary, moments (each a `youtu.be/ID?t=` link), thumbs up and
     down, mute, **Ask Claude**.
     *Amended 2026-10-04 (#171):* the stretches it repeats from videos you
