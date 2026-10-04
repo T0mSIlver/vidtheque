@@ -543,7 +543,8 @@ As built (0019): the brief is built on the job runner's tick on Sunday from
 (Monday to Sunday, keyed by its Monday), and pushed once to every device. Its
 three picks, audit picks and "what speakers said" are kept as they were on
 Sunday; the channel report, the profile changes and the answers are read when
-the page opens. `VIDTHEQUE_BRIEF=0` turns it off. A box down all Sunday has no
+the page opens. A push that reaches no phone is tried again on the next tick
+that Sunday. `VIDTHEQUE_BRIEF=0` turns it off. A box down all Sunday has no
 brief that week. Endpoints: dashboard.md §26; tables: index-schema §1.20.
 
 ## 7. The console overhaul
