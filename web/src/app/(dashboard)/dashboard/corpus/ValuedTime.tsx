@@ -52,6 +52,9 @@ function Loaded({ data }: { data: ValuedTime }) {
               <th scope="col" className={table.num}>
                 misses
               </th>
+              <th scope="col" className={table.num}>
+                kept / shown from outside
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -75,6 +78,11 @@ function Loaded({ data }: { data: ValuedTime }) {
                 <td className={table.num}>
                   {count(week.misses.count)}
                   {week.misses.pending ? ` (+${count(week.misses.pending)} not judged)` : ""}
+                </td>
+                <td className={table.num}>
+                  {week.outside && week.outside.shown > 0
+                    ? `${count(week.outside.kept)} / ${count(week.outside.shown)}`
+                    : "–"}
                 </td>
               </tr>
             ))}

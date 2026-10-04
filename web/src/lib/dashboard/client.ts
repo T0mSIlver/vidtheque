@@ -5,6 +5,12 @@ import type { ZodType } from "zod";
 import {
   Brief,
   CheckinStored,
+  OutsideFeedbackStored,
+  OutsidePick,
+  OutsideWeek,
+  SpeakerDismissed,
+  TrialStarted,
+  type OutsideFeedback,
   type SkipAnswer,
   SkipAnswered,
   CancelOutcome,
@@ -335,6 +341,25 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     /** The owner's word on a skipped video; `wrong` is "I'd watch this" (§26.3). */
     skip(videoId: string, answer: SkipAnswer, source: "audit" | "row") {
       return postJson(`${ROOT}/api/skips`, { video_id: videoId, answer, source }, SkipAnswered);
+    },
+    /** The week's picks from outside the follows and its speaker (§27.1). */
+    outside(week: string | null, signal?: AbortSignal) {
+      const query = new URLSearchParams(week ? { week } : {});
+      return get(`${ROOT}/api/outside${suffix(query)}`, OutsideWeek, { signal });
+    },
+    outsidePick(id: number, signal?: AbortSignal) {
+      return get(`${ROOT}/api/outside/${id}`, OutsidePick, { signal });
+    },
+    /** Thumbs on a pick; `up` may offer a 14-day follow (§27.3). */
+    outsideFeedback(id: number, state: OutsideFeedback) {
+      return postJson(`${ROOT}/api/outside/feedback`, { id, state }, OutsideFeedbackStored);
+    },
+    /** A 14-day trial follow of a pick's or a speaker's channel (§27.5). */
+    trialFollow(target: { pick: number } | { speaker: number }) {
+      return postJson(`${ROOT}/api/outside/follow`, target, TrialStarted);
+    },
+    dismissSpeaker(id: number) {
+      return postJson(`${ROOT}/api/outside/speaker`, { id, state: "dismissed" }, SpeakerDismissed);
     },
     /** Outside the read gate: a signed-out browser may ask. */
     session(signal?: AbortSignal) {

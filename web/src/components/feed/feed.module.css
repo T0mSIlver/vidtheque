@@ -901,3 +901,40 @@
   background: var(--console);
   border: 1px solid var(--seam2);
 }
+
+/* ------------------------------------------------------------ outside */
+
+.outsideBand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-top: var(--s4);
+}
+
+.because {
+  composes: t-label from global;
+  color: var(--tone-work);
+}
+
+.speaker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--seam);
+}
+
+.speakerTalks {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.speakerActions,
+.offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}

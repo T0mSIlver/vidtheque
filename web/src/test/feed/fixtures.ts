@@ -1,6 +1,7 @@
 // Feed payloads in the shapes `dashboard/feed.py` answers (dashboard.md §25),
 // seeded like `mcp/tests/test_dashboard_feed.py`.
 
+import type { OutsideWeek } from "@/lib/dashboard/schemas";
 const now = 1_790_000_000;
 
 export const TOP = {
@@ -267,4 +268,46 @@ export const WEEK = {
   })),
   rest: { count: 2, asks_s: 5400.0 },
   capped: false,
+};
+
+export const OUTSIDE: OutsideWeek = {
+  week: "2026-10-05",
+  picks: [
+    {
+      id: 4,
+      video_id: "outside0001",
+      url: "https://youtu.be/outside0001",
+      title: "An eval harness for every pull request",
+      channel: "Outside Talks",
+      channel_url: "https://www.youtube.com/@outsidetalks",
+      duration_s: 2400,
+      published_at: 1_791_110_000,
+      because: "Coding agent evals",
+      score: 2,
+      reason: "The harness is the part you would reuse.",
+      summary: "Forty tasks run on every pull request; the pass rate rose from 31 to 58 percent.",
+      moments: [
+        {
+          offset_s: 600,
+          end_s: 900,
+          why: "Forty tasks on every pull request",
+          url: "https://youtu.be/outside0001?t=600",
+        },
+      ],
+      feedback: "none",
+      follow: { state: "none", until: null },
+    },
+  ],
+  speaker: {
+    id: 2,
+    name: "Grace Hopper",
+    reason:
+      "Spoke in “Compilers for agents”, which you thumbed up; has a channel of their own, Grace Hopper.",
+    state: "open",
+    talk: { video_id: "kCc8FmEb1nY", title: "Compilers for agents" },
+    channel: { name: "Grace Hopper", url: "https://www.youtube.com/@gracehopper" },
+    talks: [],
+    follow: { state: "none", until: null },
+  },
+  scouting: true,
 };
