@@ -8,6 +8,7 @@
    rule, so a page never opens on two. */
 .pagehead {
   padding: var(--s6) 0 var(--s2);
+  margin-bottom: var(--s4);
 }
 
 .pageheadLine {
@@ -179,11 +180,6 @@
 
 .ledger > .figure:first-child {
   border-left: 0;
-}
-
-.ledger .figureLabel {
-  font-size: 0.594rem;
-  letter-spacing: 0.17em;
 }
 
 .ledger .figureValue {
