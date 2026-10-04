@@ -8,7 +8,7 @@ import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
 import { at, count } from "@/lib/format";
 import { notice, Notice, ReadFailure } from "@/components/dashboard/kit/notice";
 import { Notes, Pager, table } from "@/components/dashboard/kit/table";
-import { Body, DashLink, Page, PageHead, Sep, ui, Wide } from "@/components/dashboard/kit/ui";
+import { Body, DashLink, Page, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
 import { refusalOf, useWriteSide } from "@/components/dashboard/kit/write";
 import { usePatchedRows } from "@/components/dashboard/polling";
 import { useSession } from "@/components/dashboard/session";
@@ -115,39 +115,41 @@ function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polli
         </p>
       ) : null}
 
-      <Wide>
-        <div className={table.tablewrap}>
-          <table className={`${table.grid} ${styles.jobs}`}>
-            <caption className={ui.srOnly}>
-              Jobs in the selected order, with what each one is waiting on
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">job</th>
-                <th scope="col">state</th>
-                <th scope="col">items</th>
-                <th scope="col" className={table.num}>
-                  wall clock
+      <div className={table.tablewrap}>
+        <table className={`${table.grid} ${styles.jobs}`}>
+          <caption className={ui.srOnly}>
+            Jobs in the selected order, with what each one is waiting on
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">job</th>
+              <th scope="col">state</th>
+              <th scope="col">items</th>
+              <th scope="col" className={table.num}>
+                wall clock
+              </th>
+              <th scope="col">finished</th>
+              {cancellable ? (
+                <th scope="col" className={styles.colActions}>
+                  <span className={ui.srOnly}>cancel</span>
                 </th>
-                <th scope="col">finished</th>
-                {cancellable ? <th scope="col" className={styles.colActions} /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((job) => (
-                <Row
-                  key={job.job_id}
-                  job={job}
-                  tickMs={data.poll_ms}
-                  actions={cancellable}
-                  polling={polling}
-                  showPriority={data.filters.order === "priority"}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Wide>
+              ) : null}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((job) => (
+              <Row
+                key={job.job_id}
+                job={job}
+                tickMs={data.poll_ms}
+                actions={cancellable}
+                polling={polling}
+                showPriority={data.filters.order === "priority"}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <Pager
         limit={data.pagination.limit}
