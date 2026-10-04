@@ -20,6 +20,7 @@ export const TOP = {
         { entry_id: 15, text: "Evals for coding agents", direction: "up", strength: 2 },
         { entry_id: 36, text: "Launch hype", direction: "down", strength: 1 },
       ],
+      moments_s: 372.0,
       judged_at: now - 10,
     },
     {
@@ -73,11 +74,14 @@ export const VERDICT = {
     {
       cue_id: 41,
       offset_s: 842.5,
+      end_cue_id: 58,
+      end_s: 1214.5,
       why: "the self-attention block",
       url: "https://youtu.be/kCc8FmEb1nY?t=840",
     },
   ],
   moments_dropped: 1,
+  moments_s: 372.0,
   profile_rev: 4,
   model: "m:x",
   judged_at: now - 10,

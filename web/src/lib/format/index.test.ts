@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  asked,
   at,
   bytes,
   clock,
@@ -20,6 +21,19 @@ import {
 // is the absent state — Python printed `-` from a filter that could not be
 // reached with `None`, and the React pages render against a public projection
 // where a clock genuinely is `null`.
+
+describe("asked", () => {
+  it("is the moments' minutes against the video's", () => {
+    expect(asked(372, 2520)).toBe("6 of 42 min");
+    // A short moment costs a minute, never more than the video.
+    expect(asked(10, 2520)).toBe("1 of 42 min");
+    expect(asked(900, 600)).toBe("10 of 10 min");
+  });
+  it("falls back to the length with no span or no moment", () => {
+    expect(asked(null, 2520)).toBe("42:00");
+    expect(asked(0, 2520)).toBe("42:00");
+  });
+});
 
 describe("duration", () => {
   it("is one span, in three shapes", () => {

@@ -8,7 +8,7 @@ import styles from "@/components/feed/feed.module.css";
 import { dashboard, FEED } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Feed, FeedFacets, FeedItem } from "@/lib/dashboard/schemas";
-import { clock, count } from "@/lib/format";
+import { asked, count } from "@/lib/format";
 
 // What should I watch? Verdicts newest first, 2–3 on top, 0–1 folded into
 // "skipped (n)" (companion.md §6). Pages append; `has_more` decides the button.
@@ -296,7 +296,7 @@ function Row({ item }: { item: FeedItem }) {
         <span className={styles.meta}>
           <Score score={item.score} />
           {item.explored ? <Outside /> : null}
-          <span className={styles.duration}>{clock(item.duration_s)}</span>
+          <span className={styles.duration}>{asked(item.moments_s, item.duration_s)}</span>
         </span>
         {item.reason ? <span className={styles.reason}>{item.reason}</span> : null}
         <Matches matches={item.matches} />
