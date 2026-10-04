@@ -8,7 +8,7 @@ import styles from "@/components/feed/feed.module.css";
 import { dashboard, FEED } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Week } from "@/lib/dashboard/schemas";
-import { clock, count, minutes } from "@/lib/format";
+import { count, minutes } from "@/lib/format";
 import { Row } from "./FeedView";
 
 // What should I watch this week? The week's ranked verdicts fitted to the
@@ -64,11 +64,7 @@ function Loaded({ week, onBudget }: { week: Week; onBudget: () => void }) {
 
       <ol className={styles.rows} aria-label="Worth your time">
         {week.items.map((item) => (
-          <Row
-            key={item.video_id}
-            item={item}
-            label={item.tier === 3 ? clock(item.duration_s) : undefined}
-          />
+          <Row key={item.video_id} item={item} />
         ))}
       </ol>
 
