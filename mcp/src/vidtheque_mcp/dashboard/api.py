@@ -74,6 +74,7 @@ from .access import peer_trusted, sign_in_hint, write_side_enabled
 from .read_models import (
     BUDGET_WINDOW_S,
     CHANNEL_CAP,
+    CHANNEL_PICK_CAP,
     CHECK_CAP,
     CUE_PAGE,
     CUE_PAGE_MAX,
@@ -253,6 +254,39 @@ async def health(request: Request) -> Response:
         ),
     }
     return _json(payload)
+
+
+# ------------------------------------------------------------- search's reads
+
+
+async def readiness(request: Request) -> Response:
+    """`GET /dashboard/api/readiness` — the pipeline observation alone.
+
+    Health's `readiness` block without Health's database reads, for the search
+    page to ask while a search is slow: an unloaded embedding model is the usual
+    reason, and this is the one place that knows (§29.1).
+    """
+    observed = await pipeline_readiness(request, redact=redacted(request))
+    return _json({"readiness": _readiness(observed)})
+
+
+async def channels(request: Request) -> Response:
+    """`GET /dashboard/api/channels` — every channel name, for the pickers.
+
+    Most videos first, read one past `CHANNEL_PICK_CAP` for `has_more`. The
+    names are the stored ones, which the `channel` filters match without case.
+    """
+    db = request.app.state.assembled.db
+    rows = await db.read(lambda c: queries.channel_names(c, CHANNEL_PICK_CAP + 1))
+    return _json(
+        {
+            "channels": _capped(
+                rows,
+                CHANNEL_PICK_CAP,
+                lambda r: {"channel": str(r["channel"]), "videos": int(r["n"])},
+            )
+        }
+    )
 
 
 # --------------------------------------------------------------------- corpus
