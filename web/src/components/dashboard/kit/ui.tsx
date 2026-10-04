@@ -27,7 +27,7 @@ export function PageHead({
   children,
 }: {
   title: ReactNode;
-  /** A second line under the title's band. */
+  /** A sentence under the title: the page's state in words. */
   note?: ReactNode;
   children?: ReactNode;
 }) {
@@ -37,7 +37,7 @@ export function PageHead({
         <h1 className="t-headline">{title}</h1>
         {children ? <p className={styles.meta}>{children}</p> : null}
       </div>
-      {note ? <p className={styles.meta}>{note}</p> : null}
+      {note ? <p className={styles.headNote}>{note}</p> : null}
     </div>
   );
 }
