@@ -213,7 +213,7 @@ def test_feed_stops_paging_at_the_offset_ceiling(client: TestClient, monkeypatch
     assert page["has_more"] is True and page["next_offset"] is None
 
 
-@pytest.mark.parametrize("query", ["band=all", "limit=ten", "limit=--5", "limit=²", "offset=1e3"])
+@pytest.mark.parametrize("query", ["band=every", "limit=ten", "limit=--5", "limit=²", "offset=1e3"])
 def test_feed_refuses_a_bad_parameter(client: TestClient, query: str) -> None:
     refused = client.get(f"{API}/feed?{query}", headers=BEARER)
     assert refused.status_code == 400
@@ -274,7 +274,9 @@ def test_feed_filters_by_a_profile_entry_and_other(client: TestClient, tmp_path:
     assert {c["name"]: c["count"] for c in facets["channels"]} == {"Andrej Karpathy": 1, "GPU MODE": 1}
     skipped = client.get(f"{API}/feed/facets?band=skipped", headers=BEARER).json()
     assert skipped["entries"] == [] and skipped["other"] == 2
-    assert client.get(f"{API}/feed/facets?band=all", headers=BEARER).status_code == 400
+    assert client.get(f"{API}/feed/facets?band=every", headers=BEARER).status_code == 400
+    everything = client.get(f"{API}/feed/facets?band=all", headers=BEARER).json()
+    assert sum(c["count"] for c in everything["channels"]) >= sum(c["count"] for c in skipped["channels"])
     assert client.get(f"{API}/feed/facets").status_code == 401
 
 
@@ -726,3 +728,13 @@ def test_budget_refuses_anything_but_whole_minutes_in_a_week(client: TestClient,
     refused = client.post(f"{API}/budget", json=body, headers=JSON_BEARER)
     assert refused.status_code == 400
     assert client.get(f"{API}/week", headers=BEARER).json()["budget_min"] == 210
+
+
+def test_show_all_lists_every_verdict_in_one_list(client: TestClient) -> None:
+    every = client.get(f"{API}/feed?band=all", headers=BEARER).json()
+    top = client.get(f"{API}/feed?band=top", headers=BEARER).json()["items"]
+    skipped = client.get(f"{API}/feed?band=skipped", headers=BEARER).json()["items"]
+    assert every["band"] == "all"
+    assert {i["video_id"] for i in every["items"]} == {i["video_id"] for i in top + skipped}
+    published = [i["published_at"] for i in every["items"]]
+    assert published == sorted(published, reverse=True)
