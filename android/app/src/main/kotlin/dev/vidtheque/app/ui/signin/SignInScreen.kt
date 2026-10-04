@@ -3,6 +3,8 @@ package dev.vidtheque.app.ui.signin
 import dev.vidtheque.app.ui.Wordmark
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,16 +18,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SignInScreen(
-    host: String,
+    instance: String,
+    onInstance: (String) -> Unit,
     error: String?,
     busy: Boolean,
     onSignIn: () -> Unit,
@@ -46,10 +51,20 @@ fun SignInScreen(
             color = colors.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
-        Surface(color = colors.surfaceContainerHigh, shape = MaterialTheme.shapes.large) {
-            Text(host, style = type.labelLarge, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
-        }
-        if (error != null) Text(error, style = type.bodyMedium, color = colors.error)
+        OutlinedTextField(
+            value = instance,
+            onValueChange = onInstance,
+            label = { Text("Your vidtheque instance") },
+            placeholder = { Text("vidtheque.example.com") },
+            supportingText = { Text(error ?: "The address of the vidtheque server you run.") },
+            isError = error != null,
+            singleLine = true,
+            enabled = !busy,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
+            keyboardActions = KeyboardActions(onGo = { onSignIn() }),
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Button(
             onClick = onSignIn,
             enabled = !busy,

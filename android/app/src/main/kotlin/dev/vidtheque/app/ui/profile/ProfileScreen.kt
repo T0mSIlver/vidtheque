@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -108,6 +109,8 @@ fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit, onCollection: (Long
         onOlder = model::older,
         onCollection = onCollection,
         push = if (model.pushAvailable) pushOn else null,
+        host = model.host,
+        pushOnlyAt = model.pushOnlyAt,
         costs = costs,
         ledger = ledger,
         onPush = { on ->
@@ -143,6 +146,8 @@ fun ProfileContent(
     onPush: (Boolean) -> Unit = {},
     costs: CostWindow? = null,
     ledger: ValuedTime? = null,
+    host: String = "",
+    pushOnlyAt: String? = null,
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val profile = ui.profile
@@ -210,6 +215,8 @@ fun ProfileContent(
                 HistoryRow(event, names, busy = ui.busy) { onRevert(event.id) }
             }
             if (ui.nextBefore != null) item { OutlinedButton(onClick = onOlder, enabled = !ui.busy) { Text("Older") } }
+            item { Spacer(Modifier.height(16.dp)) }
+            item { InstanceCard(host, pushOnlyAt, onSwitch = onSignOut) }
         }
     }
 }
@@ -359,6 +366,24 @@ private fun what(event: ProfileEvent): String {
 }
 
 /** This phone, yes or no; which verdicts count is the instance's threshold (companion.md §6). */
+/** Where this phone is signed in; switching signs out, and the sign-in screen takes another address. */
+@Composable
+private fun InstanceCard(host: String, pushOnlyAt: String?, onSwitch: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(host, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (pushOnlyAt == null) "Your instance" else "Your instance. No notifications: this build sends them for $pushOnlyAt only.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onSwitch) { Text("Switch") }
+        }
+    }
+}
+
 @Composable
 private fun Notifications(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {

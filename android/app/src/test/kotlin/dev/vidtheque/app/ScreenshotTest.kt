@@ -83,7 +83,7 @@ class ScreenshotTest {
             // Dark, as the reference was recorded; the theme follows the system since #130.
             VidthequeTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                    SignInScreen(host = "private.vidtheque.dev", error = null, busy = false, onSignIn = {})
+                    SignInScreen(instance = "", onInstance = {}, error = null, busy = false, onSignIn = {})
                 }
             }
         }
@@ -124,6 +124,7 @@ class ScreenshotTest {
             VidthequeTheme(darkTheme = true) {
                 ProfileContent(
                     ui = ProfileUi(profile = profile),
+                    host = "private.vidtheque.dev",
                     snackbar = SnackbarHostState(),
                     onBack = {}, onSignOut = {}, onRetry = {}, onDrop = {}, onRevert = {}, onOlder = {}, onBuild = {},
                     ledger = ledger,
@@ -215,6 +216,7 @@ class ScreenshotTest {
             VidthequeTheme(darkTheme = true) {
                 ProfileContent(
                     ui = ProfileUi(profile = profile, collections = collections),
+                    host = "private.vidtheque.dev",
                     snackbar = SnackbarHostState(),
                     onBack = {}, onSignOut = {}, onRetry = {}, onDrop = {}, onRevert = {}, onOlder = {}, onBuild = {},
                 )

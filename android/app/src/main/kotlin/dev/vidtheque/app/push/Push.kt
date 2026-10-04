@@ -9,6 +9,7 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.vidtheque.app.BuildConfig
+import dev.vidtheque.app.auth.Instance
 import dev.vidtheque.app.data.Api
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -26,9 +27,12 @@ private val ON = booleanPreferencesKey("on")
  * says "this phone, yes or no".
  */
 @Singleton
-class Push @Inject constructor(@ApplicationContext private val context: Context, private val api: Api) {
+class Push @Inject constructor(@ApplicationContext private val context: Context, private val api: Api, private val instance: Instance) {
     /** A build without the Firebase project's values has no push at all. */
-    val available: Boolean get() = BuildConfig.FIREBASE_APP_ID.isNotEmpty()
+    val built: Boolean get() = BuildConfig.FIREBASE_APP_ID.isNotEmpty()
+
+    /** Only the server holding that project's key can send to its tokens (companion.md §6). */
+    val available: Boolean get() = built && instance.base == BuildConfig.PUSH_INSTANCE
 
     val on: Flow<Boolean> = context.pushPrefs.data.map { it[ON] == true }
 
@@ -42,7 +46,7 @@ class Push @Inject constructor(@ApplicationContext private val context: Context,
 
     /** Off, or signing out: the instance forgets the token, and FCM retires it. */
     suspend fun disable() {
-        if (!available || !on.first()) return
+        if (!built || !on.first()) return
         context.pushPrefs.edit { it[ON] = false }
         val token = runCatching { FirebaseMessaging.getInstance().token.await() }.getOrNull() ?: return
         runCatching { api.forgetDevice(token) }

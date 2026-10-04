@@ -7,7 +7,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
-val instance = providers.gradleProperty("vidtheque.instance").get().trimEnd('/')
+// The sign-in screen's prefilled instance: Tom's in gradle.properties, none in the public release.
+val instance = providers.gradleProperty("vidtheque.instance").getOrElse("").trimEnd('/')
+// The one instance whose server holds this build's Firebase key, so the only one push can reach.
+val pushInstance = providers.gradleProperty("vidtheque.pushInstance").getOrElse(instance).trimEnd('/')
 
 android {
     namespace = "dev.vidtheque.app"
@@ -20,7 +23,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         buildConfigField("String", "INSTANCE", "\"$instance\"")
-        manifestPlaceholders["instanceHost"] = instance.substringAfter("://")
+        buildConfigField("String", "PUSH_INSTANCE", "\"$pushInstance\"")
         // The Firebase project's app identity (not secrets): from the environment in CI
         // (Actions variables), from -P locally. Empty, the build has no push.
         for ((field, name) in listOf("FIREBASE_APP_ID" to "appId", "FIREBASE_API_KEY" to "apiKey", "FIREBASE_PROJECT_ID" to "projectId", "FIREBASE_PROJECT_NUMBER" to "projectNumber")) {

@@ -14,9 +14,9 @@ import javax.inject.Singleton
 
 enum class SessionState { Loading, SignedOut, SignedIn }
 
-/** What a sign-in in flight must remember until the browser comes back. */
+/** What a sign-in in flight must remember until the browser comes back, [instance] included. */
 @Serializable
-data class PendingSignIn(val verifier: String, val state: String, val url: String)
+data class PendingSignIn(val verifier: String, val state: String, val url: String, val instance: String)
 
 /**
  * The signed-in session: one access token, refreshed when it expires or a call
@@ -35,22 +35,31 @@ class Session @Inject constructor(
 
     private val lock = Mutex()
     private var tokens: Tokens? = null
-    private var meta: ServerMetadata? = null
+    private var meta: Pair<String, ServerMetadata>? = null
 
     init {
         scope.launch {
             // An unreadable store (corrupt file, I/O error) is a signed-out session, not a hung splash.
             // A debug build pointed at a local token-mode stack starts signed in.
-            tokens = runCatching { store.load() }.getOrNull()
-                ?: instance.devToken.takeIf { it.isNotEmpty() }?.let { Tokens(it, null, Long.MAX_VALUE) }
+            tokens = (
+                runCatching { store.load() }.getOrNull()
+                    ?: instance.devToken.takeIf { it.isNotEmpty() }?.let { Tokens(it, null, Long.MAX_VALUE) }
+                )
+                // A session stored before the instance was a choice belongs to the build's
+                // default; a build without one (the public release) signs it out.
+                ?.let { if (it.instance.isNotEmpty()) it else instance.default.takeIf(String::isNotEmpty)?.let(it::withInstance) }
+            tokens?.let { instance.base = it.instance }
             _state.value = if (tokens != null) SessionState.SignedIn else SessionState.SignedOut
         }
     }
 
-    suspend fun begin(): PendingSignIn {
+    /** Check [base] is an instance this app can sign in to, then build its authorize URL. */
+    suspend fun begin(base: String): PendingSignIn {
+        val found = metadata(base)
+        oauth.checkClient(base)
         val verifier = Pkce.secret()
         val state = Pkce.secret()
-        return PendingSignIn(verifier, state, oauth.authorizeUrl(metadata(), Pkce.challenge(verifier), state).toString())
+        return PendingSignIn(verifier, state, oauth.authorizeUrl(found, base, Pkce.challenge(verifier), state).toString(), base)
     }
 
     /** The redirect came back: check it belongs to [pending], then trade the code. */
@@ -62,13 +71,17 @@ class Session @Inject constructor(
         redirect.getQueryParameter("error")?.let {
             throw OAuthException(it, redirect.getQueryParameter("error_description") ?: "The server refused the sign-in ($it).")
         }
-        val meta = metadata()
+        val meta = metadata(pending.instance)
         // RFC 9207: the server names itself on the redirect; a different name is a mix-up.
         redirect.getQueryParameter("iss")?.let {
             if (it.trimEnd('/') != meta.issuer.trimEnd('/')) throw OAuthException("invalid_issuer", "The sign-in answer came from $it.")
         }
         val code = redirect.getQueryParameter("code") ?: throw OAuthException("no_code", "The sign-in answer carried no code.")
-        keep(oauth.exchange(meta, code, pending.verifier), previousRefresh = null)
+        val issued = oauth.exchange(meta, pending.instance, code, pending.verifier)
+        lock.withLock {
+            instance.base = pending.instance
+            keep(issued, previousRefresh = null)
+        }
         _state.value = SessionState.SignedIn
     }
 
@@ -89,13 +102,13 @@ class Session @Inject constructor(
         val dropped = lock.withLock { tokens.also { tokens = null } }
         store.clear()
         _state.value = SessionState.SignedOut
-        dropped?.refresh?.let { runCatching { oauth.revoke(metadata(), it) } }
+        dropped?.refresh?.let { runCatching { oauth.revoke(metadata(dropped.instance), dropped.instance, it) } }
     }
 
     private suspend fun refreshLocked(current: Tokens): String? {
         val refresh = current.refresh ?: return endLocked()
         return try {
-            keep(oauth.refresh(metadata(), refresh), previousRefresh = refresh).access
+            keep(oauth.refresh(metadata(current.instance), current.instance, refresh), previousRefresh = refresh).access
         } catch (e: OAuthException) {
             // invalid_grant: the refresh token is spent or revoked; anything else may pass.
             if (e.error == "invalid_grant") endLocked() else throw e
@@ -111,13 +124,14 @@ class Session @Inject constructor(
 
     private suspend fun keep(response: TokenResponse, previousRefresh: String?): Tokens {
         // The server rotates refresh tokens; keep the old one only if it sent none.
-        val next = Tokens(response.accessToken, response.refreshToken ?: previousRefresh, clock.nowMs() + response.expiresIn * 1000)
+        val next = Tokens(response.accessToken, response.refreshToken ?: previousRefresh, clock.nowMs() + response.expiresIn * 1000, instance.base)
         tokens = next
         store.save(next)
         return next
     }
 
-    private suspend fun metadata(): ServerMetadata = meta ?: oauth.metadata().also { meta = it }
+    private suspend fun metadata(base: String): ServerMetadata =
+        meta?.takeIf { it.first == base }?.second ?: oauth.metadata(base).also { meta = base to it }
 
     private companion object {
         const val EARLY_MS = 60_000L

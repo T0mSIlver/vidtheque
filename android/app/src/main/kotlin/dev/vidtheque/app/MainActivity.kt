@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import dev.vidtheque.app.auth.Instance
 import dev.vidtheque.app.auth.SessionState
 import dev.vidtheque.app.data.WatchClock
 import dev.vidtheque.app.push.VerdictNotifications
@@ -49,16 +50,18 @@ class MainActivity : ComponentActivity() {
             VidthequeTheme {
                 val state by root.state.collectAsStateWithLifecycle()
                 val ui by signIn.ui.collectAsStateWithLifecycle()
+                val typed by signIn.typed.collectAsStateWithLifecycle()
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     when (state) {
                         SessionState.Loading -> Unit
                         SessionState.SignedIn -> SignedIn(opening = root.opening, openingBrief = root.openingBrief, onSignOut = root::signOut)
                         SessionState.SignedOut -> SignInScreen(
-                            host = signIn.host,
+                            instance = typed ?: signIn.current,
+                            onInstance = signIn::type,
                             error = ui.error,
                             busy = ui.busy,
                             onSignIn = {
-                                signIn.start { url, host, path -> AuthTabIntent.Builder().build().launch(authTab, url, host, path) }
+                                signIn.start { url -> AuthTabIntent.Builder().build().launch(authTab, url, Instance.REDIRECT_SCHEME) }
                             },
                         )
                     }
@@ -78,12 +81,12 @@ class MainActivity : ComponentActivity() {
         handleCallback(intent)
     }
 
-    // A browser without Auth Tab returns through the verified App Link instead.
+    // A browser without Auth Tab returns through the intent filter instead.
     private fun handleCallback(intent: Intent) {
         intent.getStringExtra(VerdictNotifications.EXTRA_VIDEO)?.let { root.opening.value = it }
         if (intent.getBooleanExtra(VerdictNotifications.EXTRA_BRIEF, false)) root.openingBrief.value = true
         val uri = intent.data ?: return
-        if (intent.action == Intent.ACTION_VIEW && uri.scheme == "https" && uri.host == signIn.host && uri.path == "/auth/android/callback") {
+        if (intent.action == Intent.ACTION_VIEW && uri.scheme == Instance.REDIRECT_SCHEME && uri.path == Instance.REDIRECT_PATH) {
             signIn.onRedirect(uri)
         }
     }
