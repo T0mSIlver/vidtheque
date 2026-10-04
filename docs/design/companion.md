@@ -117,8 +117,8 @@ tells Claude, not from repeated questions. Four paths:
   nightly update (§2.4) lists the repos that user owns, pushed to in the last
   30 days, forks and archives left out, at most 30, through the REST API. It
   reads each repo's name, description, topics and main language, never code,
-  commits or issues. Private repos are listed only with
-  `VIDTHEQUE_GITHUB_TOKEN`. A repo whose name, description or topics hit the
+  commits or issues. Public repos only (Tom, 2026-10-04), read without a
+  token: one listing a night fits the unauthenticated 60 requests an hour. A repo whose name, description or topics hit the
   deny list (job, interview, salary and the like) is dropped before the model
   sees it. One model call (`llm_calls.purpose` `github_projects`) names at
   most 8 topics. The model is given the live projects so that a repo still
@@ -126,8 +126,7 @@ tells Claude, not from repeated questions. Four paths:
   `profile/topics.py` (the entry caps, plain characters, the deny list and a
   built-in list of vendor names), and the survivors are added as `kind=project`, weight 0.5, by
   `actor=nightly`, reason "an active GitHub repo". Naming a live project again
-  restarts its 30 days. The pass runs on the box, so it needs no credential
-  beyond the optional token, and a GitHub or model failure skips only this
+  restarts its 30 days. The pass runs on the box and needs no credential, and a GitHub or model failure skips only this
   pass.
 - **Current projects from Claude's memory, by hand**, for what is not on
   GitHub. `scripts/memory_projects.py` runs where Claude Code keeps its memory

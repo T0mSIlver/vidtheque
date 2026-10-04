@@ -354,10 +354,10 @@ def github_api(repos: list[dict[str, Any]], seen: list[Any], status: int = 200) 
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-def with_github(parts: Assembled, model: FakeModel, http: httpx.AsyncClient, token: str | None = None) -> Nightly:
+def with_github(parts: Assembled, model: FakeModel, http: httpx.AsyncClient) -> Nightly:
     return Nightly(
         parts.db, model, "api:fake", hour=4, clock=Clock(DAY),
-        github_settings=GitHubSettings("T0mSIlver", token), http=http,
+        github_settings=GitHubSettings("T0mSIlver"), http=http,
     )
 
 
@@ -395,7 +395,7 @@ async def test_github_projects_come_from_active_repos_and_pass_the_checks(assemb
     assert await projects(assembled) == {"Android app in Kotlin": "nightly"}
 
 
-async def test_a_token_lists_private_repos_and_an_active_repo_keeps_its_project(
+async def test_an_active_repo_keeps_its_project_and_a_private_one_is_never_read(
     assembled: Assembled,
 ) -> None:
     month_ago = int((DAY - timedelta(days=29)).timestamp())
@@ -407,9 +407,10 @@ async def test_a_token_lists_private_repos_and_an_active_repo_keeps_its_project(
     seen: list[Any] = []
     model = FakeModel({"projects": [{"text": "Android app in Kotlin"}]})
 
-    await with_github(assembled, model, github_api([repo("app", 1)], seen), token="t-1").run_once()
+    listing = [repo("app", 1), repo("secret-thing", 1, private=True)]
+    await with_github(assembled, model, github_api(listing, seen)).run_once()
 
-    assert seen[0].url.path == "/user/repos" and seen[0].headers["authorization"] == "Bearer t-1"
+    assert "secret-thing" not in model.prompts[0]
     assert "- Android app in Kotlin" in model.prompts[0]  # offered for reuse
     [row] = await assembled.db.read(store.entries)
     assert row["expires_at"] == int(DAY.timestamp()) + store.PROJECT_TTL_S

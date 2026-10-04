@@ -3,8 +3,8 @@
 Part of the nightly update, before the expiry pass. It lists the repos
 `VIDTHEQUE_GITHUB_USER` owns that were pushed to in the last 30 days, through
 the REST API, and reads only each repo's name, description, topics and main
-language: never code, commits or issues. Private repos are listed only with
-`VIDTHEQUE_GITHUB_TOKEN`. A repo that hits the deny list is dropped before the
+language: never code, commits or issues. Public repos only, without a token:
+one listing a night is well inside the unauthenticated 60 requests an hour. A repo that hits the deny list is dropped before the
 model sees it; one model call names the projects, each topic passes
 `topics.check`, and the survivors are added as `kind=project` by
 `actor=nightly`. A project whose repo is still active is named again, which
@@ -45,7 +45,6 @@ SYSTEM = (
 @dataclass(frozen=True)
 class GitHubSettings:
     user: str
-    token: str | None = None
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> "GitHubSettings | None":
@@ -54,7 +53,7 @@ class GitHubSettings:
             return None
         if _LOGIN.fullmatch(user) is None:
             raise ConfigError(f"VIDTHEQUE_GITHUB_USER is not a GitHub login: {user!r}")
-        return cls(user=user, token=env.get("VIDTHEQUE_GITHUB_TOKEN", "").strip() or None)
+        return cls(user=user)
 
 
 @dataclass
@@ -69,26 +68,28 @@ class Pass:
 async def active_repos(
     http: httpx.AsyncClient, settings: GitHubSettings, now: int
 ) -> list[dict[str, Any]]:
-    """The owner's repos pushed to in the last 30 days, newest first, forks and archives left out."""
+    """The owner's public repos pushed to in the last 30 days, newest first, forks and archives left out."""
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "vidtheque",
     }
-    if settings.token:
-        # The token's own listing is the one that includes private repos.
-        url = f"{API}/user/repos"
-        params = {"affiliation": "owner", "sort": "pushed", "per_page": "100"}
-        headers["Authorization"] = f"Bearer {settings.token}"
-    else:
-        url = f"{API}/users/{settings.user}/repos"
-        params = {"type": "owner", "sort": "pushed", "per_page": "100"}
-    response = await http.get(url, params=params, headers=headers, timeout=30.0)
+    response = await http.get(
+        f"{API}/users/{settings.user}/repos",
+        params={"type": "owner", "sort": "pushed", "per_page": "100"},
+        headers=headers,
+        timeout=30.0,
+    )
     response.raise_for_status()
     repos = []
     for repo in response.json():
         owner = str((repo.get("owner") or {}).get("login", ""))
-        if owner.casefold() != settings.user.casefold() or repo.get("fork") or repo.get("archived"):
+        if (
+            owner.casefold() != settings.user.casefold()
+            or repo.get("private")
+            or repo.get("fork")
+            or repo.get("archived")
+        ):
             continue
         pushed = _epoch(repo.get("pushed_at"))
         if pushed is None or now - pushed > ACTIVE_S:
