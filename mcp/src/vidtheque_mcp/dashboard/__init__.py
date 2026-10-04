@@ -282,6 +282,10 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         # no parameter, so the assemblers' caps are the only bounds there are.
         Route(f"{ROOT}/api/health", guarded(api.health), methods=["GET"]),
         Route(f"{ROOT}/api/corpus", guarded(api.corpus), methods=["GET"]),
+        # The search page's two small reads (§29.1): the worker's model state
+        # while a search is slow, and the channel names its picker offers.
+        Route(f"{ROOT}/api/readiness", guarded(api.readiness), methods=["GET"]),
+        Route(f"{ROOT}/api/channels", guarded(api.channels), methods=["GET"]),
         # The videos table and the video detail, same argument and same gate
         # (§20). **Not** `/api/videos`: that path at this prefix is the
         # facade's listing, two routes up, and its records are the corpus's own

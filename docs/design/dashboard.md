@@ -4201,3 +4201,99 @@ three durations on one line, the deferral as "Waiting to retry, *n* left",
 and folds the older events behind `Fold`. The bar shows only while the job
 is live, and "this is the final record" and "Newest first, *n* shown" are
 gone.
+
+## 29. The console redesign: search, videos, one video (2026-10-04, #181)
+
+Tom's direction for the console, applied to three pages: quiet when fine and
+loud when not, human labels, no narration, statistics on demand, each fact
+once, a reading width, and controls weighted by use. Each subsection below
+supersedes the page's earlier sections (§5.2, §5.3, §14, §24.3, §24.4) where
+they disagree. §28 holds the shared kit these pages build on, and Health, Corpus, Costs and
+Jobs (#182).
+
+### 29.1 Search, and its two reads
+
+**The page** is a centred column. The query box owns the first row with its
+button; under it, **Look in** (`everything`, `spoken`, `on-screen text`,
+`frames`: the badges' words, so the picker and the results speak one
+vocabulary) and **Channel**, a select over every stored name. A picker reruns
+the search at once when there is a query. The slice (`1–20 of 32`) heads the
+results, beside the leg counts folded as "how it matched", now labelled per
+channel (spoken: keyword matches, meaning matches kept, meaning candidates;
+on-screen text; frames: meaning matches kept, visual candidates). A result's
+receipt sits in its meta line after the timecode, not across the row. A
+skipped leg's note is drawn in the warn tone. Before any query the page is the
+form and nothing else.
+
+**While a search runs** a line under the form says so and counts the seconds,
+over a moving rule. After 1.5 s the page asks `GET /dashboard/api/readiness`,
+then every 3 s until the search lands, and says why it waits: "Loading the
+search models" when an `embed` or `image_embed` model is not loaded, "Embedding
+worker not answering" when the probe failed, "Searching" otherwise. A cold
+worker loads its embedder on the first query, which is where tens of seconds
+went with nothing on screen.
+
+**`GET /dashboard/api/readiness`** answers `{"readiness": …}`, Health's
+readiness block (§24.1) alone: the same `pipeline_readiness` observation,
+bounded by `WORKER_STATUS_TIMEOUT_S`, without Health's database reads. In the
+projection `worker` is `null` and the worker is never asked, as on Health.
+
+**`GET /dashboard/api/channels`** answers
+`{"channels": {"rows": [{"channel", "videos"}], "has_more"}}`: every channel
+name, most videos first, one row per name whatever its case, read one past
+`CHANNEL_PICK_CAP` (200). The search and videos pages' Channel selects read
+it; the `channel` filters match without case, so a stored name is always a
+value they accept. A name in the URL the list lacks stays an option. Both
+reads take no parameter and sit behind the gate.
+
+### 29.2 The videos table
+
+The band keeps the three filters used most out (the text box, Channel as the
+same select, State) and folds the rest behind "more filters": tags, coverage,
+both date ranges, order and rows. The fold opens itself when one of its
+filters is on, so nothing that narrows the table is hidden; Reset shows only
+when something is narrowed. The head no longer restates the filters under it.
+
+The row loses its actions column (re-index and tag are the video page's) and
+its coverage column. **State** is quiet when fine: a ready video with every
+leg reads `ready` in muted text; any other state is its pill, and each missing
+leg is named in the warn tone (`no ocr`, `no frames`).
+
+### 29.3 One video
+
+Top to bottom: the head, the timeline, the keyframes, the transcript,
+Provenance, the indexing runs, the folded statistics, and re-index.
+
+- **Head.** The state words show only when the video is not ready or its
+  `data_status` is not `ok`. Tags are chips under the facts; with a write side
+  each chip has its own remove and an "add tag" box ends the row, both through
+  `tag_video`. The constraint sentence is gone; a refused tag prints
+  `tag_video`'s own refusal.
+- **Timeline.** Chapters ride on the shot band as a row of segments on the
+  same scale, titled where a segment is wide enough (72 px), each linking to
+  its own start on YouTube. The scrub preview names the chapter of the shot
+  under the pointer. Under the band: the kept keyframe count, and "timeline
+  capped" in the warn tone when `shots.capped`. The Chapters panel is gone.
+- **Keyframes.** One strip that scrolls sideways, kept keyframes only, with
+  drawn arrows over its ends on a pointer device. With no `?frames=` the read
+  asks for `FRAME_PAGE_MAX` (96); nearing the strip's end reads the next page
+  in place and appends it, and a strip seeded past its first page offers
+  "Earlier keyframes". A selected duplicate (`?select=` or a shot bar) selects
+  the frame it duplicates. A card is the frame, its OCR boxes, its timecode
+  and ordinal, and a pill only when OCR did not finish (`done` and `empty` say
+  nothing). Each box's title is its text and confidence; the per-card line
+  list is gone, and the enlarged frame keeps its own.
+- **Transcript.** Consecutive cues are paragraphs: a new one starts at a new
+  speaker, a pause of 2 s or more, after 60 s, or past 600 characters. The
+  paragraph's first second is the YouTube link and every cue keeps its own
+  second as a title. Chunk marks, the in-chunk rule and `avg_logprob` are not
+  drawn. The box reads on as it scrolls, in batches of the endpoint's
+  `max_limit`, and reads again by itself while a batch does not fill it; the
+  "Read on" link at its foot is the same batch as a real address.
+- **Statistics.** "What was stored" is folded as "statistics": one figure per
+  count and per cue origin, with words and characters from the transcript
+  block, and no sentence under any figure.
+- **Re-index** is the button alone; a refusal prints in place, and where the
+  database refuses writes the button is disabled (the rail already says why).
+
+Payloads are unchanged but for the two reads in §29.1.

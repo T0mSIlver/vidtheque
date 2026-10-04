@@ -65,6 +65,8 @@ from .test_dashboard_following import sign_in
 
 HEALTH = f"{ROOT}/api/health"
 CORPUS = f"{ROOT}/api/corpus"
+READINESS = f"{ROOT}/api/readiness"
+CHANNELS = f"{ROOT}/api/channels"
 SESSION = f"{ROOT}/api/session"
 # The videos table and the video detail page (§20). `library`, not `videos`:
 # `/dashboard/api/videos` is the facade's listing at this prefix and stays it.
@@ -124,7 +126,7 @@ def test_the_two_corpus_reads_sit_behind_the_pages_own_gate(tmp_path: Path) -> N
     """A JSON route that skips the credential check is the hole the pages were
     guarded against — and the refusal is the typed envelope, not a page."""
     with owner_client(tmp_path) as client:
-        for path in (HEALTH, CORPUS):
+        for path in (HEALTH, CORPUS, READINESS, CHANNELS):
             refused = client.get(path)
             assert refused.status_code == 401, path
             body = refused.json()
@@ -563,6 +565,43 @@ def test_an_unreachable_worker_degrades_rather_than_failing_the_payload(
         body = read(client, HEALTH, headers=BEARER)
     assert body["readiness"]["worker"]["state"] == "unavailable"
     assert body["jobs"]["active"] == 2  # the database half arrived anyway
+
+
+def test_readiness_is_healths_block_alone_and_the_projection_never_probes(
+    tmp_path: Path,
+) -> None:
+    """The search page asks it while a search is slow (§29.1): the same three
+    fields per model as Health, and in the projection no worker request."""
+    called = False
+
+    def worker(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(
+            200, json={"backends": [{"task": "embed", "model": "m", "loaded": False}]}
+        )
+
+    with owner_client(tmp_path, worker_handler=worker) as client:
+        owner = read(client, READINESS, headers=BEARER)
+    assert owner["readiness"]["worker"]["models"] == [
+        {"task": "embed", "model": "m", "loaded": False}
+    ]
+
+    called = False
+    with make_client(tmp_path / "demo", public=DEMO, worker_handler=worker) as demo:
+        projected = read(demo, READINESS)
+    assert not called
+    assert projected["readiness"]["worker"] is None
+
+
+def test_channels_lists_every_name_most_videos_first(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        body = read(client, CHANNELS, headers=BEARER)
+    rows = body["channels"]["rows"]
+    assert body["channels"]["has_more"] is False
+    assert {"Andrej Karpathy", "GPU MODE", "3Blue1Brown"} <= {row["channel"] for row in rows}
+    counts = [row["videos"] for row in rows]
+    assert counts == sorted(counts, reverse=True) and sum(counts) >= 3
 
 
 # ------------------------------------------------------------- the projection

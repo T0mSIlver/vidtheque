@@ -1493,6 +1493,19 @@ def channel_rollup(conn: sqlite3.Connection, video_ids: Sequence[int], limit: in
     ).fetchall()
 
 
+def channel_names(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
+    """Every channel, most videos first; one row per name whatever its case."""
+    return conn.execute(
+        """
+        SELECT MIN(channel_name) AS channel, COUNT(*) AS n
+        FROM videos
+        WHERE channel_name IS NOT NULL AND channel_name <> ''
+        GROUP BY channel_lc ORDER BY n DESC, channel_lc LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 def channel_count(conn: sqlite3.Connection, video_ids: Sequence[int]) -> int:
     return int(
         conn.execute(
