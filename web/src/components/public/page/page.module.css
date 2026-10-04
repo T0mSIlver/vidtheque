@@ -1,0 +1,111 @@
+/* The public site's text pages (/docs, /app): one reading column. */
+.main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: var(--gap-head) var(--gut) var(--beat);
+  display: grid;
+  gap: var(--s6);
+}
+
+.kick {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--gold);
+}
+
+.kick s {
+  display: block;
+  flex: none;
+  width: 34px;
+  height: 1px;
+  background: var(--gold);
+}
+
+.big {
+  composes: t-headline from global;
+  color: var(--fg-max);
+  text-wrap: balance;
+}
+
+.lede {
+  composes: t-lede from global;
+  color: var(--fg2);
+}
+
+.section {
+  display: grid;
+  gap: var(--s3);
+  padding-top: var(--s6);
+  border-top: 1px solid var(--seam);
+}
+
+.h2 {
+  composes: t-cell-strong from global;
+  color: var(--fg-max);
+}
+
+.p {
+  composes: t-body from global;
+  color: var(--fg2);
+  max-width: var(--prose);
+}
+
+.p b {
+  color: var(--fg);
+  font-weight: var(--w-strong);
+}
+
+.p a,
+.list a {
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-44);
+}
+
+.list {
+  composes: t-body from global;
+  color: var(--fg2);
+  padding-left: 1.2em;
+  display: grid;
+  gap: var(--s2);
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-ligatures: none;
+  color: var(--fg);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  padding: var(--s4);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.inline {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  font-variant-ligatures: none;
+  color: var(--fg);
+}
+
+.cta {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: var(--w-action);
+  line-height: normal;
+  padding: 14px 22px;
+  border: 1px solid var(--gold);
+}
+
+.cta:hover,
+.cta:focus-visible {
+  background: var(--gold-hi);
+}

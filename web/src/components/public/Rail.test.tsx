@@ -9,9 +9,14 @@ describe("Rail", () => {
     expect(screen.getByRole("link", { name: /vidtheque/ })).toHaveAttribute("href", "/");
   });
 
-  it("offers no nav", () => {
+  it("links the site's other pages", () => {
     render(<Rail />);
-    expect(screen.queryByRole("navigation")).toBeNull();
+    const nav = screen.getByRole("navigation", { name: "Site" });
+    expect(Array.from(nav.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toEqual([
+      "/demo",
+      "/docs",
+      "/app",
+    ]);
   });
 
   it("prints the corpus size beside the wordmark when meta named one", () => {
