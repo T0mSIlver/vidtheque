@@ -17,6 +17,8 @@ from vidtheque_mcp.corpus_snapshot import (
 from vidtheque_mcp.db.connection import open_read_connection, open_write_connection
 from vidtheque_mcp.db.migrations import current_version, migrate
 from vidtheque_mcp.db.queries import pack_f32
+from vidtheque_mcp.profile import store as profile_store
+from vidtheque_mcp.verdicts import store as verdicts_store
 
 
 @dataclass(frozen=True)
@@ -194,6 +196,7 @@ def _seed(data_dir: Path) -> Seeded:
             "INSERT INTO ask_budget (bucket, client, day, spent) "
             "VALUES ('ask_ip', '203.0.113.7', '2026-09-18', 3)"
         )
+        _seed_companion(conn, video_ids["channel0001"])
         conn.execute("UPDATE video_stages SET error = 'boom at /srv/private/path'")
         conn.execute(
             "INSERT INTO follow_spend (collection_id, source_id, duration_s) "
@@ -208,6 +211,28 @@ def _seed(data_dir: Path) -> Seeded:
     (data_dir / "derived").mkdir()
     (data_dir / "derived" / "cache.jpg").write_bytes(b"derived")
     return Seeded(data_dir, video_ids, row_ids)
+
+
+# The owner's own rows, which a public generation must never carry (#202).
+SEEDED_COMPANION = ("profile_events", "signals", "verdicts", "llm_calls", "devices", "profile_entries")
+
+
+def _seed_companion(conn, video_id: int) -> None:
+    conn.execute("BEGIN IMMEDIATE")
+    profile_store.apply(conn, profile_store.Ops(add=[("Private interest", 0.9)]), "owner")
+    conn.execute(
+        "INSERT INTO signals (kind, video_id, text) VALUES ('mcp_search', ?, 'what I am building')",
+        (video_id,),
+    )
+    verdicts_store.save(
+        conn, video_id, score=3, reason="r", summary="s", moments=[], profile_rev=1, model="m"
+    )
+    conn.execute(
+        "INSERT INTO llm_calls (at, purpose, backend, model, latency_ms, outcome) "
+        "VALUES (1, 'verdict', 'api', 'm', 1, 'ok')"
+    )
+    conn.execute("INSERT INTO devices (token) VALUES ('fcm-token-of-the-owner')")
+    conn.execute("COMMIT")
 
 
 @pytest.fixture
@@ -364,9 +389,12 @@ def test_builds_filtered_generation_without_touching_source(
 
     source = open_read_connection(source_db)
     try:
+        seeded_tables = [
+            t for t in corpus_snapshot.OPERATIONAL_TABLES if t not in corpus_snapshot.COMPANION_TABLES
+        ] + list(SEEDED_COMPANION)
         assert all(
             source.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] > 0
-            for table in corpus_snapshot.OPERATIONAL_TABLES
+            for table in seeded_tables
         )
     finally:
         source.close()
@@ -524,3 +552,18 @@ def test_verify_generation_rejects_a_video_count_the_database_does_not_have(
 
     with pytest.raises(SnapshotError, match="videos.total check failed"):
         verify_generation(generation)
+
+
+def test_every_table_a_migration_creates_is_classified(tmp_path: Path) -> None:
+    """A new table must be put on one side of the line before a publish can build (#202)."""
+    conn = open_write_connection(tmp_path / "v.db")
+    try:
+        migrate(conn)
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+    finally:
+        conn.close()
+    known = corpus_snapshot.CORPUS_TABLES | set(corpus_snapshot.OPERATIONAL_TABLES)
+    unclassified = [
+        t for t in tables if t not in known and not t.startswith(corpus_snapshot.VIRTUAL_PREFIXES)
+    ]
+    assert unclassified == [], "add each to CORPUS_TABLES or OPERATIONAL_TABLES"
