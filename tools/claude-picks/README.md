@@ -26,8 +26,12 @@ name, so the routine names its own server, and that entry carries the
 
 2. Sign it in once: `claude --strict-mcp-config --mcp-config ~/.config/vidtheque/picks-mcp.json`,
    then `/mcp`, `vidtheque-picks`, Authenticate.
-3. Check it: `tools/claude-picks/run.sh --dry-run`.
-4. Install the timer:
+3. Put an Anthropic API key in `~/.config/vidtheque/anthropic.env`
+   (`ANTHROPIC_API_KEY=…`, mode 600). The routine runs `claude --bare`, which
+   bills that key and never the Claude plan; `VIDTHEQUE_PICKS_MAX_USD` (default
+   2) caps one run.
+4. Check it: `set -a; . ~/.config/vidtheque/anthropic.env; set +a; tools/claude-picks/run.sh --dry-run`.
+5. Install the timer:
 
    ```bash
    cp tools/claude-picks/claude-picks.{service,timer} ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now claude-picks.timer
@@ -35,4 +39,4 @@ name, so the routine names its own server, and that entry carries the
 
 State lives in `~/.local/state/vidtheque/claude-picks/`: `learnings.md` (the
 routine's own notes, never sent to the server), `memory.md` (the digest of
-the last run) and `runs.jsonl` (each run's report).
+the last run) and `runs.jsonl` (each run's report and cost).

@@ -808,7 +808,8 @@ read those. Claude adds picks on top.
 - **The ledger** counts picks as their own source beside the top tier
   (§3.3).
 - **The routine** is a daily scheduled Claude Code task on the dev box, where
-  Claude's memory is, on Sonnet 5.5, never a cloud routine. It reaches the
+  Claude's memory is, on Sonnet 5.5, never a cloud routine. It bills
+  Anthropic API credits, never the owner's Claude plan (2026-10-10, Tom). It reaches the
   private instance through the owner's connector with
   `X-Vidtheque-Signals: off`, so its reads are not the owner's signals
   (§2.3). Its skill (`tools/claude-picks/SKILL.md`) reads the new verdicts
