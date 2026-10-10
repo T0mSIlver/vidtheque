@@ -7,12 +7,16 @@
 #
 # The MCP config names one server, `vidtheque-picks`, the owner's instance with
 # `X-Vidtheque-Signals: off`, so the routine's reads are not the owner's signals.
+#
+# It bills ANTHROPIC_API_KEY, never the owner's Claude plan: --bare reads no
+# OAuth login, and skips the dev box's hooks, plugins and CLAUDE.md.
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 state=${VIDTHEQUE_PICKS_STATE:-$HOME/.local/state/vidtheque/claude-picks}
 mcp=${VIDTHEQUE_PICKS_MCP:-$HOME/.config/vidtheque/picks-mcp.json}
 model=${VIDTHEQUE_PICKS_MODEL:-claude-sonnet-5-5}
+max_usd=${VIDTHEQUE_PICKS_MAX_USD:-2}
 mkdir -p "$state"
 
 # The memory the routine may read, filtered by the deny list before it sees any.
@@ -33,14 +37,23 @@ Today is $(date +%F)."
 
 started=$(date +%s)
 status=0
-out=$(claude -p "$prompt" \
-  --model "$model" \
+out=$(claude --bare -p "$prompt" \
+  --model "$model" --max-budget-usd "$max_usd" --output-format json \
   --append-system-prompt-file "$repo/tools/claude-picks/SKILL.md" \
   --strict-mcp-config --mcp-config "$mcp" \
   --allowedTools "mcp__vidtheque-picks__recommend" "mcp__vidtheque-picks__get-transcript" \
     "mcp__vidtheque-picks__video-summary" "Read(/$state/**)" "${edit[@]}" \
   < /dev/null) || status=$?
-printf '%s\n' "$out"
-python3 -c 'import json,sys; print(json.dumps({"at": int(sys.argv[1]), "mode": sys.argv[2], "status": int(sys.argv[3]), "report": sys.argv[4]}))' \
-  "$started" "${1:-run}" "$status" "$out" >> "$state/runs.jsonl"
+python3 - "$started" "${1:-run}" "$status" "$out" "$state/runs.jsonl" <<'PY'
+import json, sys
+at, mode, status, out, log = sys.argv[1:]
+try:
+    r = json.loads(out)
+except ValueError:
+    r = {"result": out}
+print(r.get("result", ""))
+with open(log, "a") as f:
+    f.write(json.dumps({"at": int(at), "mode": mode, "status": int(status),
+                        "cost_usd": r.get("total_cost_usd"), "report": r.get("result", out)}) + "\n")
+PY
 exit "$status"
