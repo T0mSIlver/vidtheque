@@ -25,6 +25,7 @@ from vidtheque_mcp.config import ConfigError
 from vidtheque_mcp.db import migrations
 from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.llm import (
+    AnthropicModel,
     APIModel,
     ChatClient,
     CLIModel,
@@ -328,6 +329,92 @@ async def test_api_failures(answer: Any, status: int, reason: str) -> None:
     assert exc.value.reason == reason
 
 
+# ---------------------------------------------------------------- anthropic
+
+
+def _message(text: str, stop: str = "end_turn") -> dict[str, Any]:
+    return {
+        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-sonnet-5-5",
+        "content": [{"type": "thinking", "thinking": "", "signature": "s"},
+                    {"type": "text", "text": text}],
+        "stop_reason": stop, "stop_sequence": None,
+        "usage": {"input_tokens": 100, "output_tokens": 20,
+                  "cache_creation_input_tokens": 0, "cache_read_input_tokens": 50},
+    }
+
+
+def _anthropic(
+    answer: Any, seen: list[dict[str, Any]], status: int = 200, effort: str | None = "low"
+) -> AnthropicModel:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append({"url": str(request.url), "key": request.headers.get("x-api-key"),
+                     "body": json.loads(request.content)})
+        return httpx.Response(status, json=answer)
+
+    settings = LLMSettings(backend="anthropic", api_key="k-1", model="claude-sonnet-5-5",
+                           reasoning_effort=effort)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    model = llm.build_model(settings, client, None)
+    assert isinstance(model, AnthropicModel)
+    return model
+
+
+async def test_anthropic_sends_effort_and_a_schema_it_accepts() -> None:
+    seen: list[dict[str, Any]] = []
+    schema = {
+        "type": "object",
+        "properties": {
+            "score": {"type": "integer", "minimum": 0, "maximum": 3},
+            "tags": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 5},
+        },
+        "required": ["score", "tags"],
+        "additionalProperties": False,
+    }
+    model = _anthropic(_message('{"score": 2, "tags": ["a", "b"]}'), seen)
+
+    assert await model.complete("t", system="judge", schema=schema) == {
+        "score": 2, "tags": ["a", "b"]
+    }
+    body = seen[0]["body"]
+    assert seen[0]["url"] == "https://api.anthropic.com/v1/messages"
+    assert seen[0]["key"] == "k-1"
+    assert body["system"] == "judge"
+    assert body["output_config"]["effort"] == "low"
+    sent = body["output_config"]["format"]["schema"]
+    assert sent["properties"] == {
+        "score": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}
+    }
+
+
+async def test_anthropic_still_validates_the_full_schema() -> None:
+    schema = {"type": "object", "properties": {"score": {"type": "integer", "maximum": 3}},
+              "required": ["score"]}
+    with pytest.raises(LLMUnavailable) as exc:
+        await _anthropic(_message('{"score": 8}'), []).complete("t", schema=schema)
+    assert exc.value.reason == "invalid_output"
+    assert exc.value.usage == llm.Usage(prompt=150, completion=20, cached=50)
+
+
+@pytest.mark.parametrize(
+    ("answer", "status", "reason"),
+    [
+        (_message("", "refusal"), 200, "invalid_output"),
+        (_message('{"watch"', "max_tokens"), 200, "invalid_output"),
+        ({"type": "error", "error": {"type": "permission_error", "message": "no"}}, 403,
+         "upstream_rejected"),
+        ({"type": "error", "error": {"type": "rate_limit_error", "message": "slow"}}, 429,
+         "upstream_rate_limited"),
+        ({"type": "error", "error": {"type": "api_error", "message": "oops"}}, 500,
+         "upstream_unavailable"),
+    ],
+    ids=["refusal", "max-tokens", "403", "429", "500"],
+)
+async def test_anthropic_failures(answer: Any, status: int, reason: str) -> None:
+    with pytest.raises(LLMUnavailable) as exc:
+        await _anthropic(answer, [], status).complete("t", schema=VERDICT)
+    assert exc.value.reason == reason
+
+
 # ---------------------------------------------------------------- selection
 
 
@@ -346,6 +433,13 @@ def test_backend_defaults_to_api_and_needs_a_url_and_a_model(
 
     monkeypatch.setenv("VIDTHEQUE_LLM_BACKEND", "Codex")
     assert isinstance(llm.build_model(LLMSettings.from_env(), client, None), CLIModel)
+
+    # `anthropic` needs a key, not a URL.
+    monkeypatch.setenv("VIDTHEQUE_LLM_BACKEND", "anthropic")
+    monkeypatch.delenv("VIDTHEQUE_LLM_API_KEY", raising=False)
+    assert llm.build_model(LLMSettings.from_env(), client, None) is None
+    monkeypatch.setenv("VIDTHEQUE_LLM_API_KEY", "k-1")
+    assert isinstance(llm.build_model(LLMSettings.from_env(), client, None), AnthropicModel)
 
 
 def test_an_unknown_backend_fails_at_boot(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -25,7 +25,14 @@ from mcp_types import TextContent
 
 from ..config import _bool_env
 from ..jobs.runner import ItemContext, ItemFailed, ItemSkipped
-from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
+from ..llm import (
+    HTTP_BACKENDS,
+    LLMSettings,
+    LLMUnavailable,
+    Model,
+    build_model,
+    is_configured,
+)
 from ..profile import store as profile_store
 from ..tools.base import CALL_CONTEXT, CallContext, Deps
 from ..tools.library import video_summary
@@ -184,8 +191,8 @@ def build_verdicts(
     settings = configured()
     if settings is None:
         return None, None
-    # Only `api` talks HTTP; the CLI backends never touch the client.
-    http = httpx.AsyncClient() if settings.backend == "api" else None
+    # Only the HTTP backends use the client; the CLI ones never touch it.
+    http = httpx.AsyncClient() if settings.backend in HTTP_BACKENDS else None
     model = build_model(settings, http, deps.db)  # type: ignore[arg-type]
     assert model is not None
     label = model_label(settings)

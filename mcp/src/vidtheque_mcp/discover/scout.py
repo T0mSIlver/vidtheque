@@ -25,7 +25,14 @@ import httpx2 as httpx
 
 from ..brief.build import Week, week_of
 from ..config import ConfigError, _bool_env, _int_env
-from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
+from ..llm import (
+    HTTP_BACKENDS,
+    LLMSettings,
+    LLMUnavailable,
+    Model,
+    build_model,
+    is_configured,
+)
 from ..pipeline.captions import CueDraft, cues_from_json3, cues_from_vtt
 from ..pipeline.settings import PipelineSettings
 from ..pipeline.sources import (
@@ -426,7 +433,7 @@ def build_scout(db: Any) -> tuple[Scout | None, httpx.AsyncClient | None]:
     settings = LLMSettings.from_env()
     if not is_configured(settings):
         return None, None
-    http = httpx.AsyncClient() if settings.backend == "api" else None
+    http = httpx.AsyncClient() if settings.backend in HTTP_BACKENDS else None
     model = build_model(settings, http, db)  # type: ignore[arg-type]
     assert model is not None
     pipeline = PipelineSettings.from_env()

@@ -27,7 +27,14 @@ from typing import Any, Callable
 import httpx2 as httpx
 
 from ..config import ConfigError, _bool_env, _int_env
-from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
+from ..llm import (
+    HTTP_BACKENDS,
+    LLMSettings,
+    LLMUnavailable,
+    Model,
+    build_model,
+    is_configured,
+)
 from . import feedback, github, store
 
 logger = logging.getLogger(__name__)
@@ -473,7 +480,7 @@ def build_nightly(db: Any) -> tuple[Nightly | None, httpx.AsyncClient | None]:
     if not is_configured(settings):
         return None, None
     projects = github.GitHubSettings.from_env(dict(os.environ))
-    needs_http = settings.backend == "api" or projects is not None
+    needs_http = settings.backend in HTTP_BACKENDS or projects is not None
     http = httpx.AsyncClient() if needs_http else None
     model = build_model(settings, http, db)  # type: ignore[arg-type]
     assert model is not None

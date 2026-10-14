@@ -19,7 +19,14 @@ from typing import Any, Callable
 import httpx2 as httpx
 
 from ..config import ConfigError, _bool_env, _int_env
-from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
+from ..llm import (
+    HTTP_BACKENDS,
+    LLMSettings,
+    LLMUnavailable,
+    Model,
+    build_model,
+    is_configured,
+)
 from . import build
 
 logger = logging.getLogger(__name__)
@@ -158,6 +165,6 @@ def build_weekly(db: Any, notifier: Any | None) -> tuple[Weekly | None, httpx.As
     settings = LLMSettings.from_env()
     if not is_configured(settings):
         return Weekly(db, None, None, notifier, hour=hour), None
-    http = httpx.AsyncClient() if settings.backend == "api" else None
+    http = httpx.AsyncClient() if settings.backend in HTTP_BACKENDS else None
     model = build_model(settings, http, db)  # type: ignore[arg-type]
     return Weekly(db, model, f"{settings.backend}:{settings.model or 'default'}", notifier, hour=hour), http

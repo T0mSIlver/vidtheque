@@ -441,12 +441,20 @@ Today the only LLM caller is the demo's `OpenRouter` class in
 `public/ask.py`. It moves to a shared, provider-neutral client, and the
 demo's ask uses it unchanged, keeping its own key and budget.
 
-Two backends, one env var, `VIDTHEQUE_LLM_BACKEND`:
+Three kinds of backend, one env var, `VIDTHEQUE_LLM_BACKEND`:
 
 - **`api`** (the default): any OpenAI-compatible endpoint, configured by
   `VIDTHEQUE_LLM_BASE_URL`, `VIDTHEQUE_LLM_API_KEY` and
   `VIDTHEQUE_LLM_MODEL`. Covers OpenRouter, Mistral, OpenAI, and llama.cpp on
   the box.
+- **`anthropic`**: Anthropic's Messages API through the official SDK, with
+  `VIDTHEQUE_LLM_API_KEY` and `VIDTHEQUE_LLM_MODEL` (`VIDTHEQUE_LLM_BASE_URL`
+  optional). `VIDTHEQUE_LLM_REASONING_EFFORT` becomes `output_config.effort`.
+  Structured outputs reject numeric bounds, `maxItems`, string lengths,
+  `pattern` and `minItems` over 1, so those are dropped from the schema sent;
+  the answer is still validated against the full one. *Added 2026-10-14:*
+  Anthropic's OpenAI-compatible endpoint is no substitute, since it requires
+  `strict: true`, which `api` deliberately does not send.
 - **`claude-code`** / **`codex`**: runs the unmodified `claude -p` or
   `codex exec` binary that the owner signed in to on the box with their own
   subscription. Anthropic's terms allow this; they forbid apps that offer
@@ -459,8 +467,10 @@ prompt in, text or a JSON object validated against a schema out.
 `VIDTHEQUE_LLM_TIMEOUT_S` bounds each call; a subprocess past it is killed
 with its children, and its output is capped at 1 MiB.
 
-Tom's instance runs `api`: a verdict reads a whole transcript, and the
-weekly Claude limit is the budget that runs out first. All new vars land in
+Tom's instance runs `anthropic` with `claude-sonnet-5-5` since 2026-10-14
+(`api` on GLM 5.3 through Mistral before that, until the Vibe budget ran
+out): a verdict reads a whole transcript, and the weekly Claude limit is the
+budget that runs out first, so it bills API credits, not the subscription. All new vars land in
 `deploy/.env.example` with the code that reads them.
 
 ### 4.1 What the calls cost
@@ -479,15 +489,18 @@ go unrecorded.
   {cached_tokens}}` for zai-glm-5-3 (checked with a real call, 2026-10-03);
   its thinking is counted in `completion_tokens`, with no separate figure, so
   `reasoning_tokens` stays NULL there. `claude -p` reports Anthropic's usage and
-  its own `total_cost_usd`, which is recorded as the cost. `codex exec`
-  reports nothing.
+  its own `total_cost_usd`, which is recorded as the cost. The `anthropic`
+  backend records input, cache-write and cache-read tokens as the prompt and
+  cache reads as cached; cache writes are priced at the input rate. `codex
+  exec` reports nothing.
 - **Cost** is micro-USD, fixed when the row is written: uncached prompt
   tokens at the input price, cached ones at the cached-input price, completion
   tokens at the output price. The prices are `config.LLM_PRICES`, overridden
   by `VIDTHEQUE_LLM_PRICE`. zai-glm-5-3 lists at $1.40 per million input
   tokens, $0.14 cached, $4.40 output
   ([model card](https://docs.mistral.ai/models/zai-glm-5-3), checked
-  2026-10-03; mistral.ai/pricing does not list it). Unknown is NULL, never 0:
+  2026-10-03; mistral.ai/pricing does not list it). claude-sonnet-5-5 lists
+  at $2, $0.20 cached, $10 output (checked 2026-10-14). Unknown is NULL, never 0:
   a refusal with no `usage`, a model with no price, a cancelled call.
 - **It is list price.** Tom's private box runs on a Vibe monthly plan, so the
   number is what the calls would cost pay-as-you-go, not what was billed.
