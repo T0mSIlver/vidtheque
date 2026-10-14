@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+import anthropic
 import httpx2 as httpx
 import jsonschema
 
@@ -273,7 +274,7 @@ def price_for(settings: "LLMSettings") -> Price | None:
     """
     if settings.price is not None:
         return settings.price
-    if settings.backend != "api" or not settings.model:
+    if settings.backend not in HTTP_BACKENDS or not settings.model:
         return None
     row = LLM_PRICES.get(settings.model)
     return Price(**row) if row is not None else None
@@ -506,6 +507,94 @@ def _answer(text: str, schema: dict[str, Any] | None, usage: Usage) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Backend `anthropic`: the Messages API, billed to an API key
+
+# Structured outputs reject these keywords; the answer is still validated
+# against the full schema by `_answer`.
+_UNSUPPORTED = frozenset({
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "maxItems", "minLength", "maxLength", "pattern",
+})
+
+
+def anthropic_schema(schema: Any) -> Any:
+    """The schema without the constraints structured outputs refuse."""
+    if isinstance(schema, list):
+        return [anthropic_schema(v) for v in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: anthropic_schema(v) for k, v in schema.items() if k not in _UNSUPPORTED}
+    if out.get("minItems", 0) > 1:  # only 0 and 1 are accepted
+        del out["minItems"]
+    return out
+
+
+class AnthropicModel(_Metered):
+    def __init__(
+        self, client: anthropic.AsyncAnthropic, model: str, effort: str | None
+    ) -> None:
+        self._client = client
+        self._model = model
+        self._effort = effort
+
+    async def _complete(
+        self, prompt: str, system: str | None, schema: dict[str, Any] | None
+    ) -> tuple[Any, Usage]:
+        output_config: dict[str, Any] = {}
+        if self._effort:
+            output_config["effort"] = self._effort
+        if schema is not None:
+            output_config["format"] = {"type": "json_schema", "schema": anthropic_schema(schema)}
+        kwargs: dict[str, Any] = {}
+        if system:
+            kwargs["system"] = system
+        if output_config:
+            kwargs["output_config"] = output_config
+        try:
+            message = await self._client.messages.create(
+                model=self._model,
+                max_tokens=16000,
+                messages=[{"role": "user", "content": prompt}],
+                **kwargs,
+            )
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+            logger.warning("llm: anthropic rejected the key (%s)", exc.status_code)
+            raise LLMUnavailable("upstream_rejected", retry_after_s=300) from None
+        except anthropic.RateLimitError:
+            logger.warning("llm: anthropic rate limited")
+            raise LLMUnavailable("upstream_rate_limited") from None
+        except anthropic.APIStatusError as exc:
+            # Status only, as in ChatClient: the body is upstream text.
+            logger.warning("llm: anthropic returned %s", exc.status_code)
+            raise LLMUnavailable("upstream_unavailable") from None
+        except anthropic.APIError as exc:  # connection, timeout
+            logger.warning("llm: anthropic request failed: %s", type(exc).__name__)
+            raise LLMUnavailable("upstream_unavailable") from None
+        usage = anthropic_usage(message.usage)
+        if message.stop_reason in ("refusal", "max_tokens"):
+            logger.warning("llm: anthropic stopped on %s", message.stop_reason)
+            raise LLMUnavailable("invalid_output", usage=usage)
+        text = "".join(b.text for b in message.content if b.type == "text")
+        if not text:
+            logger.warning("llm: anthropic answered without text")
+            raise LLMUnavailable("upstream_unavailable", usage=usage)
+        return _answer(text, schema, usage), usage
+
+
+def anthropic_usage(usage: Any) -> Usage:
+    """Anthropic's usage: `prompt` sums uncached, cache-written and cache-read input."""
+    parts = [
+        _int(getattr(usage, k, None))
+        for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+    ]
+    return Usage(
+        prompt=sum(p for p in parts if p is not None) if parts[0] is not None else None,
+        completion=_int(getattr(usage, "output_tokens", None)),
+        cached=parts[2],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Backends `claude-code` and `codex`: the owner's signed-in binary, headless
 #
 # The binary reads its own credentials; this process never opens them. It runs
@@ -695,7 +784,9 @@ def _kill(proc: asyncio.subprocess.Process) -> None:
 # ---------------------------------------------------------------------------
 # Selection
 
-BACKENDS = ("api", "claude-code", "codex")
+BACKENDS = ("api", "anthropic", "claude-code", "codex")
+# The backends that talk HTTP through the caller's client.
+HTTP_BACKENDS = ("api", "anthropic")
 
 
 @dataclass(frozen=True)
@@ -727,8 +818,13 @@ class LLMSettings:
 
 
 def is_configured(settings: LLMSettings) -> bool:
-    """`api` needs a URL and a model; the CLI backends bring their own."""
-    return settings.backend != "api" or bool(settings.base_url and settings.model)
+    """`api` needs a URL and a model, `anthropic` a key and a model; the CLI
+    backends bring their own."""
+    if settings.backend == "api":
+        return bool(settings.base_url and settings.model)
+    if settings.backend == "anthropic":
+        return bool(settings.api_key and settings.model)
+    return True
 
 
 def build_model(settings: LLMSettings, client: httpx.AsyncClient, db: Any) -> Model | None:
@@ -739,8 +835,17 @@ def build_model(settings: LLMSettings, client: httpx.AsyncClient, db: Any) -> Mo
     """
     if not is_configured(settings):
         return None
-    model: APIModel | CLIModel
-    if settings.backend == "api":
+    model: APIModel | AnthropicModel | CLIModel
+    if settings.backend == "anthropic":
+        sdk = anthropic.AsyncAnthropic(
+            api_key=settings.api_key,
+            base_url=settings.base_url or None,
+            http_client=client,
+            timeout=settings.timeout_s,
+            max_retries=0,  # the job runner retries
+        )
+        model = AnthropicModel(sdk, settings.model, settings.reasoning_effort)
+    elif settings.backend == "api":
         chat = ChatClient(
             client, settings.base_url, settings.api_key, request_cap_s=settings.timeout_s
         )

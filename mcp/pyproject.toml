@@ -70,6 +70,9 @@ dependencies = [
     "ImageHash==4.3.2",
     # np.bitwise_count, the popcount the dedup matrix is built on, is NumPy 2.0+.
     "numpy>=2.0",
+    # The `anthropic` LLM backend (companion.md §4). 1.x is built on httpx2,
+    # so the shared client above is the one it takes.
+    "anthropic>=1.13",
 ]
 
 [project.scripts]
