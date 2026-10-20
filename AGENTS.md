@@ -67,10 +67,27 @@ operational rules an incident or a launch paid for.
 - Never rewrite history (`reset`/`amend`) on a commit that exists — the
   branch may already be pushed under you; fix forward with a new commit.
 - Never use bare `git stash` — the stash stack is shared across worktrees.
-- Substantive changes land via **PR**, never a direct push to `main`.
-  Subagents never push, never touch anything outside this repo.
+- Changes go straight to `main` except the protected paths in "Fast lane"
+  below, which land via **PR**. Subagents never push, never touch anything
+  outside this repo.
 - PRs merge by **rebase and merge**, never squash: the branch's small
   logical commits are the history, and squashing melts them into one.
+
+## Fast lane (since 2026-10-20)
+
+Nobody outside uses vidtheque yet, so changes go straight to `main`: commit, run
+the fast local tests, push. CI runs on `main`; fix a red run forward before new
+work. There is no per-change cross-review: a nightly job (`fastlane-review`)
+reviews the day's commits on `main` and writes findings to
+`~/work/vidtheque/.scratch/daily-review/<date>.md`. Fix the P0 and P1 findings in
+any file there before new work, then delete the file.
+
+These still go through a PR, a cross-review and a card to Tom: `deploy/`, `.github/`, auth,
+database migrations, release tags (`v*`, `web-v*`, `android-v*`), and anything
+that publishes (public copy, the public instance).
+
+Everything goes back through PRs at the first outside user holding data, the
+first outside PR, or the first build in a channel other people install from.
 
 ## Don'ts
 
