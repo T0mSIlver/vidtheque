@@ -1677,17 +1677,38 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # video-summary
 
-def chapters(conn: sqlite3.Connection, video_id: int, limit: int) -> list[sqlite3.Row]:
+_CHAPTER_SPAN = """
+  AND (:t_start IS NULL OR end_s   >= :t_start)
+  AND (:t_end   IS NULL OR start_s <= :t_end)"""
+
+
+def chapters(
+    conn: sqlite3.Connection,
+    video_id: int,
+    limit: int,
+    t_start: float | None = None,
+    t_end: float | None = None,
+) -> list[sqlite3.Row]:
+    """The chapters overlapping [t_start, t_end] (every chapter without a span)."""
     return conn.execute(
-        "SELECT seq, start_s, end_s, title FROM chapters WHERE video_id = ? "
-        "ORDER BY start_s LIMIT ?",
-        (video_id, limit),
+        "SELECT seq, start_s, end_s, title FROM chapters WHERE video_id = :vid"
+        + _CHAPTER_SPAN
+        + " ORDER BY start_s LIMIT :limit",
+        {"vid": video_id, "limit": limit, "t_start": t_start, "t_end": t_end},
     ).fetchall()
 
 
-def chapter_count(conn: sqlite3.Connection, video_id: int) -> int:
+def chapter_count(
+    conn: sqlite3.Connection,
+    video_id: int,
+    t_start: float | None = None,
+    t_end: float | None = None,
+) -> int:
     return int(
-        conn.execute("SELECT COUNT(*) FROM chapters WHERE video_id = ?", (video_id,)).fetchone()[0]
+        conn.execute(
+            "SELECT COUNT(*) FROM chapters WHERE video_id = :vid" + _CHAPTER_SPAN,
+            {"vid": video_id, "t_start": t_start, "t_end": t_end},
+        ).fetchone()[0]
     )
 
 
@@ -1744,15 +1765,24 @@ def ocr_highlights(conn: sqlite3.Connection, video_id: int, limit: int, t_start:
     """
     return conn.execute(
         """
-        SELECT k.ord, k.t_s, k.phash,
-               group_concat(o.text, ' | ' ORDER BY o.line_no) AS screen_text,
-               COUNT(*) AS n_lines
-        FROM keyframes k JOIN ocr_lines o ON o.keyframe_id = k.id
-        WHERE k.video_id = :vid AND k.dup_of IS NULL
-          AND (:t_start IS NULL OR k.t_s >= :t_start)
-          AND (:t_end   IS NULL OR k.t_s <= :t_end)
-        GROUP BY k.id
-        ORDER BY length(group_concat(o.text, ' ')) DESC, k.t_s
+        WITH frames AS (
+          SELECT k.ord, k.t_s, k.phash,
+                 group_concat(o.text, ' | ' ORDER BY o.line_no) AS screen_text,
+                 COUNT(*) AS n_lines
+          FROM keyframes k JOIN ocr_lines o ON o.keyframe_id = k.id
+          WHERE k.video_id = :vid AND k.dup_of IS NULL
+            AND (:t_start IS NULL OR k.t_s >= :t_start)
+            AND (:t_end   IS NULL OR k.t_s <= :t_end)
+          GROUP BY k.id
+        ),
+        -- one frame per phash (NOT NULL in the schema): the most text, then the earliest
+        ranked AS (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY phash
+                                       ORDER BY length(screen_text) DESC, t_s, ord) AS rn
+          FROM frames
+        )
+        SELECT ord, t_s, phash, screen_text, n_lines FROM ranked WHERE rn = 1
+        ORDER BY length(screen_text) DESC, t_s
         LIMIT :limit
         """,
         {"vid": video_id, "limit": limit, "t_start": t_start, "t_end": t_end},

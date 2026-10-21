@@ -167,3 +167,71 @@ async def test_gaps_counts_every_failed_video_once(assembled: Assembled) -> None
     assert len(listed) == len(set(listed)) == 5
     assert r.structured_content["gaps"]["failed_videos"] == 7
     assert "2 more video(s) with a failed stage" in r.content[0].text
+
+
+# ------------------------------------------------------------------------- Q9
+
+
+async def _duplicate_slide(db, t_s: float = 60.0) -> None:
+    """A second live keyframe with the same phash and lines as the fixture's slide."""
+
+    def write(c):
+        vid = c.execute("SELECT id FROM videos WHERE public_id='zduSFxRajkE'").fetchone()[0]
+        k = c.execute("SELECT * FROM keyframes WHERE video_id=?", (vid,)).fetchone()
+        cur = c.execute(
+            "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, "
+            "phash, sharpness, width, height, jpeg_path, jpeg_bytes, ocr_state) "
+            "VALUES (?, 1, ?, 1, ?, ?, ?, 10.0, 1280, 720, ?, ?, 'done')",
+            (vid, t_s, t_s, t_s + 5, k["phash"], k["jpeg_path"], k["jpeg_bytes"]),
+        )
+        lines = [
+            r["text"]
+            for r in c.execute(
+                "SELECT text FROM ocr_lines WHERE keyframe_id=? ORDER BY line_no", (k["id"],)
+            )
+        ]
+        for i, text in enumerate(lines):
+            c.execute(
+                "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+                "x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, 0.9, 0, 0, 1, 1)",
+                (cur.lastrowid, vid, t_s, i, text),
+            )
+
+    await db.write(write)
+
+
+async def test_ocr_highlights_collapse_frames_with_one_phash(assembled: Assembled) -> None:
+    """Q9: the docstring promised phash dedup but the query grouped by
+    keyframe, so a slide shown twice was highlighted twice."""
+    from vidtheque_mcp.tools import library
+
+    await _duplicate_slide(assembled.deps.db)
+    r = await library.video_summary(assembled.deps, video_id="zduSFxRajkE")
+    highlights = r.structured_content["ocr_highlights"]
+    assert [h["t"] for h in highlights] == [12.0]
+
+
+async def test_video_summary_span_scopes_every_section(assembled: Assembled) -> None:
+    """Q9: with t_start/t_end the empty OCR line claimed the whole video had no
+    on-screen text, and chapters and links ignored the span."""
+    from vidtheque_mcp.tools import library
+
+    def write(c):
+        vid = c.execute("SELECT id FROM videos WHERE public_id='kCc8FmEb1nY'").fetchone()[0]
+        c.execute("DELETE FROM chapters WHERE video_id=?", (vid,))
+        c.execute(
+            "INSERT INTO chapters (video_id, seq, start_s, end_s, title) VALUES "
+            "(?, 0, 0, 100, 'intro'), (?, 1, 100, 300, 'middle'), (?, 2, 300, 7000, 'end')",
+            (vid, vid, vid),
+        )
+
+    await assembled.deps.db.write(write)
+    r = await library.video_summary(
+        assembled.deps, video_id="kCc8FmEb1nY", t_start=150, t_end=200, include_links=True
+    )
+    text = r.content[0].text
+    assert "no keyframe of this video" not in text
+    assert "in the requested t_start/t_end span" in text.split("On-screen")[1]
+    assert [c["title"] for c in r.structured_content["chapters"]] == ["middle"]
+    # The fixture's one link sits at 5 s, outside the span.
+    assert "example.com/paper" not in text
