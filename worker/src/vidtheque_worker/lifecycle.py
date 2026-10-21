@@ -496,6 +496,10 @@ class LifecycleManager:
                 self._running_task = job.task
                 try:
                     await self._ensure_loaded(job.task)
+                    if job.future.done():
+                        # Gone during a cold load: the load is kept, the pass is not.
+                        log.info("skipping %s after its load: the caller is gone", job.task)
+                        return
                     try:
                         result = await self._dispatch(job, slot)
                     except Exception as exc:

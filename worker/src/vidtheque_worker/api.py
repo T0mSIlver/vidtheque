@@ -8,11 +8,14 @@ be swapped by an env var.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import tempfile
+import threading
 import unicodedata
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -76,6 +79,39 @@ INFERENCE_ERRORS: dict[int | str, dict[str, Any]] = {
 """Documented on every inference route because the envelope is the contract —
 ``mcp/`` branches on the status code and reads ``Retry-After``, and anyone
 coding against this file otherwise sees only the 200s and FastAPI's 422."""
+
+
+DISCONNECT_POLL_SECONDS = 1.0
+"""How often a waiting handler asks whether its client is still there."""
+
+
+async def _submit(
+    request: Request,
+    manager: LifecycleManager,
+    task: str,
+    job: Callable[[Backend], Any],
+    *,
+    label: str,
+) -> Any:
+    """``manager.submit``, abandoned as soon as the client hangs up.
+
+    uvicorn does not cancel a handler on disconnect, so a caller that timed
+    out (and is about to replay) left its job queued and the F-29 skip never
+    fired. Cancelling the wait cancels the job's future, which the manager
+    skips; a job already in its thread runs on, its result discarded.
+    """
+    work = asyncio.ensure_future(manager.submit(task, job, label=label))
+    try:
+        while True:
+            done, _ = await asyncio.wait({work}, timeout=DISCONNECT_POLL_SECONDS)
+            if done:
+                return work.result()
+            if await request.is_disconnected():
+                log.info("client disconnected; abandoning %s job %s", task, label)
+                raise HTTPException(status_code=499, detail="the client closed the request")
+    finally:
+        if not work.done():
+            work.cancel()
 
 
 def get_manager(request: Request) -> LifecycleManager:
@@ -165,16 +201,24 @@ async def transcriptions(
     bias = _context_bias(context_bias)
 
     path = await _spool(file)
+    # Whoever runs last deletes the file: an abandoned request returns while
+    # its job may already be reading it in the worker thread.
+    started = threading.Event()
     try:
         def job(backend: Backend) -> Any:
-            kwargs: dict[str, Any] = {"language": language, "align": align}
-            if context_bias is not None:
-                kwargs["context_bias"] = bias
-            return backend.infer(path, **kwargs)
+            started.set()
+            try:
+                kwargs: dict[str, Any] = {"language": language, "align": align}
+                if context_bias is not None:
+                    kwargs["context_bias"] = bias
+                return backend.infer(path, **kwargs)
+            finally:
+                _cleanup(path)
 
-        result = await manager.submit("stt", job, label=file.filename or "audio")
+        result = await _submit(request, manager, "stt", job, label=file.filename or "audio")
     finally:
-        _cleanup(path)
+        if not started.is_set():
+            _cleanup(path)
 
     if response_format == "text":
         return PlainTextResponse(result.text)
@@ -271,7 +315,7 @@ async def embeddings(request: Request, body: EmbeddingsRequest) -> EmbeddingsRes
     def job(backend: Backend) -> Any:
         return backend.infer(texts, input_type=body.input_type)
 
-    result = await manager.submit("embed", job, label=f"{len(texts)} texts")
+    result = await _submit(request, manager, "embed", job, label=f"{len(texts)} texts")
     return to_embeddings_response(result)
 
 
@@ -337,7 +381,9 @@ async def image_embeddings(
         return backend.infer(blobs, **kwargs)
 
     try:
-        result = await manager.submit("image_embed", job, label=f"{len(blobs)} images")
+        result = await _submit(
+            request, manager, "image_embed", job, label=f"{len(blobs)} images"
+        )
     except InvalidImageError as exc:
         # The backend counts positions; only this layer knows what they were
         # called, and a 400 saying "image 37" is a lot less useful to whoever
@@ -407,7 +453,9 @@ async def frame_query_embeddings(
     def job(backend: Backend) -> Any:
         return backend.embed_text(texts)
 
-    result = await manager.submit("image_embed", job, label=f"{len(texts)} frame queries")
+    result = await _submit(
+        request, manager, "image_embed", job, label=f"{len(texts)} frame queries"
+    )
     return to_embeddings_response(result)
 
 
@@ -452,7 +500,7 @@ async def ocr(
     def job(backend: Backend) -> Any:
         return backend.infer(blobs, **kwargs)
 
-    result = await manager.submit("ocr", job, label=f"{len(blobs)} images")
+    result = await _submit(request, manager, "ocr", job, label=f"{len(blobs)} images")
     return to_ocr_response(
         result,
         filenames,
