@@ -26,7 +26,10 @@ describe("visitorIp", () => {
   // Empty means forward nothing: the API then buckets on this server.
   it("forwards nothing when the variable is empty", async () => {
     vi.stubEnv("VIDTHEQUE_CLIENT_IP_HEADER", "");
-    incoming.headers = new Headers({ "cf-connecting-ip": "198.51.100.4", "x-forwarded-for": "6.6.6.6" });
+    incoming.headers = new Headers({
+      "cf-connecting-ip": "198.51.100.4",
+      "x-forwarded-for": "6.6.6.6",
+    });
     expect(await visitorIp()).toBeUndefined();
   });
 
