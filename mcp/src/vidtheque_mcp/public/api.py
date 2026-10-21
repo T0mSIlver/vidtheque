@@ -56,7 +56,7 @@ from ..auth.credential import is_owner
 from ..db import queries
 from .. import editions
 from ..errors import HTTP_STATUS
-from ..text import clamp, clamp_text_chars, clock
+from ..text import clamp, clock
 from ..tools import library, search
 from ..tools.base import Deps
 from . import humanize
@@ -340,10 +340,8 @@ async def search_payload(
     )
     offset = _int_param(request, "offset", 0, policy.offset_max, 0)
     if policy.search_text_chars is None:
-        # The tool's own clamp, `0` opt-out included (text.clamp_text_chars).
-        text_chars = clamp_text_chars(
-            params.get("max_text_chars"), 120, 20_000, 1_000  # type: ignore[arg-type]
-        )
+        # The tool's own clamp, `0` opt-out included.
+        text_chars = search.clamp_hit_text(params.get("max_text_chars"))
     else:
         text_chars = policy.search_text_chars
     result = await search.run(

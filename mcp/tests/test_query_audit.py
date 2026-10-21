@@ -541,3 +541,42 @@ async def test_corpus_summary_filters_scope_the_whole_rollup(assembled: Assemble
     assert any("no video matches" in n for n in sc["notes"])
     assert "index-video" not in sc["next"]
     assert all(n in r.content[0].text for n in sc["notes"])
+
+
+# ------------------------------------------------------------------------ Q15
+
+
+async def test_corpus_resource_rows_are_tsv_safe_and_counted_honestly(
+    assembled: Assembled,
+) -> None:
+    """Q15: the corpus resource escaped tabs in titles but not in channel
+    names, and its footer said `showing N of <every row>` while N counts only
+    queryable videos."""
+    from vidtheque_mcp.tools import resources
+
+    def write(c):
+        c.execute("UPDATE videos SET channel_name='GPU\tMODE' WHERE public_id='zduSFxRajkE'")
+        c.execute(
+            "INSERT INTO videos (owner_id, source_id, url, title, index_state) "
+            "VALUES (1, 'failvid0000', 'u', 'broken', 'failed')"
+        )
+
+    await assembled.deps.db.write(write)
+    corpus = await resources.corpus_resource(assembled.deps)
+    lines = corpus.splitlines()
+    columns = lines[1].count("\t")
+    assert all(ln.count("\t") == columns for ln in lines[2:-1])
+    assert lines[0].startswith("# vidtheque corpus · 4 videos")
+    assert lines[-1].startswith("# showing 3 of 3 queryable")
+
+
+async def test_context_resource_does_not_call_clamps_silent(assembled: Assembled) -> None:
+    """Q15: vidtheque://context said out-of-range values are "clamped silently"
+    while search and list-videos print a `note: clamped server-side` line."""
+    import json
+
+    from vidtheque_mcp.tools import resources
+
+    context = json.loads(await resources.context_resource(assembled.deps))
+    assert "silently" not in context["limits"]["out_of_range"]
+    assert "note: clamped" in context["limits"]["out_of_range"]

@@ -2818,7 +2818,7 @@ video_id	title	channel	published	duration	coverage	tags
 Qk7mF2xLp0A	Flash Attention 3 walkthrough	GPU MODE	2026-08-02	1:04:11	tof	topic:attention,series:gpu-mode
 9dRk2XcVbNw	Speculative decoding, explained	Trelis Research	2026-07-29	0:38:20	tof	topic:inference
 …
-# showing 200 of 312 — narrow with the list-videos tool (channel=, tags=, q=, published_after=) · read vidtheque://guide for the tool flow
+# showing 200 of 310 queryable — narrow with the list-videos tool (channel=, tags=, q=, published_after=) · read vidtheque://guide for the tool flow
 ```
 
 The footer is the `format=outline` lesson applied to a resource: say what you
@@ -2874,7 +2874,7 @@ when it fails.
     "get-frames.frame_ids": [1, 12],
     "get-frames.max_text_chars": [120, 2000],
     "get-segment-context.window": [5, 300],
-    "out_of_range": "clamped silently — read the printed count, not the one you asked for"
+    "out_of_range": "clamped, not refused — the payload says so in a `note: clamped server-side` line; read the printed count, not the one requested"
   },
   "features": {"diarization": true, "ocr": true, "frame_embeddings": true},
   "server_version": "0.0.1"
@@ -2915,7 +2915,8 @@ that was never sent is not a clamp, and a payload that says so on every call is
 the token cost this line exists to avoid. `list-videos` prints the identical
 line, from the identical rule (later the same day): one of the two paging tools
 announcing its clamps is the "one tool, two standards" shape §3.5 exists to
-forbid. The guide's "clamped silently" table above is therefore now about
+forbid. The context resource's `out_of_range` line above says so (amended
+2026-10-21; it used to read "clamped silently"), and the guide's table is about
 *values*, not about silence — the cap is still applied without refusing the
 call, and the payload says it happened.
 

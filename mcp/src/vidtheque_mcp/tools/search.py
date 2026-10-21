@@ -47,6 +47,12 @@ DEFAULT_FIELDS = "video_id,start,text,link,source"
 # own (`public/ask.py`) has to truncate to the same length this tool would, and
 # a second literal is how the two drift apart.
 DEFAULT_MAX_TEXT_CHARS = 1000
+
+
+def clamp_hit_text(value: int | str | None) -> int:
+    """`max_text_chars` as this tool clamps it, `0` opt-out included; the facade reuses it."""
+    return clamp_text_chars(value, 120, 20_000, DEFAULT_MAX_TEXT_CHARS)  # type: ignore[arg-type]
+
 # Every column `format="tsv"` can emit — the keys `_as_dict` writes, and the
 # list `E_BAD_PARAM` names. A field this does not contain used to print as a
 # header with a blank cell under every row (demo-queries §9.1.9), in the one
@@ -199,7 +205,7 @@ async def run(
     offset = clamp(offset, 0, 10_000, 0)
     max_per_video = clamp(max_per_video, 1, 20, 3)
     cluster_gap = float(clamp(int(cluster_gap), 0, 60, 8))
-    max_text_chars = clamp_text_chars(max_text_chars, 120, 20_000, DEFAULT_MAX_TEXT_CHARS)
+    max_text_chars = clamp_hit_text(max_text_chars)
     # §5.2's deferred half, taken 2026-08-10: the caps are published ahead of the
     # call (`vidtheque://context`), but a caller who asked for `limit=500` and
     # got 50 had nothing in the payload to tell a clamp from a complete answer —
