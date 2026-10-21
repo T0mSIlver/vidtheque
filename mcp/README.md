@@ -163,8 +163,9 @@ why. They are candidates to fold back into the docs.
    endpoint either way. `worker/openapi.json` carries
    **`POST /v1/embeddings/frame-query`**, `{"input": str | [str], "model"?}`
    answering with the usual `EmbeddingsResponse`;
-   `pipeline/worker_client.py::embed_frame_query` speaks it for indexing and
-   `tools/base.py::embed_query(space="frame")` speaks it for search. A worker
+   `embeddings.py::HTTPEmbeddingClient.embed_frame_query` speaks it, on the
+   query budget (no 503 wait), for `tools/base.py::embed_query(space="frame")`;
+   nothing at index time calls it. A worker
    that predates the endpoint 404s → `FrameQueryUnsupported`, latched until
    restart with a `note:` in every affected search; transient outages are
    noted but never latched. `all` still means all — a skipped leg is always

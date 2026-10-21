@@ -13,7 +13,9 @@ from typing import Any
 import httpx2 as httpx
 import pytest
 
-from vidtheque_mcp.embeddings import EmbeddingUnavailable
+from vidtheque_mcp.embeddings import EmbeddingUnavailable, FrameQueryUnsupported
+from vidtheque_mcp.pipeline import worker_client
+from vidtheque_mcp.pipeline.settings import PipelineSettings
 from vidtheque_mcp.pipeline.worker_client import (
     FRAME_QUERY_PATH,
     HTTPWorkerClient,
@@ -572,15 +574,54 @@ async def test_frame_query_posts_to_the_assumed_sibling_endpoint() -> None:
 
 async def test_a_worker_without_the_endpoint_degrades_instead_of_erroring() -> None:
     """A 404 is the *point* of assuming a path rather than a field: an unknown
-    field would be ignored and we would write text vectors into the frame index."""
+    field would be ignored and we would write text vectors into the frame index.
+    It must surface as `FrameQueryUnsupported`, the one class the search tool
+    caches as "this worker build has no text tower" and stops asking about."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"detail": "Not Found"})
 
-    client, _ = make_client(handler)
-    with pytest.raises(WorkerUnavailable) as caught:
+    client = _shared_client(handler)[0]
+    with pytest.raises(FrameQueryUnsupported):
         await client.embed_frame_query(["anything"])
-    assert "text->frame-space" in str(caught.value)
+
+
+async def test_frame_query_fails_fast_on_backpressure_like_the_text_query() -> None:
+    """`search` defaults to `content_type=all`, so every search runs this leg.
+    On the indexing transport a busy worker's 503 + `Retry-After: 60` was waited
+    out for up to `retry_total_s` (30 min) before the search answered at all."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(
+            503,
+            headers={"Retry-After": "60"},
+            json={"error": {"message": "busy", "type": "worker_busy"}},
+        )
+
+    client, slept = _shared_client(handler)
+    with pytest.raises(EmbeddingUnavailable) as caught:
+        await client.embed_frame_query(["a terminal with nvidia-smi"])
+    assert not isinstance(caught.value, FrameQueryUnsupported)
+    assert calls == [FRAME_QUERY_PATH]
+    assert slept == []
+
+
+def _shared_client(handler) -> tuple[HTTPWorkerClient, list[float]]:
+    """The object `app.py` hands to the tools, built by the real factory with
+    the real settings, so the test sees the budgets a deployment gets."""
+    client = worker_client("http://worker:8081", PipelineSettings.from_env())
+    client._client = httpx.AsyncClient(
+        base_url="http://worker:8081", transport=httpx.MockTransport(handler)
+    )
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    client._sleep = fake_sleep
+    return client, slept
 
 
 # ----------------------------------------------------------------- utilities
