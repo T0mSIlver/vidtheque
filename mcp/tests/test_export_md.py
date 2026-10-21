@@ -117,6 +117,21 @@ def test_token_mode_serves_a_bearer(corpus: Path) -> None:
     assert response.status_code == 200
 
 
+def test_token_mode_serves_a_trusted_peer_like_the_dashboard(corpus: Path) -> None:
+    """The dashboard's read and write gates take a peer in
+    `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`, so the export link they print must
+    too; a peer outside the list is still challenged."""
+    lan = DashboardSettings(trusted_cidrs=(ipaddress.ip_network("10.0.0.0/8"),))
+    path = f"/videos/{VIDEO_ID}/export.md"
+    inside = get(corpus, path, dashboard=lan, peer=("10.9.9.9", 4444), auth_mode="token", static_token="t0k")
+    assert inside.status_code == 200
+    assert inside.text.startswith("---\n")
+    outside = get(
+        corpus, path, dashboard=lan, peer=("203.0.113.7", 4444), auth_mode="token", static_token="t0k"
+    )
+    assert outside.status_code == 401
+
+
 # ------------------------------------------------------------- what it refuses
 
 

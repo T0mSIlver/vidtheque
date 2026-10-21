@@ -55,7 +55,11 @@ def export_routes(settings: Settings, db: Database) -> list[Route]:
     async def serve(request: Request) -> Response:
         video_id = request.path_params["video_id"]
 
-        if await credential(request) is None:
+        # A peer in `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` passes, as on the
+        # dashboard whose pages link here (`dashboard.access.peer_trusted`).
+        peer = request.client.host if request.client else None
+        trusted = request.app.state.assembled.dashboard.trusts(peer)
+        if await credential(request) is None and not trusted:
             return JSONResponse(
                 {"error": "invalid_token", "error_description": "bearer or session required"},
                 status_code=401,
