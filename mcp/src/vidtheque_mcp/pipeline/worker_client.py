@@ -49,8 +49,8 @@ CONNECT_FAILURES = (
     httpx.InvalidURL,
 )
 
-# The text tower of the frame model, exposed as its own path. See the note on
-# `embed_frame_query` — this is the one assumption in the file.
+# The text tower of the frame model. Only the query path calls it, through the
+# inherited `HTTPEmbeddingClient.embed_frame_query`.
 FRAME_QUERY_PATH = "/v1/embeddings/frame-query"
 
 RETRYABLE_STATUS = {429, 502, 503, 504}
@@ -455,40 +455,9 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         )
         return _vectors(body, len(images), "/v1/embeddings/image", "image")
 
-    async def embed_frame_query(
-        self, texts: Sequence[str], *, model: str | None = None
-    ) -> tuple[list[list[float]], str | None, int | None]:
-        """Text into the **frame** vector space, via the frame model's text tower.
-
-        This is the one endpoint this file assumes rather than reads off
-        ``worker/openapi.json``: at the time of writing the worker exposes no
-        text->frame-space route, which is deviation #5 in ``mcp/README.md`` and
-        the reason ``search content_type=frame`` cannot answer.
-
-        The assumed shape is a sibling path — ``POST /v1/embeddings/frame-query``
-        with ``{"input": [...], "model": …}`` answering with the usual
-        ``EmbeddingsResponse``. A sibling *path* rather than a ``space=frame``
-        field on ``/v1/embeddings`` is the safer assumption in exactly one way
-        that matters: an unknown field is ignored by a permissive server and we
-        would write text-space vectors into the frame index, while an unknown
-        path 404s. If the worker lands a different shape, this method is the
-        only thing that changes.
-
-        A 404 is reported as unavailability, not a hard error: the frame leg
-        already knows how to print a `note:` and carry on.
-        """
-        if not texts:
-            return [], None, None
-        payload: dict[str, Any] = {"input": list(texts), "encoding_format": "float"}
-        if model:
-            payload["model"] = model
-        try:
-            body = await self._send(FRAME_QUERY_PATH, json_body=payload)
-        except WorkerRejected as exc:
-            raise WorkerUnavailable(
-                f"this worker serves no text->frame-space endpoint ({exc})"
-            ) from exc
-        return _vectors(body, len(texts), FRAME_QUERY_PATH, "input")
+    # `embed_frame_query` is inherited on purpose: it is query-time only (the
+    # search frame leg), so it keeps the 20 s budget, no 503 wait, and the 404
+    # that `FrameQueryUnsupported` names. Nothing at index time calls it.
 
 
 def _by_index(
