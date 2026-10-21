@@ -16,8 +16,9 @@ from datetime import UTC, datetime, timedelta
 
 from .. import __version__
 from ..db import queries
-from ..text import duration_clock, iso_day, iso_z
+from ..text import duration_clock, iso_day, iso_z, tsv
 from . import corpus_state
+from .library import _coverage
 from .base import Deps
 
 CORPUS_ROW_CAP = 200
@@ -253,31 +254,27 @@ async def corpus_resource(deps: Deps) -> str:
     tagged = any(tag_map.get(int(r["id"])) for r in rows)
 
     header = ["video_id", "title", "channel", "published", "duration", "coverage"]
+    records = [
+        {
+            "video_id": row["public_id"],
+            "title": row["title"],
+            "channel": row["channel_name"],
+            "published": iso_day(row["published_at"]),
+            "duration": duration_clock(row["duration_s"]),
+            "coverage": _coverage(row),
+            "tags": ",".join(tag_map.get(int(row["id"]), [])),
+        }
+        for row in rows
+    ]
     lines = [
         f"# vidtheque corpus · {total} videos · {float(rollup['hours'] or 0):.1f}h · "
         f"generated {iso_z(int(datetime.now(UTC).timestamp()))}",
-        "\t".join(header + (["tags"] if tagged else [])),
+        tsv(records, header + (["tags"] if tagged else [])),
     ]
-    for row in rows:
-        coverage = (
-            ("t" if row["has_transcript"] else "-")
-            + ("o" if row["has_ocr"] else "-")
-            + ("f" if row["has_frames"] else "-")
-        )
-        cells = [
-            str(row["public_id"]),
-            str(row["title"]).replace("\t", " "),
-            str(row["channel_name"] or ""),
-            iso_day(row["published_at"]),
-            duration_clock(row["duration_s"]),
-            coverage,
-        ]
-        if tagged:
-            cells.append(",".join(tag_map.get(int(row["id"]), [])))
-        lines.append("\t".join(cells))
-    # Say what you truncated and name the tool that narrows it.
+    # Say what you truncated and name the tool that narrows it. The rows are the
+    # queryable videos only, so that is the count they are a share of.
     lines.append(
-        f"# showing {len(rows)} of {total} — narrow with the list-videos tool "
+        f"# showing {len(rows)} of {len(pool)} queryable — narrow with the list-videos tool "
         "(channel=, tags=, q=, published_after=) · read vidtheque://guide for the tool flow"
     )
     return "\n".join(lines)
@@ -354,7 +351,8 @@ async def context_resource(deps: Deps) -> str:
             "get-frames.frame_ids": [1, 12],
             "get-frames.max_text_chars": [120, 2000],
             "get-segment-context.window": [5, 300],
-            "out_of_range": "clamped silently — read the printed count, not the one requested",
+            "out_of_range": "clamped, not refused — the payload says so in a "
+            "`note: clamped server-side` line; read the printed count, not the one requested",
         },
         "features": {
             "diarization": deps.db.diarization_enabled,
