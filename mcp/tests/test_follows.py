@@ -633,7 +633,11 @@ async def test_a_paused_follow_does_not_owe_a_week_of_checks(db) -> None:
     await arm(db, collection_id, -7 * 86_400)
     await db.write(lambda c: store.set_state(c, collection_id, "paused"))
     await db.write(
-        lambda c: store.record_error(c, collection_id, "E_UNSUPPORTED_SOURCE", "gone")
+        lambda c: c.execute(
+            "UPDATE follows SET last_error_code = 'E_UNSUPPORTED_SOURCE', "
+            "last_error_message = 'gone' WHERE collection_id = ?",
+            (collection_id,),
+        )
     )
 
     await db.write(lambda c: store.set_state(c, collection_id, "active"))
@@ -719,15 +723,6 @@ async def test_unfollowing_takes_the_membership_and_keeps_the_corpus(db) -> None
     assert job is not None and job["collection_id"] is None
 
 
-async def test_membership_can_be_written_directly_and_twice_is_still_once(db) -> None:
-    """Attaching what a follow already owns must never be an error the caller handles."""
-    collection_id = await make_follow(db)
-    video_id = await add_video(db, "vid00000001")
-    await db.write(lambda c: store.attach_videos(c, collection_id, [video_id]))
-    await db.write(lambda c: store.attach_videos(c, collection_id, [video_id]))
-    assert len(await rows(db, "SELECT * FROM collection_videos")) == 1
-
-
 async def test_the_following_page_puts_what_is_broken_at_the_top(db) -> None:
     """A failing follow is the only row that needs the operator, so it goes first."""
     quiet = await make_follow(db, title="Quiet", source_url=f"{CHANNEL}1")
@@ -771,8 +766,6 @@ async def test_the_ledger_and_the_header_band_count_the_same_rows(db) -> None:
     waiting = await db.read(lambda c: store.held(c, 10))
     assert [str(row["source_id"]) for row in waiting] == ["vid00000003"]
     assert str(waiting[0]["follow_slug"]) == "gpu-mode"
-    budgeted = await db.read(lambda c: store.held_for_budget(c, 10))
-    assert [str(row["source_id"]) for row in budgeted] == ["vid00000002"]
 
     page = await db.read(lambda c: store.seen_page(c, collection_id, decisions=("queued",)))
     assert [str(row["source_id"]) for row in page] == ["vid00000001"]

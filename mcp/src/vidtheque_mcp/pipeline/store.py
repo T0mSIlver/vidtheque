@@ -23,9 +23,6 @@ from .keyframes import KeyframeDraft
 from .sources import VideoMeta, looks_like_container
 from .worker_client import OcrLine
 
-STAGES = ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed")
-
-
 # ------------------------------------------------------------------- videos
 
 

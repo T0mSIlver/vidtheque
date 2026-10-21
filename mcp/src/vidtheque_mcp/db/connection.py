@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import sqlite3
-import struct
 import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -56,11 +55,6 @@ class QueryInterrupted(Exception):
     def __init__(self, deadline_expired: bool) -> None:
         super().__init__("interrupted")
         self.deadline_expired = deadline_expired
-
-
-def phash_to_signed(value: int) -> int:
-    """SQLite integers are signed 64-bit; a raw getrandbits(64) overflows."""
-    return struct.unpack("<q", struct.pack("<Q", value & 0xFFFF_FFFF_FFFF_FFFF))[0]
 
 
 def phash_hamming(a: int, b: int) -> int:

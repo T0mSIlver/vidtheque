@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 from .rules import Rules, joined
 
@@ -213,22 +213,6 @@ def schedule_next(conn: sqlite3.Connection, collection_id: int, interval_s: int)
     )
     conn.execute(
         "UPDATE collections SET last_sync_at = unixepoch() WHERE id = ?", (collection_id,)
-    )
-
-
-def record_error(
-    conn: sqlite3.Connection, collection_id: int, code: str | None, message: str | None
-) -> None:
-    """The last thing that went wrong, and whether it is still going wrong.
-
-    A source that pushes back is an ordinary operating condition here, so one
-    `E_RATE_LIMIT` does not make a follow `failing` — the queue's own backoff
-    owns that. `failing` is set by the caller when the *channel* is the problem.
-    """
-    conn.execute(
-        "UPDATE follows SET last_error_code = ?, last_error_message = ?, "
-        "updated_at = unixepoch() WHERE collection_id = ?",
-        (code, message, collection_id),
     )
 
 
@@ -484,21 +468,6 @@ def held(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
     )
 
 
-def held_for_budget(conn: sqlite3.Connection, limit: int = 25) -> list[sqlite3.Row]:
-    """Candidates the budget turned away, oldest upload first.
-
-    They are re-decided on the next check rather than dropped, which is the
-    whole difference between a budget and a filter.
-    """
-    return list(
-        conn.execute(
-            "SELECT * FROM follow_seen WHERE decision = 'held_budget' "
-            "ORDER BY COALESCE(published_at, first_seen_at), id LIMIT ?",
-            (limit,),
-        )
-    )
-
-
 def record_seen(
     conn: sqlite3.Connection,
     collection_id: int,
@@ -556,15 +525,6 @@ def record_seen(
             job_id,
         ),
     )
-
-
-def attach_videos(conn: sqlite3.Connection, collection_id: int, video_ids: Iterable[int]) -> None:
-    """Membership, once a candidate has actually become a video row."""
-    for video_id in video_ids:
-        conn.execute(
-            "INSERT OR IGNORE INTO collection_videos (collection_id, video_id) VALUES (?, ?)",
-            (collection_id, video_id),
-        )
 
 
 def link_landed(conn: sqlite3.Connection) -> int:
