@@ -384,6 +384,34 @@ async def test_stop_waits_for_the_in_flight_thread_before_unloading(recorder):
         await asyncio.wait_for(running, timeout=1.0)
 
 
+async def test_stop_during_a_cold_load_unloads_it_before_giving_the_lease_back(recorder):
+    """A load runs in `to_thread` too. Cancelled mid-load, the lease was released
+    at once (restarting the co-tenant) while the thread kept loading, and the
+    model landed on the card after stop() had already unloaded everything."""
+    backends = make_backends(recorder)
+    backends["stt"].load_seconds = 0.3
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends, recorder, hook_runner=hooks, acquire_cmd="a", release_cmd="r",
+        vram_probe=lambda: None, shutdown_grace_seconds=5.0,
+    )
+
+    running = asyncio.create_task(manager.submit("stt", lambda b: b.infer("a.wav")))
+    await _wait_for(lambda: hooks.calls)
+    await asyncio.sleep(0.05)  # inside the load thread
+    await asyncio.wait_for(manager.stop(), timeout=5.0)
+
+    assert not backends["stt"].loaded
+    assert recorder.names("hook", "load", "unload") == [
+        "GPU_ACQUIRE_CMD",
+        "stt",
+        "stt",
+        "GPU_RELEASE_CMD",
+    ]
+    with pytest.raises(WorkerShuttingDown):
+        await asyncio.wait_for(running, timeout=1.0)
+
+
 async def test_the_grace_period_is_bounded(recorder, caplog):
     """The documented residual: a job that outlasts the grace does *not* hold
     the shutdown open. A teardown that never finishes is worse than the race."""

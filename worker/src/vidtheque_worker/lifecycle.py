@@ -300,6 +300,8 @@ class LifecycleManager:
         await self._await_inference()
         async with self._gpu_lock:
             await self._unload_all(reason="shutdown", include_resident=True)
+            # A load cancelled before it finished left the lease with no holder.
+            await self._release_lease()
 
     def _drain_queue(self, reason: str) -> int:
         """Resolve every queued job with :class:`WorkerShuttingDown`.
@@ -322,7 +324,7 @@ class LifecycleManager:
         return failed
 
     async def _await_inference(self) -> None:
-        """Wait, bounded, for the worker thread of the last dispatched job."""
+        """Wait, bounded, for the worker thread of the last dispatched job or load."""
         flight = self._in_thread
         if flight is None or flight.done.is_set() or self.shutdown_grace_seconds <= 0:
             return
@@ -588,8 +590,14 @@ class LifecycleManager:
         try:
             await self._admit(slot)
             started = self._clock()
-            await asyncio.to_thread(slot.backend.load)
+            # Tracked like a dispatch: a load cancelled by stop() runs on in its
+            # thread, and stop() must wait for it, unload it, then release.
+            flight = _InFlight()
+            self._in_thread = flight
+            await asyncio.to_thread(_call_and_signal, _load, slot.backend, flight)
         except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise  # stop() unloads what the thread loads, then releases
             if takes_lease and not self._any_lease_holder():
                 await self._release_lease()
             if isinstance(exc, InsufficientVRAM):
@@ -784,6 +792,10 @@ def _instructions(backend: Backend) -> dict[str, str | None] | None:
         return fn()
     except Exception:  # pragma: no cover - a status page must not raise
         return None
+
+
+def _load(backend: Backend) -> None:
+    backend.load()
 
 
 def _call_and_signal(
