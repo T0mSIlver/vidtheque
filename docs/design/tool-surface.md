@@ -1476,7 +1476,9 @@ without either being wrong. They are now named apart everywhere:
 - `gaps.jobs_active` / `jobs_running` / `jobs_deferred` / `jobs_deferred_until`
   and the "N indexing job(s) queued or running" line — **rows in `jobs`**.
 - `gaps.failed_videos` — videos in `index_state='failed'`, beside `gaps.failed`,
-  which counts failed stage rows and includes a failed reindex left `stale`.
+  which counts videos with a failed stage row, a failed reindex left `stale`
+  included: each video once, never capped by the five the text lists (amended
+  2026-10-21; it was the length of that five-row listing of stage rows).
 
 Whenever the queue is not idle the header carries the same clause the other
 surfaces use:

@@ -1629,16 +1629,25 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
             """
         ).fetchone()[0]
     )
-    # `stale` too: a failed reindex keeps its old index searchable (`mark_failed`),
-    # and its failed stage row is the only place that failure is still said.
+    # One row per video with a failed stage, `stale` too: a failed reindex keeps
+    # its old index searchable (`mark_failed`), and its failed stage row is the
+    # only place that failure is still said. The listing is a few of them; the
+    # counts are over videos, not over the listing or stage rows.
+    failed_sql = """
+          SELECT v.public_id, v.title, s.error, s.finished_at,
+                 ROW_NUMBER() OVER (PARTITION BY v.id
+                                    ORDER BY s.finished_at DESC, s.stage) AS rn
+          FROM videos v JOIN video_stages s ON s.video_id = v.id
+          WHERE v.index_state IN ('failed', 'stale') AND s.state = 'failed'"""
     failed = conn.execute(
-        """
-        SELECT v.public_id, v.title, s.error, s.finished_at
-        FROM videos v JOIN video_stages s ON s.video_id = v.id
-        WHERE v.index_state IN ('failed', 'stale') AND s.state = 'failed'
-        ORDER BY s.finished_at DESC LIMIT 5
+        f"""
+        SELECT public_id, title, error, finished_at FROM ({failed_sql}) WHERE rn = 1
+        ORDER BY finished_at DESC, public_id LIMIT 5
         """
     ).fetchall()
+    failed_count = int(
+        conn.execute(f"SELECT COUNT(*) FROM ({failed_sql}) WHERE rn = 1").fetchone()[0]
+    )
     indexing = int(
         conn.execute("SELECT COUNT(*) FROM videos WHERE index_state = 'indexing'").fetchone()[0]
     )
@@ -1657,6 +1666,7 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
     return {
         "transcript_no_ocr": transcript_no_ocr,
         "failed": failed,
+        "failed_count": failed_count,
         "indexing": indexing,
         "failed_videos": failed_videos,
         "active_jobs": active_jobs,
