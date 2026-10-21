@@ -398,7 +398,7 @@ async def job_status(
         if video is None:
             from ..errors import unknown_video
 
-            raise unknown_video(video_id)
+            raise unknown_video(video_id, can_index=deps.offers("index-video"))
         row = await deps.db.read(
             lambda c: jobs_store.latest_job_for_video(c, int(video["id"]))
         )

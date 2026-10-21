@@ -311,7 +311,7 @@ async def run(
 
     if wanted_ids:
         known = await deps.db.read(lambda c: queries.lookup_video_ids(c, wanted_ids))
-        require_known_videos(known, wanted_ids)
+        require_known_videos(known, wanted_ids, deps)
 
     video_pool = await deps.db.read(lambda c: queries.resolve_videos(c, flt))
     if not video_pool:
