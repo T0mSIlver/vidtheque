@@ -11,7 +11,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
@@ -118,6 +118,20 @@ def _error(status_code: int, message: str, kind: str, headers: dict | None = Non
 def _install_error_handlers(app: FastAPI) -> None:
     # Starlette dispatches on the exception's MRO, so a subclass always finds
     # its own handler before its parent's — registration order is irrelevant.
+
+    @app.exception_handler(HTTPException)
+    async def _refused(_: Request, exc: HTTPException):
+        # The handlers' own refusals (empty batch, over the cap, a parameter out
+        # of domain) in the documented envelope, not FastAPI's `{"detail": ...}`.
+        # `invalid_input` is request-level: mcp/ fails the stage, drops nothing.
+        # Routing 404/405s raise Starlette's base class and keep their shape.
+        kind = {503: "worker_not_ready", 499: "client_closed"}.get(
+            exc.status_code, "invalid_input"
+        )
+        headers = dict(exc.headers or {})
+        if exc.status_code == 503:
+            headers.setdefault("Retry-After", "60")
+        return _error(exc.status_code, str(exc.detail), kind, headers or None)
 
     @app.exception_handler(BackendInputError)
     async def _bad_input(_: Request, exc: BackendInputError):

@@ -75,7 +75,8 @@ RETRYABLE_STATUS = {429, 502, 503, 504}
 #                  of it would be accepted either, so dropping items would only
 #                  hide it. The stage fails.
 #
-# Untyped 4xx (FastAPI's bare `{"detail": ...}`) and every 5xx keep the old
+# A 413 (batch over the cap) is typed `invalid_input` too. Untyped 4xx
+# (FastAPI's 422 `{"detail": ...}`, a routing 404) and every 5xx keep the old
 # behaviour: `WorkerRejected` with no code, which is a stage failure.
 PER_ITEM_CODES = frozenset({"invalid_image"})
 
@@ -574,10 +575,9 @@ def _detail(response: Any) -> str:
 def _error_code(response: Any) -> str | None:
     """``error.type`` from the worker's envelope, when it typed the refusal.
 
-    Only the typed envelope counts. FastAPI's own 400s — an empty batch, a
-    parameter out of domain — carry no code, and inferring one from the status
-    or the prose would turn a request-level mistake into a silently dropped
-    frame.
+    Only the typed envelope counts. FastAPI's own 422 carries no code, and
+    inferring one from the status or the prose would turn a request-level
+    mistake into a silently dropped frame.
     """
     try:
         body = response.json()

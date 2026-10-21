@@ -173,7 +173,7 @@ def test_temperature_is_honoured_or_refused_never_dropped(client, parts):
         "/v1/audio/transcriptions", files=upload, data={"temperature": "0.8"}
     )
     assert refused.status_code == 400
-    assert "temperature" in refused.json()["detail"]
+    assert "temperature" in refused.json()["error"]["message"]
     assert len(backends["stt"].infer_calls) == 1, "the refused one never ran"
 
 
@@ -286,6 +286,32 @@ def test_embeddings_pass_the_query_side_through(client, parts):
     )
     assert response.status_code == 200
     assert backends["embed"].infer_calls[0][1] == {"input_type": "query"}
+
+
+@pytest.mark.parametrize(
+    ("path", "kwargs", "status"),
+    [
+        ("/v1/embeddings", {"json": {"input": ["x"] * 513}}, 413),
+        ("/v1/embeddings", {"json": {"input": []}}, 400),
+        ("/v1/embeddings/frame-query", {"json": {"input": ["x"] * 33}}, 413),
+        ("/v1/embeddings/image", {"files": {"file": ("f.jpg", b"", "image/jpeg")}}, 400),
+        ("/v1/ocr", {"files": [("file", ("f.jpg", b"\xff", "image/jpeg"))] * 65}, 413),
+        ("/v1/audio/transcriptions", {
+            "files": {"file": ("a.wav", b"RIFF", "audio/wav")},
+            "data": {"response_format": "srt"},
+        }, 400),
+    ],
+)
+def test_handler_refusals_use_the_documented_envelope(client, path, kwargs, status):
+    """openapi.json promised `ErrorResponse` for 400/413, but the handlers'
+    HTTPExceptions came back as FastAPI's `{"detail": ...}` with no type.
+    `invalid_input` is the request-level code, never the per-item one, so mcp/
+    still fails the stage instead of dropping a frame."""
+    response = client.post(path, **kwargs)
+    assert response.status_code == status, response.text
+    error = response.json()["error"]
+    assert error["type"] == "invalid_input"
+    assert error["message"]
 
 
 def test_unknown_input_type_is_rejected(client):
@@ -687,6 +713,7 @@ def test_openapi_documents_the_error_envelope(docs_client):
     assert envelope["error"]["$ref"].endswith("ErrorBody")
     fields = schema["components"]["schemas"]["ErrorBody"]["properties"]
     assert set(fields) == {"message", "type"}
+    assert "`worker_busy`" in fields["type"]["description"]
     # The verbose transcription shape mcp/ codes against, no longer `schema: {}`.
     ok = schema["paths"]["/v1/audio/transcriptions"]["post"]["responses"]["200"]
     assert ok["content"]["application/json"]["schema"]["$ref"].endswith(
