@@ -143,7 +143,11 @@ def login_routes(
             # A DCR client_id is a random uuid: name where the code goes, and
             # the name the client gave itself only as a claim.
             target = urlparse(str(pending.get("redirect_uri") or ""))
-            host = html.escape(target.hostname or f"{target.scheme}:")
+            host = target.hostname or ""
+            # Any scheme registers, and `evil-app://github.com/cb` is not github.com.
+            if target.scheme != "https" or not host:
+                host = f"{target.scheme}://{host}"
+            host = html.escape(host)
             stored = store.load_client(client_id) or {}
             if stored.get("client_name"):
                 unverified = (
