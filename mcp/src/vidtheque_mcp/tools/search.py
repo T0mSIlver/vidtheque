@@ -123,6 +123,9 @@ class Hit:
     score: float
     cue_ids: list[int]
     frame_id: str | None = None
+    # The whole slide, shown only under `max_text_chars=0`; `text` (the FTS
+    # snippet) is what dedup and match scoring read, at every budget (§3.6).
+    full_text: str | None = None
     n_cues: int = 0
     # Where the citation points: the best-scoring matched cue inside the
     # cluster, not the cluster's first second. `None` for the point-in-time
@@ -422,7 +425,6 @@ async def run(
                 fetch_n,
                 settings.frame_max_distance,
                 settings.frame_max_margin,
-                max_text_chars,
             )
         )
 
@@ -705,7 +707,6 @@ def _run_legs(
     fetch_n: int,
     frame_max_distance: float,
     frame_max_margin: float,
-    max_text_chars: int,
 ) -> tuple[list[Hit], dict[str, int], bool]:
     hits: list[Hit] = []
     # `transcript` is the FUSED count — what the leg contributed to the ranking.
@@ -785,11 +786,11 @@ def _run_legs(
                     # snippet FTS5 picked around the terms rather than every
                     # line on the slide: middle-truncating a full slide to
                     # `max_text_chars` is as likely to cut the match out as to
-                    # keep it, and the dedup below compares this text against
-                    # transcript cues. `max_text_chars=0` is the documented
-                    # "give me everything" opt-out, so it still means the whole
-                    # frame — and the frame id is in the hit either way.
-                    text=str((row["text"] if max_text_chars == 0 else row["matched_text"]) or ""),
+                    # keep it. Dedup and scoring read this snippet at every
+                    # budget, so the ranking never moves with the display; the
+                    # `max_text_chars=0` opt-out shows `full_text` instead.
+                    text=str(row["matched_text"] or ""),
+                    full_text=str(row["text"] or ""),
                     score=float(row["score"]),
                     cue_ids=[],
                     frame_id=str(row["frame_id"]),
@@ -931,6 +932,7 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
                     other.frame_id = hit.frame_id
                 if len(hit.text) > len(other.text):
                     other.text = hit.text  # the longer text wins
+                    other.full_text = hit.full_text
                 if id(other) not in absorbed:
                     # OCR rows arrive in rank order, so the first to collapse
                     # into this survivor is the leg's best contribution.
@@ -981,6 +983,7 @@ def _collapse_same_frame(hits: list[Hit]) -> list[Hit]:
         # one that says something.
         if len(hit.text) > len(first.text) and first.text == "visual match, no text hit":
             first.text = hit.text
+            first.full_text = hit.full_text
             first._norm = None
     return survivors
 
@@ -1110,6 +1113,8 @@ def _keep_the_match(text: str, max_chars: int, needle: str) -> str:
 
 
 def _shown_text(hit: Hit, max_text_chars: int) -> str:
+    if max_text_chars == 0 and hit.full_text:
+        return hit.full_text
     return _keep_the_match(hit.text, max_text_chars, hit.anchor_text)
 
 
