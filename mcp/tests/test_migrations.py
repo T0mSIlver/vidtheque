@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from vidtheque_mcp.db import migrations
-from vidtheque_mcp.db.connection import open_write_connection, phash_to_signed
+from vidtheque_mcp.db.connection import open_write_connection
+from vidtheque_mcp.pipeline.keyframes import signed64
 
 
 @pytest.fixture
@@ -314,7 +315,7 @@ def test_cascade_delete_clears_fts_and_vectors(fresh: sqlite3.Connection) -> Non
 
 def test_phash_is_stored_signed(fresh: sqlite3.Connection) -> None:
     migrations.migrate(fresh)
-    signed = phash_to_signed(0xFFFF_FFFF_FFFF_FFFF)
+    signed = signed64(0xFFFF_FFFF_FFFF_FFFF)
     assert signed == -1
     fresh.execute("INSERT INTO videos (source_id, url, title) VALUES ('v', 'https://v', 'T')")
     vid = fresh.execute("SELECT id FROM videos").fetchone()[0]
