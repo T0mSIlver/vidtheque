@@ -16,6 +16,7 @@ from collections import OrderedDict
 from typing import Any
 
 from .base import (
+    BackendPoisoned,
     BackendUnavailable,
     BaseBackend,
     InvalidMediaError,
@@ -183,7 +184,11 @@ class WhisperXBackend(BaseBackend):
                     self.device,
                     return_char_alignments=False,
                 )
-            except Exception:  # alignment is a bonus, not a hard requirement
+            except Exception as exc:  # alignment is a bonus, a dead device is not
+                if looks_like_device_failure(exc):
+                    # Swallowed, the OOM left a poisoned model loaded (gpu-validation
+                    # §5.1) and shipped a transcript with no word timestamps.
+                    raise BackendPoisoned(f"alignment failed on the device: {exc}") from exc
                 log.warning("alignment failed for language=%s; segment timestamps only",
                             detected, exc_info=True)
 

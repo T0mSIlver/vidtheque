@@ -14,12 +14,18 @@ import types
 
 import pytest
 
-from vidtheque_worker.backends.base import InvalidMediaError, looks_like_device_failure
+from vidtheque_worker.backends.base import (
+    BackendCrashed,
+    BackendPoisoned,
+    InvalidMediaError,
+    looks_like_device_failure,
+)
 from vidtheque_worker.backends.whisperx_stt import (
     MAX_ALIGN_MODELS,
     WhisperXBackend,
     normalize_language,
 )
+from vidtheque_worker.lifecycle import LifecycleManager
 
 
 @pytest.mark.parametrize(
@@ -187,3 +193,70 @@ def test_unloading_still_drops_every_alignment_model(monkeypatch):
     backend._alignment_model("en")
     backend.unload()
     assert backend._align_cache == {}
+
+
+# --------------------------------------------------------------------------
+# alignment failures
+# --------------------------------------------------------------------------
+
+
+class _OneSegment:
+    def transcribe(self, audio, batch_size, language):  # noqa: ANN001
+        return {"language": "en", "segments": [{"start": 0.0, "end": 1.0, "text": "hi"}]}
+
+
+def _stub_aligner(monkeypatch, tmp_path, align_error: Exception):
+    def align(*args, **kwargs):
+        raise align_error
+
+    monkeypatch.setitem(
+        sys.modules,
+        "whisperx",
+        types.SimpleNamespace(
+            load_model=lambda *a, **k: _OneSegment(),
+            load_audio=lambda path: [0.0] * 16000,
+            load_align_model=lambda language_code, device: ("model", {}),
+            align=align,
+        ),
+    )
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"\0")
+    return audio
+
+
+def test_an_alignment_oom_poisons_the_backend_instead_of_dropping_words(
+    monkeypatch, tmp_path
+):
+    """Alignment is a bonus, a dead device is not: swallowing the OOM kept the
+    poisoned model loaded (gpu-validation §5.1) and shipped a transcript with
+    no word timestamps as a success."""
+    audio = _stub_aligner(
+        monkeypatch, tmp_path, RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+    )
+    backend = WhisperXBackend(device="cuda")
+    backend._model = _OneSegment()
+
+    with pytest.raises(BackendPoisoned):
+        backend.infer(str(audio))
+
+
+def test_a_non_device_alignment_failure_is_still_a_bonus(monkeypatch, tmp_path):
+    audio = _stub_aligner(monkeypatch, tmp_path, ValueError("no phonemes for this script"))
+    backend = WhisperXBackend(device="cuda")
+    backend._model = _OneSegment()
+
+    result = backend.infer(str(audio))
+    assert [s.text for s in result.segments] == ["hi"]
+
+
+async def test_an_alignment_oom_unloads_the_stt_slot(monkeypatch, tmp_path):
+    audio = _stub_aligner(monkeypatch, tmp_path, RuntimeError("CUDA out of memory"))
+    backend = WhisperXBackend(device="cuda")
+    manager = LifecycleManager({"stt": backend}, vram_probe=lambda: None)
+    await manager.start()
+    try:
+        with pytest.raises(BackendCrashed):
+            await manager.submit("stt", lambda b: b.infer(str(audio)))
+        assert not backend.loaded
+    finally:
+        await manager.stop()
