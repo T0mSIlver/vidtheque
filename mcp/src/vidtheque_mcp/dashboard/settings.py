@@ -106,28 +106,22 @@ def refuse_proxy_origin_cidrs(
     the full-transcript hatch, and with ``AUTH=token`` the credential-free
     write side too.
 
-    A configured ``VIDTHEQUE_TRUSTED_IP_HEADER`` is the tell that a proxy is in
-    front: it exists precisely because the socket peer is *not* the client. So
-    the two settings together are the footgun.
+    **The header is not consulted** (amended 2026-10-21). It was the tell
+    that a proxy is in front until the audit noticed the other direction: an
+    *empty* header is what `deploy/.env.example` advises for a private box
+    behind a host caddy, and there the caddy is the socket peer just the same.
+    ``trusted_ip_header`` stays in the signature for the message only.
 
     **This was a warning until 2026-08-11 (gate G2).** It refuses now, in the
     shape B-2 established the same night: a misconfiguration that silently
     widens authorization is a boot failure, not a log line, because a log line
     is a control that depends on someone reading it.
 
-    **Three conditions, and the third is the one that took a second attempt.**
-    The header alone is not the signal it looks like: ``trusted_ip_header``
-    *defaults* to ``CF-Connecting-IP`` and `deploy/.env.example` ships that
-    value, so "a header is set" is true of a LAN box that has never heard of a
-    proxy. Refusing on the first two conditions alone would take owner access
-    away from exactly the deployment §3.2 designed the allowlist for — an
-    ``AUTH=none`` LAN box, where the CIDR is the only credential there is.
-
-    So the third condition is a **non-loopback public hostname**, the same test
-    `Settings._refuse_anonymous_writes_in_public` uses to mean "this is really
-    exposed". A LAN deployment has none and boots untouched; a tunnelled one
-    has one, and there the two settings together say *every visitor is the
-    owner*.
+    **Two conditions.** A CIDR a proxy could speak from, and a **non-loopback
+    public hostname**, the same test `Settings._refuse_anonymous_writes_in_public`
+    uses to mean "this is really exposed". A LAN deployment has none and boots
+    untouched — the ``AUTH=none`` LAN box §3.2 designed the allowlist for,
+    where the CIDR is the only credential there is.
 
     No escape-hatch env var, and none is needed: the remedy is to narrow the
     allowlist to a network the proxy cannot speak from, which is a safe
@@ -136,24 +130,24 @@ def refuse_proxy_origin_cidrs(
     Flagged by the 2026-08-09 review; `docs/deploy-public.md` §9 carries the
     operator half.
     """
-    if not trusted_ip_header:
-        return
     risky = proxy_origin_cidrs(settings)
     if not risky:
         return
     exposed = [h for h in public_hostnames if h not in _LOOPBACK_HOSTS]
     if not exposed:
         return
+    header = trusted_ip_header or "(empty)"
     raise ConfigError(
         f"VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS contains {', '.join(risky)} while "
-        f"VIDTHEQUE_TRUSTED_IP_HEADER={trusted_ip_header} is set and this server "
-        f"answers on {', '.join(exposed)}, which means a proxy is in front of "
-        "it. Trust is decided on the SOCKET PEER, "
-        "so if the proxy connects from one of those networks then every visitor "
-        "arriving through it is treated as the owner — owner clamps, full "
-        "transcripts, and the credential-free write side. Either narrow the "
-        "allowlist to networks the proxy cannot speak from, or empty it and use "
-        "the token."
+        f"this server answers on {', '.join(exposed)} "
+        f"(VIDTHEQUE_TRUSTED_IP_HEADER={header}). Trust is decided on the SOCKET "
+        "PEER, and a proxy in front (cloudflared, a host caddy, the compose edge) "
+        "connects from loopback or a private network, so if it connects from one "
+        "of those networks then every visitor arriving through it is treated as "
+        "the owner — owner clamps, full transcripts, and the credential-free "
+        "write side. Either narrow the allowlist to networks outside loopback, "
+        "RFC1918 and fc00::/7, or set VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS= (empty) "
+        "and sign in with VIDTHEQUE_TOKEN or VIDTHEQUE_PASSWORD."
     )
 
 

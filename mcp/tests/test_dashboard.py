@@ -1239,16 +1239,41 @@ def test_a_cidr_that_covers_the_proxy_refuses_the_boot() -> None:
         # without opening the source.
         assert "narrow the allowlist" in said, said
 
-    # Boots: no proxy in front (the header is the documented way to say "trust
-    # the socket only"), or an allowlist a proxy cannot be speaking from.
-    for settings, header in ((loopback, ""), (routable, "CF-Connecting-IP")):
-        refuse_proxy_origin_cidrs(settings, header, public)
+    # Boots: an allowlist a proxy cannot be speaking from, header or not. (An
+    # empty header used to boot `loopback` here too; the next test is why not.)
+    for header in ("", "CF-Connecting-IP"):
+        refuse_proxy_origin_cidrs(routable, header, public)
 
     # And the case that made this a three-condition rule: a LAN deployment, on
     # the *default* header, with the allowlist that is its only credential.
     # No public hostname, so nothing here is exposed and nothing is refused.
     for hostnames in ((), ("localhost",), ("127.0.0.1",)):
         refuse_proxy_origin_cidrs(lan, "CF-Connecting-IP", hostnames)
+
+
+def test_a_proxy_cidr_refuses_the_boot_with_no_trusted_header_too() -> None:
+    """An empty `VIDTHEQUE_TRUSTED_IP_HEADER` is what `.env.example` advises
+    for a private box behind a host caddy, and that caddy is the socket peer:
+    a CIDR covering it with a public hostname still makes every visitor the
+    owner, header or not."""
+    import ipaddress
+
+    import pytest
+
+    from vidtheque_mcp.config import ConfigError
+    from vidtheque_mcp.dashboard.settings import (
+        DashboardSettings as DS,
+        refuse_proxy_origin_cidrs,
+    )
+
+    bridge = DS(trusted_cidrs=(ipaddress.ip_network("172.16.0.0/12"),))
+    with pytest.raises(ConfigError) as caught:
+        refuse_proxy_origin_cidrs(bridge, "", ("private.vidtheque.dev",))
+    said = str(caught.value)
+    assert "172.16.0.0/12" in said and "private.vidtheque.dev" in said
+    assert "VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS" in said
+    # A LAN box with no public hostname keeps its allowlist.
+    refuse_proxy_origin_cidrs(bridge, "", ())
 
 
 def test_the_env_vars_this_phase_adds_are_documented() -> None:
