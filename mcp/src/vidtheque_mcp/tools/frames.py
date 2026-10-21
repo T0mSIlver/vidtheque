@@ -102,7 +102,7 @@ async def run(
             )
         video = await deps.db.read(lambda c: queries.lookup_video(c, video_id))
         if video is None:
-            raise unknown_video(video_id)
+            raise unknown_video(video_id, can_index=deps.offers("index-video"))
         vid = int(video["id"])
         rows = await deps.db.read(
             lambda c: queries.keyframes_in_span(c, vid, span_start, span_end, limit)

@@ -6,6 +6,8 @@ it needs. The finding number (Q2, Q3, ...) is in each test's docstring.
 
 from __future__ import annotations
 
+import pytest
+
 from vidtheque_mcp.tools import search
 
 from .conftest import Assembled
@@ -48,3 +50,55 @@ async def test_video_time_returns_the_earliest_matches_not_the_strongest(
         content_type="transcript",
     )
     assert [x["start"] for x in r.structured_content["results"]] == [1000, 1200, 1400]
+
+
+# ------------------------------------------------------------------------ Q10
+
+
+def _readonly_calls(deps):
+    from vidtheque_mcp.tools import frames, indexing, library, segment
+
+    unknown = "abcdefghijk"
+    return {
+        "search": lambda: search.run(deps, q="cache", video_id=unknown),
+        "search-batch": lambda: search.run(deps, q="cache", video_id=[unknown, "abcdefghijl"]),
+        "video-summary": lambda: library.video_summary(deps, video_id=unknown),
+        "get-segment-context": lambda: segment.run(deps, video_id=unknown, t=3),
+        "get-frames": lambda: frames.run(deps, video_id=unknown),
+        "job-status": lambda: indexing.job_status(deps, video_id=unknown),
+    }
+
+
+@pytest.mark.parametrize(
+    "tool",
+    ["search", "search-batch", "video-summary", "get-segment-context", "get-frames", "job-status"],
+)
+async def test_unknown_video_never_recommends_a_masked_index_video(
+    assembled: Assembled, tool: str
+) -> None:
+    """Q10: on the read-only surface the unknown-video remedy named
+    `index-video`, a tool absent from that deployment's tools/list."""
+    from vidtheque_mcp.public.readonly import hidden_tools
+
+    deps = assembled.deps
+    deps.hidden_tools = hidden_tools(True)
+    r = await _readonly_calls(deps)[tool]()
+    assert r.is_error
+    assert r.structured_content["code"] == "E_UNKNOWN_VIDEO"
+    assert "index-video" not in r.content[0].text
+    assert "read-only" in r.content[0].text
+
+
+async def test_segment_refuses_a_video_that_is_not_indexed(assembled: Assembled) -> None:
+    """Q10: get-segment-context never checked index_state, though §4.5 lists
+    E_NOT_INDEXED and E_INDEXING for it."""
+    from vidtheque_mcp.tools import segment
+
+    for state, code in (("pending", "E_NOT_INDEXED"), ("indexing", "E_INDEXING")):
+        await assembled.deps.db.write(
+            lambda c, s=state: c.execute(
+                "UPDATE videos SET index_state=? WHERE public_id='eMlx5fFNoYc'", (s,)
+            )
+        )
+        r = await segment.run(assembled.deps, video_id="eMlx5fFNoYc", t=30)
+        assert r.is_error and r.structured_content["code"] == code

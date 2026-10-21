@@ -19,6 +19,7 @@ from ..errors import bad_param, unknown_video
 from ..text import clamp, clamp_text_chars, clock, deeplink, deeplink_t, middle_truncate
 from ..timeparse import parse_offset
 from .base import Deps, handle_errors, text_result
+from .transcript import _require_indexed
 
 MAX_OCR_FRAMES = 8
 MAX_OCR_CHARS = 1200
@@ -44,7 +45,8 @@ async def run(
 
     row = await deps.db.read(lambda c: queries.lookup_video(c, video_id))
     if row is None:
-        raise unknown_video(video_id)
+        raise unknown_video(video_id, can_index=deps.offers("index-video"))
+    _require_indexed(deps, row, video_id)
     vid = int(row["id"])
     duration = float(row["duration_s"] or 0.0)
 
