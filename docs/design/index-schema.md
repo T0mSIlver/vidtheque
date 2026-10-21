@@ -325,6 +325,8 @@ and never appears in it.
 `skipped` is how `index-video channels=transcript` (tool-surface §4.7) records that
 keyframes were *deliberately* not built — distinguishable from `pending`, so
 `coverage t,o,f` and `data_status` never report a deliberate choice as missing data.
+A channel subset never rewrites a `done` row: a `channels=transcript` job on a
+fully indexed video leaves its frame stages `done` (`store.stage_not_asked`).
 
 **`error` is set on `done` rows too**, and only there does it mean "finished, but
 not on all of it". The case that produces it is a frame the worker refuses as

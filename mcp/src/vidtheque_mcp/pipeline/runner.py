@@ -273,9 +273,9 @@ class IndexingPipeline:
             await self._stage_text_embed(run)
             await self._checkpoint(run)
         else:
-            await self._skip(run, "stt", "channels did not ask for the transcript")
-            await self._skip(run, "chunk", "no transcript to chunk")
-            await self._skip(run, "text_embed", "no transcript to embed")
+            await self._not_asked(run, "stt", "channels did not ask for the transcript")
+            await self._not_asked(run, "chunk", "no transcript to chunk")
+            await self._not_asked(run, "text_embed", "no transcript to embed")
 
         if run.wants_frames:
             await self._stage_keyframes(run)
@@ -284,9 +284,9 @@ class IndexingPipeline:
             await self._checkpoint(run)
             await self._stage_frame_embed(run)
         else:
-            await self._skip(run, "keyframe", "channels did not ask for frames")
-            await self._skip(run, "ocr", "channels did not ask for on-screen text")
-            await self._skip(run, "frame_embed", "channels did not ask for frames")
+            await self._not_asked(run, "keyframe", "channels did not ask for frames")
+            await self._not_asked(run, "ocr", "channels did not ask for on-screen text")
+            await self._not_asked(run, "frame_embed", "channels did not ask for frames")
 
         # Frame embedding is a stage too. Without this final boundary, a
         # cancellation arriving during it was acknowledged by the job row but
@@ -1011,7 +1011,7 @@ class IndexingPipeline:
     async def _stage_ocr(self, run: ItemRun) -> None:
         model = self.db.config.get("ocr.model", "")
         if not run.wants_ocr:
-            await self._skip(run, "ocr", "channels did not ask for on-screen text")
+            await self._not_asked(run, "ocr", "channels did not ask for on-screen text")
             return
         if not self._should_run(run, "ocr", model):
             return
@@ -1080,7 +1080,7 @@ class IndexingPipeline:
     async def _stage_frame_embed(self, run: ItemRun) -> None:
         model = self.db.config.get("frame_embed.model", "")
         if not run.wants_frame_vectors:
-            await self._skip(run, "frame_embed", "channels did not ask for frame search")
+            await self._not_asked(run, "frame_embed", "channels did not ask for frame search")
             return
         if not self._should_run(run, "frame_embed", model):
             return
@@ -1459,6 +1459,14 @@ class IndexingPipeline:
             lambda c: store.stage_finished(c, video_id, stage, "skipped", None, reason)
         )
         await run.ctx.log(f"{stage} skipped: {reason}", "info", stage=stage)
+
+    async def _not_asked(self, run: ItemRun, stage: str, reason: str) -> None:
+        """`_skip` for a stage outside the job's channels: a `done` row stays `done`."""
+        if not run.video_id:
+            return
+        video_id = run.video_id
+        if await self.db.write(lambda c: store.stage_not_asked(c, video_id, stage, reason)):
+            await run.ctx.log(f"{stage} skipped: {reason}", "info", stage=stage)
 
     def _caption_candidate(self, run: ItemRun) -> Any:
         """A caption track the STT stage could actually use, auto or manual."""

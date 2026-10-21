@@ -1003,3 +1003,55 @@ async def test_new_keyframes_reset_the_ocr_and_frame_embed_stages(
     finally:
         await close(parts)
 
+
+async def test_a_channel_subset_job_leaves_the_other_channels_done(
+    settings: Settings, clip: Path
+) -> None:
+    """`skipped` means "deliberately not built", not "throw away what was built".
+
+    A `channels=transcript` job on a fully indexed video rewrote `keyframe`,
+    `ocr` and `frame_embed` from `done` to `skipped`, with every frame, line and
+    vector still on disk: `has_frames` went false and frame search lost the video.
+    """
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        video_id = int((await parts.one("SELECT id FROM videos"))["id"])
+        # Owe the transcript leg something, so the job has work to do.
+        await parts.db.write(
+            lambda c: c.execute(
+                "UPDATE video_stages SET state = 'failed' WHERE stage = 'text_embed'"
+            )
+        )
+        await parts.db.write(
+            lambda c: jobs_store.create_job(
+                c, "index", {"channels": "transcript"}, [(VIDEO_URL, video_id)]
+            )
+        )
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["text_embed"]["state"] == "done"
+        for stage in ("keyframe", "ocr", "frame_embed"):
+            assert stages[stage]["state"] == "done", stage
+
+        # And the frames-only twin keeps the transcript leg.
+        await parts.db.write(
+            lambda c: c.execute("UPDATE video_stages SET state = 'failed' WHERE stage = 'ocr'")
+        )
+        await parts.db.write(
+            lambda c: c.execute("UPDATE keyframes SET ocr_state = 'failed' WHERE dup_of IS NULL")
+        )
+        await parts.db.write(
+            lambda c: jobs_store.create_job(
+                c, "index", {"channels": "ocr"}, [(VIDEO_URL, video_id)]
+            )
+        )
+        assert await parts.run() is True
+        stages = await parts.stages()
+        assert stages["ocr"]["state"] == "done"
+        for stage in ("stt", "chunk", "text_embed", "frame_embed"):
+            assert stages[stage]["state"] == "done", stage
+    finally:
+        await close(parts)

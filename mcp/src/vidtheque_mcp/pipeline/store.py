@@ -211,6 +211,29 @@ def stage_finished(
     )
 
 
+def stage_not_asked(conn: sqlite3.Connection, video_id: int, stage: str, reason: str) -> bool:
+    """`skipped` for a stage the job's channels left out, unless it is already `done`.
+
+    A channel subset is a choice not to build, never a reason to disown what a
+    previous job built. True when the row was written.
+    """
+    cursor = conn.execute(
+        """
+        INSERT INTO video_stages (video_id, stage, state, model_key, started_at,
+                                  finished_at, error)
+        VALUES (?, ?, 'skipped', NULL, unixepoch(), unixepoch(), ?)
+        ON CONFLICT (video_id, stage) DO UPDATE SET
+            state = 'skipped',
+            model_key = NULL,
+            finished_at = unixepoch(),
+            error = excluded.error
+        WHERE video_stages.state <> 'done'
+        """,
+        (video_id, stage, reason[:500]),
+    )
+    return cursor.rowcount > 0
+
+
 # ---------------------------------------------------------------------- cues
 
 
