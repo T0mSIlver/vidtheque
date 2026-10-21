@@ -518,7 +518,7 @@ async def run(
         )
         related = {str(r["full"]): int(r["n"]) for r in rows}
 
-    body = _render(
+    body, kept = _render(
         deps,
         page,
         q=q,
@@ -538,12 +538,14 @@ async def run(
         fmt=format,
         fields=fields,
     )
+    dropped = len(page) - kept
+    page = page[:kept]
     structured: dict[str, Any] = {
         "results": [_as_dict(deps, h, max_text_chars) for h in page],
         "pagination": {
             "limit": limit,
             "offset": offset,
-            "has_more": has_more,
+            "has_more": has_more or bool(dropped),
             # The number of results this query can actually deliver, counted
             # after dedup and after the per-video cap — not a probe over the
             # raw candidate CTE, which counted rows paging could never reach
@@ -559,6 +561,12 @@ async def run(
         "leg_counts": leg_counts,
         "notes": notes,
     }
+    if dropped:
+        structured["truncated"] = {
+            "dropped": dropped,
+            "max_chars": deps.settings.response_max_chars - 600,
+            "next_offset": offset + kept,
+        }
     nxt = _next_line(page)
     if nxt:
         structured["next"] = nxt
@@ -1192,8 +1200,53 @@ def _render(
     truncated_videos: set[int],
     fmt: str,
     fields: str,
-) -> str:
-    if pool_full and not has_more:
+) -> tuple[str, int]:
+    """The text block, and how many of `page` it kept under the response cap."""
+    # One response cap for both formats, applied before the header is written:
+    # the header, the footer and structuredContent describe the results kept.
+    budget = deps.settings.response_max_chars - 600
+    if fmt == "tsv":
+        wanted = [f.strip() for f in fields.split(",") if f.strip()][:12]
+        rows = [_as_dict(deps, h, max_text_chars) for h in page]
+        for row in rows:
+            row["start"] = clock(row["start"])
+        columns, *lines_ = tsv(rows, wanted or DEFAULT_FIELDS.split(",")).split("\n")
+        body, dropped = cap_response(lines_, budget, "results")
+        body = columns + "\n" + body
+    else:
+        lead = deps.settings.deeplink_lead_s
+        blocks: list[str] = []
+        for hit in page:
+            link = deeplink(hit.public_id, hit.cite_s, lead)
+            when = clock(hit.start_s) + (f"–{clock(hit.end_s)}" if hit.end_s else "")
+            # A clustered segment is a span; the link is a point inside it. Name the
+            # point, or the payload looks inconsistent with its own link.
+            if hit.anchor_s is not None and int(hit.anchor_s) != int(hit.start_s):
+                when += f" · match at {clock(hit.anchor_s)}"
+            lines = [
+                f"[{hit.source}] {hit.title} — {hit.channel or 'unknown'} ({hit.public_id})",
+                f"  {when} · {link}",
+                "  " + _shown_text(hit, max_text_chars).replace("\n", " "),
+            ]
+            trailer: list[str] = []
+            if hit.cue_ids:
+                trailer.append(
+                    f"cues {hit.cue_ids[0]}-{hit.cue_ids[-1]}"
+                    if len(hit.cue_ids) > 1
+                    else f"cue {hit.cue_ids[0]}"
+                )
+            if hit.frame_id:
+                trailer.append(f"frame {hit.frame_id}")
+            trailer.append(f"score {hit.score:.4f}")
+            lines.append("  " + " · ".join(trailer))
+            blocks.append("\n".join(lines))
+        body, dropped = cap_response(blocks, budget, "results")
+    page = page[: len(page) - dropped]
+
+    if dropped:
+        # The tail was dropped, so this page is not the end: point at the rest.
+        first = pagination_line("Results", len(page), offset, len(page), True, total, pool_full)
+    elif pool_full and not has_more:
         # "(no more results)" would be the §7.7 lie in a new place: the pool ran
         # out, the corpus did not. Name which one ended.
         first = f"Results: {len(page)}/{total} (end of the ranked pool)"
@@ -1209,44 +1262,8 @@ def _render(
         *notes,
         "",
     ]
-
     if fmt == "tsv":
-        wanted = [f.strip() for f in fields.split(",") if f.strip()][:12]
-        rows = [_as_dict(deps, h, max_text_chars) for h in page]
-        for row in rows:
-            row["start"] = clock(row["start"])
-            row["source"] = row["source"]
-        body = tsv(rows, wanted or DEFAULT_FIELDS.split(","))
-        return "\n".join(header) + body
-
-    lead = deps.settings.deeplink_lead_s
-    blocks: list[str] = []
-    for hit in page:
-        link = deeplink(hit.public_id, hit.cite_s, lead)
-        when = clock(hit.start_s) + (f"–{clock(hit.end_s)}" if hit.end_s else "")
-        # A clustered segment is a span; the link is a point inside it. Name the
-        # point, or the payload looks inconsistent with its own link.
-        if hit.anchor_s is not None and int(hit.anchor_s) != int(hit.start_s):
-            when += f" · match at {clock(hit.anchor_s)}"
-        lines = [
-            f"[{hit.source}] {hit.title} — {hit.channel or 'unknown'} ({hit.public_id})",
-            f"  {when} · {link}",
-            "  " + _shown_text(hit, max_text_chars).replace("\n", " "),
-        ]
-        trailer: list[str] = []
-        if hit.cue_ids:
-            trailer.append(
-                f"cues {hit.cue_ids[0]}-{hit.cue_ids[-1]}"
-                if len(hit.cue_ids) > 1
-                else f"cue {hit.cue_ids[0]}"
-            )
-        if hit.frame_id:
-            trailer.append(f"frame {hit.frame_id}")
-        trailer.append(f"score {hit.score:.4f}")
-        lines.append("  " + " · ".join(trailer))
-        blocks.append("\n".join(lines))
-
-    body, _ = cap_response(blocks, deps.settings.response_max_chars - 600, "results")
+        return "\n".join(header) + body, len(page)
 
     footer: list[str] = []
     per_video: dict[str, int] = {}
@@ -1281,7 +1298,7 @@ def _render(
     nxt = _next_line(page)
     if nxt:
         footer.append(nxt)
-    return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else "")
+    return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else ""), len(page)
 
 
 def at_match(result: dict[str, Any]) -> float:
