@@ -379,6 +379,16 @@ async def test_list_videos_total_does_not_move_with_the_page(assembled: Assemble
     assert "Videos: 1/3" in body(await library.list_videos(assembled.deps, limit=1))
 
 
+async def test_list_videos_with_a_query_of_operators_alone_is_empty_not_an_error(
+    assembled: Assembled,
+) -> None:
+    """`q=AND` or `q=""` sanitizes to no term; MATCH '' used to be E_INTERNAL."""
+    for q in ("AND", '""', "OR NOT", "("):
+        result = await library.list_videos(assembled.deps, q=q)
+        assert not result.is_error, (q, body(result))
+        assert structured(result)["videos"] == [], q
+
+
 async def test_list_videos_past_the_last_page_says_where_the_end_is(
     assembled: Assembled,
 ) -> None:

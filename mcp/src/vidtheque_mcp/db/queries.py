@@ -248,8 +248,10 @@ def _lex(query: str) -> list[tuple[str, str, bool]]:
             raw = raw[:-1]
         if not raw:
             continue
-        if not star and raw.upper() in _OPERATORS:
-            out.append(("op", raw.upper(), False))
+        # Case-sensitive, as in FTS5 itself: `why not use rag` is four words,
+        # not `why NOT (use AND rag)`.
+        if not star and raw in _OPERATORS:
+            out.append(("op", raw, False))
         else:
             out.append(("term", raw, star))
     return out
@@ -1309,6 +1311,9 @@ WHERE (:has_filter = 'any'
 def _list_sql(q: str | None) -> str:
     if is_browse_query(q):
         return _LIST_SQL.format(matched="", rank_expr="0.0", fts_clause="")
+    if not sanitize_fts(q or ""):
+        # `AND` or `""` alone has no term to match: MATCH '' is a syntax error.
+        return _LIST_SQL.format(matched="", rank_expr="0.0", fts_clause="AND 0")
     return _LIST_SQL.format(
         matched=_LIST_MATCHED,
         rank_expr="COALESCE((SELECT rank_score FROM matched m WHERE m.id = v.id), 0.0)",
