@@ -77,7 +77,11 @@ describe("createClient", () => {
 
   it("forwards no address when the header name is empty", async () => {
     const { calls, fetchImpl } = fake(200, SEARCH);
-    const client = createClient({ baseUrl: "https://api.test", clientIpHeader: "", fetch: fetchImpl });
+    const client = createClient({
+      baseUrl: "https://api.test",
+      clientIpHeader: "",
+      fetch: fetchImpl,
+    });
     await client.search({ q: "hello" }, { clientIp: "203.0.113.9" });
     const headers = new Headers(calls[0].init.headers);
     expect(headers.get("CF-Connecting-IP")).toBeNull();
