@@ -672,6 +672,54 @@ def test_inference_failure_is_a_503_the_caller_can_retry(parts):
         assert retried.json() == {"text": "hello there general kenobi"}
 
 
+async def test_a_full_queue_refuses_an_upload_before_spooling_it(monkeypatch, recorder):
+    """The transcription handler copied the whole upload to a second temp file
+    and only then learned from submit() that the queue was full: a flood of
+    long recordings was a disk problem before the 503 went out."""
+    import asyncio
+
+    import httpx2 as httpx
+
+    from vidtheque_worker import api
+
+    stt = FakeBackend("stt", vram_estimate_mb=0, recorder=recorder, result="t", infer_seconds=0.3)
+    backends = {"stt": stt} | {
+        task: FakeBackend(task, vram_estimate_mb=0, recorder=recorder)
+        for task in ("ocr", "image_embed")
+    }
+    manager = LifecycleManager(backends, vram_probe=lambda: None, max_queue=1)
+    app = create_app(settings=Settings(_env_file=None), manager=manager)
+    spooled: list[str] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def mkstemp(*args, **kwargs):
+        spooled.append("mkstemp")
+        return real_mkstemp(*args, **kwargs)
+
+    async with app.router.lifespan_context(app):
+        running = asyncio.create_task(manager.submit("stt", lambda b: b.infer("a")))
+        while stt.concurrent == 0:
+            await asyncio.sleep(0.005)
+        queued = asyncio.create_task(manager.submit("stt", lambda b: b.infer("b")))
+        while manager.snapshot()["queue"]["depth"] < 1:
+            await asyncio.sleep(0.005)
+
+        monkeypatch.setattr(api.tempfile, "mkstemp", mkstemp)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://worker") as client:
+            for path, files in (
+                ("/v1/audio/transcriptions", {"file": ("a.wav", b"RIFF" * 1000, "audio/wav")}),
+                ("/v1/ocr", {"file": ("f.jpg", b"\xff\xd8", "image/jpeg")}),
+                ("/v1/embeddings/image", {"file": ("f.jpg", b"\xff\xd8", "image/jpeg")}),
+            ):
+                response = await client.post(path, files=files)
+                assert response.status_code == 503, (path, response.text)
+                assert response.json()["error"]["type"] == "worker_busy"
+                assert response.headers["retry-after"]
+        assert spooled == []
+        await asyncio.gather(running, queued)
+
+
 def test_the_schema_is_not_published_by_default(client):
     """No auth in front of this service, so it publishes nothing about itself.
 

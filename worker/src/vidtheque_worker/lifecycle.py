@@ -350,14 +350,31 @@ class LifecycleManager:
         """
         if task not in self._slots:
             raise KeyError(f"no backend registered for task {task!r}")
-        if self._stopping:
-            raise WorkerShuttingDown("the worker is shutting down; the job never ran")
-        if self._runner is None or self._runner.done():
-            raise ManagerNotRunning("lifecycle manager is not running")
+        self.check_capacity()
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         job = _Job(task=task, fn=fn, future=future, enqueued_at=self._clock(), label=label)
+        self._in_flight += 1
+        try:
+            # `put_nowait` rather than `await put`: the bound is checked above,
+            # and nothing may run between the liveness check and the job landing
+            # in the queue.
+            self._queue.put_nowait(job)
+            return await future
+        finally:
+            self._in_flight -= 1
+
+    def check_capacity(self) -> None:
+        """Raise what :meth:`submit` would refuse with, without queueing.
+
+        Handlers call it before reading an upload, so a full queue answers 503
+        before the payload is spooled to disk or held in memory.
+        """
+        if self._stopping:
+            raise WorkerShuttingDown("the worker is shutting down; the job never ran")
+        if self._runner is None or self._runner.done():
+            raise ManagerNotRunning("lifecycle manager is not running")
         # Backpressure, not growth. The queue was unbounded and every waiting
         # job holds its closure alive — text, image blobs, tempfile paths — so a
         # request flood became a memory and disk problem long before it became a
@@ -369,15 +386,6 @@ class LifecycleManager:
             raise WorkerBusy(
                 f"{self._queue.qsize()} job(s) already queued; try again shortly"
             )
-        self._in_flight += 1
-        try:
-            # `put_nowait` rather than `await put`: the bound is checked above,
-            # and nothing may run between the liveness check and the job landing
-            # in the queue.
-            self._queue.put_nowait(job)
-            return await future
-        finally:
-            self._in_flight -= 1
 
     def snapshot(self) -> dict[str, Any]:
         """Everything ``GET /status`` reports. Cheap enough to call per request.
