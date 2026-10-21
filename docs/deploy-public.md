@@ -201,6 +201,14 @@ cannot distinguish, which is why it is a warning and not a refusal. If that is
 this box, record the reasoning in the audit write-up rather than ignoring the
 line.
 
+*Amended 2026-10-21: the header is no longer a condition.* The warning became a
+boot refusal on 2026-08-11 (gate G2), and since 2026-10-21 it fires on a
+proxy-origin CIDR plus a non-loopback `VIDTHEQUE_PUBLIC_HOSTNAME` whatever
+`VIDTHEQUE_TRUSTED_IP_HEADER` says: an empty header is what `.env.example`
+advises behind a host caddy, and that caddy is the socket peer all the same.
+A LAN box with no public hostname is still untouched
+(`dashboard/settings.py:refuse_proxy_origin_cidrs`).
+
 The original finding, and the three answers it landed on, follow.
 
 Found while shipping phase 4, not fixed there, because it is the "what is a
