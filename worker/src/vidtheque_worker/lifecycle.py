@@ -12,7 +12,9 @@ That buys four properties that are painful to retrofit:
   if the estimate does not fit, the least-recently-used non-resident backend is
   evicted first. No NVML installed means "no idea", and no idea means proceed.
 * **Lease hooks.** ``GPU_ACQUIRE_CMD`` runs before the first load of a
-  *non-resident GPU* model and ``GPU_RELEASE_CMD`` once none is left loaded, so
+  *non-resident GPU* model — before admission control probes, since stopping
+  the co-tenant is what frees the room — and ``GPU_RELEASE_CMD`` once none is
+  left loaded (a swap between two GPU models keeps it), so
   a co-tenant (llama.cpp, say) can be stopped and restarted around a burst of
   indexing work without this code knowing anything about it. CPU backends and
   resident models are outside that bracket — see :func:`_takes_lease`.
@@ -578,14 +580,20 @@ class LifecycleManager:
         if slot.loaded:
             return
 
-        await self._admit(slot)
-        acquired_here = await self._acquire_lease() if _takes_lease(slot) else False
+        # Lease before admission: the acquire hook is what frees a co-tenant's
+        # VRAM, so probing first refused loads the hook would have made room for.
+        takes_lease = _takes_lease(slot)
+        if takes_lease:
+            await self._acquire_lease()
         try:
+            await self._admit(slot)
             started = self._clock()
             await asyncio.to_thread(slot.backend.load)
         except BaseException as exc:
-            if acquired_here and not self._any_lease_holder():
+            if takes_lease and not self._any_lease_holder():
                 await self._release_lease()
+            if isinstance(exc, InsufficientVRAM):
+                raise
             # Same rule as a failed inference, one step earlier: a load that
             # OOMs is the card being full *now* (503, worth retrying), and
             # anything else is typed so the caller gets an error.type instead
@@ -626,7 +634,9 @@ class LifecycleManager:
                     f"{slot.backend.vram_estimate_mb} + headroom {self.vram_headroom_mb}), "
                     f"{info.free_mb} MB free and nothing evictable"
                 )
-            await self._unload(victim.task, reason="vram pressure")
+            # Making room for a lease-taking load keeps the lease: releasing it
+            # here restarts the co-tenant just for the load to stop it again.
+            await self._unload(victim.task, reason="vram pressure", keep_lease=_takes_lease(slot))
             probed = self._vram_probe()
             if probed is None:
                 return
@@ -648,7 +658,7 @@ class LifecycleManager:
         candidates.sort(key=lambda s: (s.last_used if s.last_used is not None else 0.0))
         return candidates[0]
 
-    async def _unload(self, task: str, *, reason: str) -> None:
+    async def _unload(self, task: str, *, reason: str, keep_lease: bool = False) -> None:
         slot = self._slots[task]
         if not slot.loaded:
             return
@@ -656,7 +666,7 @@ class LifecycleManager:
         await asyncio.to_thread(slot.backend.unload)
         slot.unload_count += 1
         slot.loaded_at = None
-        if not self._any_lease_holder():
+        if not keep_lease and not self._any_lease_holder():
             await self._release_lease()
 
     async def _unload_all(self, *, reason: str, include_resident: bool = False) -> None:
