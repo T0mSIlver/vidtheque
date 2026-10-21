@@ -135,3 +135,35 @@ async def test_speaker_wildcard_is_literal(assembled: Assembled) -> None:
     await assembled.deps.db.write(write)
     assert await assembled.deps.db.read(lambda c: queries.resolve_speakers(c, "%")) == []
     assert await assembled.deps.db.read(lambda c: queries.resolve_speakers(c, "speaker_0"))
+
+
+# ------------------------------------------------------------------------ Q14
+
+
+async def test_gaps_counts_every_failed_video_once(assembled: Assembled) -> None:
+    """Q14: gaps.failed was len() of a LIMIT 5 stage-row list, so seven failed
+    videos with two failed stages each counted 5, and the listing repeated
+    a video once per failed stage."""
+    from vidtheque_mcp.tools import library
+
+    def write(c):
+        for i in range(7):
+            cur = c.execute(
+                "INSERT INTO videos (owner_id, source_id, url, title, index_state) "
+                "VALUES (1, ?, 'u', ?, 'failed')",
+                (f"failvid{i:04d}", f"t{i}"),
+            )
+            for stage in ("fetch", "stt"):
+                c.execute(
+                    "INSERT INTO video_stages (video_id, stage, state, error) "
+                    "VALUES (?, ?, 'failed', 'boom')",
+                    (cur.lastrowid, stage),
+                )
+
+    await assembled.deps.db.write(write)
+    r = await library.corpus_summary(assembled.deps)
+    assert r.structured_content["gaps"]["failed"] == 7
+    listed = [ln.split()[1] for ln in r.content[0].text.splitlines() if ln.strip().startswith("failed:")]
+    assert len(listed) == len(set(listed)) == 5
+    assert r.structured_content["gaps"]["failed_videos"] == 7
+    assert "2 more video(s) with a failed stage" in r.content[0].text

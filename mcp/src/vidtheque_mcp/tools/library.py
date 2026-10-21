@@ -447,7 +447,7 @@ async def corpus_summary(
         lines.append(
             f"  {gap_info['transcript_no_ocr']} videos have transcript but no OCR"
         )
-        for row in gap_info["failed"][:5]:
+        for row in gap_info["failed"]:
             if deps.offers("index-video"):
                 lines.append(
                     f"  failed: {row['public_id']} — "
@@ -460,6 +460,9 @@ async def corpus_summary(
                 # is nothing they can do with the reason. (2026-08-10 audit,
                 # F-4: the same redaction the dashboard applies, applied here.)
                 lines.append(f"  failed: {row['public_id']}")
+        more_failed = gap_info["failed_count"] - len(gap_info["failed"])
+        if more_failed > 0:
+            lines.append(f"  … and {more_failed} more video(s) with a failed stage")
         # Two counters, each with one name. `indexing` counts *videos* whose
         # index_state says mid-pipeline; the job line counts *rows in `jobs`*.
         # Printing both as "indexing" is what let the headline and this block
@@ -470,7 +473,7 @@ async def corpus_summary(
         structured["gaps"] = {
             "transcript_no_ocr": gap_info["transcript_no_ocr"],
             "indexing": state.queue.videos_indexing,
-            "failed": len(gap_info["failed"]),
+            "failed": gap_info["failed_count"],
             "failed_videos": gap_info["failed_videos"],
             "jobs_active": state.queue.active,
             "jobs_running": state.queue.running,
