@@ -513,3 +513,31 @@ async def test_ranking_does_not_move_with_max_text_chars(assembled: Assembled) -
         for mtc in (1000, 0)
     ]
     assert "tail9x7" not in ocr[0] and "tail9x7" in ocr[1]
+
+
+# ------------------------------------------------------------------------- Q8
+
+
+async def test_corpus_summary_filters_scope_the_whole_rollup(assembled: Assembled) -> None:
+    """Q8: channel=/tags=/published_* scoped the channel, tag and recent
+    sections only; the headline, the published span and the gaps stayed
+    corpus-wide, and a filter that matched nothing said nothing."""
+    from vidtheque_mcp.tools import library
+
+    whole = (await library.corpus_summary(assembled.deps)).structured_content
+    assert whole["videos"] == 3 and whole["gaps"]["transcript_no_ocr"] == 1
+
+    r = await library.corpus_summary(assembled.deps, channel="GPU MODE")
+    sc = r.structured_content
+    assert sc["videos"] == 1
+    assert sc["published_span"]["oldest"] == sc["published_span"]["newest"] == "2024-02-20"
+    assert sc["gaps"]["transcript_no_ocr"] == 0
+    assert r.content[0].text.startswith("Corpus: 1 videos")
+    assert any("channel=GPU MODE" in n for n in sc["notes"])
+
+    r = await library.corpus_summary(assembled.deps, channel="no-such-channel")
+    sc = r.structured_content
+    assert sc["videos"] == 0
+    assert any("no video matches" in n for n in sc["notes"])
+    assert "index-video" not in sc["next"]
+    assert all(n in r.content[0].text for n in sc["notes"])

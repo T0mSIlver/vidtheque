@@ -1447,8 +1447,47 @@ SELECT (SELECT COUNT(*) FROM videos WHERE index_state = 'ready')      AS videos_
 """
 
 
-def corpus_rollup(conn: sqlite3.Connection) -> sqlite3.Row:
-    return conn.execute(_CORPUS_SQL).fetchone()
+# The same row over a resolved pool, for a filtered corpus-summary.
+_SCOPED_CORPUS_SQL = """
+WITH pool(id) AS (SELECT value FROM json_each(:ids))
+SELECT (SELECT COUNT(*) FROM videos WHERE id IN pool AND index_state = 'ready')  AS videos_ready,
+       (SELECT COUNT(*) FROM videos WHERE id IN pool AND index_state <> 'ready') AS videos_pending,
+       (SELECT COALESCE(SUM(duration_s), 0.0) FROM videos WHERE id IN pool)     AS duration_s,
+       (SELECT COALESCE(ROUND(SUM(duration_s)/3600.0, 1), 0.0)
+          FROM videos WHERE id IN pool)                                          AS hours,
+       (SELECT COUNT(*) FROM cues WHERE video_id IN pool)                        AS cues,
+       (SELECT COUNT(*) FROM keyframes WHERE dup_of IS NULL AND video_id IN pool) AS keyframes,
+       (SELECT COUNT(*) FROM ocr_lines WHERE video_id IN pool)                   AS ocr_lines,
+       (SELECT MIN(published_at) FROM videos WHERE id IN pool)                  AS oldest_published,
+       (SELECT MAX(published_at) FROM videos WHERE id IN pool)                  AS newest_published,
+       (SELECT MAX(indexed_at)   FROM videos WHERE id IN pool)                  AS last_indexed
+"""
+
+
+def corpus_rollup(
+    conn: sqlite3.Connection, video_ids: Sequence[int] | None = None
+) -> sqlite3.Row:
+    """The corpus row; over `video_ids` only when given (every index_state)."""
+    if video_ids is None:
+        return conn.execute(_CORPUS_SQL).fetchone()
+    return conn.execute(_SCOPED_CORPUS_SQL, {"ids": json.dumps(list(video_ids))}).fetchone()
+
+
+def index_state_counts(
+    conn: sqlite3.Connection, video_ids: Sequence[int] | None = None
+) -> dict[str, int]:
+    """Videos per `index_state`, over `video_ids` when given."""
+    if video_ids is None:
+        rows = conn.execute(
+            "SELECT index_state, COUNT(*) AS n FROM videos GROUP BY index_state"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT index_state, COUNT(*) AS n FROM videos "
+            "WHERE id IN (SELECT value FROM json_each(?)) GROUP BY index_state",
+            (json.dumps(list(video_ids)),),
+        ).fetchall()
+    return {str(r["index_state"]): int(r["n"]) for r in rows}
 
 
 # The ledger's own row (dashboard.md §17). Everything `_CORPUS_SQL` does not
@@ -1617,7 +1656,13 @@ def embed_backlog(conn: sqlite3.Connection) -> dict[str, int]:
     return {"text": int(row["text"]), "frame": int(row["frame"])}
 
 
-def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
+def gaps(conn: sqlite3.Connection, video_ids: Sequence[int] | None = None) -> dict[str, Any]:
+    """Coverage and failure counts, over `video_ids` when given.
+
+    The two job counts are about the queue, not about videos: never scoped.
+    """
+    scope = "" if video_ids is None else " AND v.id IN (SELECT value FROM json_each(:ids))"
+    ids = {"ids": json.dumps(list(video_ids or ()))}
     transcript_no_ocr = int(
         conn.execute(
             """
@@ -1627,32 +1672,42 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
               AND NOT EXISTS (SELECT 1 FROM video_stages s WHERE s.video_id=v.id
                             AND s.stage='ocr' AND s.state='done')
             """
+            + scope,
+            ids,
         ).fetchone()[0]
     )
     # One row per video with a failed stage, `stale` too: a failed reindex keeps
     # its old index searchable (`mark_failed`), and its failed stage row is the
     # only place that failure is still said. The listing is a few of them; the
     # counts are over videos, not over the listing or stage rows.
-    failed_sql = """
+    failed_sql = (
+        """
           SELECT v.public_id, v.title, s.error, s.finished_at,
                  ROW_NUMBER() OVER (PARTITION BY v.id
                                     ORDER BY s.finished_at DESC, s.stage) AS rn
           FROM videos v JOIN video_stages s ON s.video_id = v.id
           WHERE v.index_state IN ('failed', 'stale') AND s.state = 'failed'"""
+        + scope
+    )
     failed = conn.execute(
         f"""
         SELECT public_id, title, error, finished_at FROM ({failed_sql}) WHERE rn = 1
         ORDER BY finished_at DESC, public_id LIMIT 5
-        """
+        """,
+        ids,
     ).fetchall()
     failed_count = int(
-        conn.execute(f"SELECT COUNT(*) FROM ({failed_sql}) WHERE rn = 1").fetchone()[0]
-    )
-    indexing = int(
-        conn.execute("SELECT COUNT(*) FROM videos WHERE index_state = 'indexing'").fetchone()[0]
+        conn.execute(f"SELECT COUNT(*) FROM ({failed_sql}) WHERE rn = 1", ids).fetchone()[0]
     )
     failed_videos = int(
-        conn.execute("SELECT COUNT(*) FROM videos WHERE index_state = 'failed'").fetchone()[0]
+        conn.execute(
+            "SELECT COUNT(*) FROM videos v WHERE v.index_state = 'failed'" + scope, ids
+        ).fetchone()[0]
+    )
+    indexing = int(
+        conn.execute(
+            "SELECT COUNT(*) FROM videos v WHERE v.index_state = 'indexing'" + scope, ids
+        ).fetchone()[0]
     )
     active_jobs = int(
         conn.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0]
@@ -1672,7 +1727,6 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
         "active_jobs": active_jobs,
         "recent_failed_jobs": recent_failed_jobs,
     }
-
 
 # ---------------------------------------------------------------------------
 # video-summary

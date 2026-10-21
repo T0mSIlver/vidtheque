@@ -1355,6 +1355,15 @@ documented first call, so it is where the list costs least.
 | `max_recent` | int | `8` | clamped 1..25 | |
 | `max_text_chars` | int | `120` | `0` or 40..2000 | Per title/label. |
 
+**A filter scopes the whole rollup** (amended 2026-10-21: it used to scope the
+channel, tag and recent sections only, and a filter that matched nothing said
+nothing). With `channel`, `tags` or `published_*`, the headline, published span,
+sections and gaps count the matching videos in every `index_state`, a `note:`
+says so (`these N of M videos`) and `structuredContent.scope` echoes the filters
+and `corpus_videos`. `data_status`, the queue line and the embed backlog
+describe the server and stay corpus-wide. A filter that matches no video says
+so in a `note:` and the guidance points at `list-videos`, not at `index-video`.
+
 **Return shape:**
 
 ```
