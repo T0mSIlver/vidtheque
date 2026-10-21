@@ -55,11 +55,6 @@
   color: var(--fg);
 }
 
-.slot {
-  display: inline-block;
-  min-inline-size: var(--ch);
-}
-
 .sep {
   padding: 0 var(--s1);
   color: var(--mark);
@@ -250,17 +245,6 @@
 }
 
 .note a {
-  color: var(--accent);
-}
-
-.unit {
-  font-size: max(0.625rem, 0.62em);
-  font-weight: var(--w-body);
-  color: var(--muted);
-  letter-spacing: 0;
-}
-
-.ledger .unit {
   color: var(--accent);
 }
 

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { Pill, type Tone } from "@/components/ui/Pill";
-import { count, DASH, day } from "@/lib/format";
+import { count } from "@/lib/format";
 import { isPorted } from "../ported";
 import styles from "./ui.module.css";
 
@@ -91,22 +91,6 @@ export function Facts({ facts }: { facts: [string, ReactNode][] }) {
       ))}
     </>
   );
-}
-
-/** When the corpus's videos were published, as a figure note — or nothing for
- *  an empty corpus. Half a span keeps the dash on its missing end. */
-export function publishedNote(span: { oldest: number | null; newest: number | null }): ReactNode[] {
-  if (span.oldest === null && span.newest === null) return [];
-  return [
-    <>
-      published{" "}
-      <Unbroken>
-        <span className={styles.mono}>{day(span.oldest)}</span>
-        <Sep>–</Sep>
-        <span className={styles.mono}>{day(span.newest)}</span>
-      </Unbroken>
-    </>,
-  ];
 }
 
 export function Panel({
@@ -230,39 +214,6 @@ export function CountLink({
   );
 }
 
-export const Unit = ({ children }: { children: ReactNode }) => (
-  <span className={styles.unit}>{children}</span>
-);
-
-/** A sentence with a number in it; the number is the link. */
-export function GapLine({
-  href,
-  n,
-  figure,
-  children,
-}: {
-  href?: string;
-  n: number;
-  /** A rendering of `n` other than `count(n)`, such as a capped `5+`. */
-  figure?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <li>
-      {href ? (
-        <CountLink href={href} n={n}>
-          {figure}
-        </CountLink>
-      ) : (
-        <span className={`${styles.figureCount} ${n ? "" : styles.none}`}>
-          {figure ?? count(n)}
-        </span>
-      )}
-      <span>{children}</span>
-    </li>
-  );
-}
-
 /** A key joined to its pill; the state's sentence rides as a tooltip with an
  *  sr-only copy. */
 export function StatePair({
@@ -303,16 +254,6 @@ export function Pending({ height }: { height?: string }) {
     >
       <span className={styles.srOnly}>reading…</span>
     </div>
-  );
-}
-
-/** A pending value that holds the width of the one it stands for, so a fact
- *  strip does not re-wrap when the read lands. */
-export function Slot({ ch }: { ch: number }) {
-  return (
-    <span className={styles.slot} style={{ "--ch": `${ch}ch` } as CSSProperties}>
-      {DASH}
-    </span>
   );
 }
 
