@@ -1634,6 +1634,40 @@ async def test_only_a_queued_candidate_writes_a_spend_row(db) -> None:
     assert [row["source_id"] for row in spend] == ["vid00000001"]
 
 
+async def test_a_check_that_dies_while_queueing_leaves_no_job_without_its_ledger(
+    db, monkeypatch
+) -> None:
+    """The job and the `queued` ledger rows were separate transactions.
+
+    A check killed between them left a job with no ledger row and no spend:
+    the retried check saw the uploads as new and queued them a second time,
+    and the day's budget never counted the first job.
+    """
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[entry("vid00000001", duration_s=600.0, published_at=now() - 600)]
+    )
+    real = store.record_seen
+
+    def dies_on_queue(conn, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if kwargs.get("decision") == "queued":
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(conn, *args, **kwargs)
+
+    monkeypatch.setattr(store, "record_seen", dies_on_queue)
+    with pytest.raises(sqlite3.OperationalError):
+        await run_check(db, collection_id, source, daily_budget_s=3600.0)
+    index_jobs = "SELECT id FROM jobs WHERE kind = 'index'"
+    assert await rows(db, index_jobs) == []
+
+    monkeypatch.setattr(store, "record_seen", real)
+    outcome = await run_check(db, collection_id, source, daily_budget_s=3600.0)
+    assert outcome.queued == 1
+    assert len(await rows(db, index_jobs)) == 1
+    assert await db.read(store.budget_spent_s) == 600.0
+
+
 async def test_an_accepted_candidate_of_unknown_length_spends_nothing_but_is_recorded(
     db,
 ) -> None:

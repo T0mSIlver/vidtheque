@@ -382,17 +382,38 @@ class FollowCheck:
             "follow": str(follow["slug"]),
         }
         urls = [candidate.url for candidate, _ in queueing]
-        try:
-            job_public_id = await self.db.write(
-                lambda c: jobs_store.create_job(
-                    c,
-                    "index",
-                    args,
-                    [jobs_store.NewItem(url) for url in urls],
-                    priority=100,
-                    collection_id=collection_id,
-                )
+
+        def queue(conn: sqlite3.Connection) -> str:
+            # The job, its ledger rows and their spend in one transaction: a
+            # crash between them left a job the retried check queued again.
+            public_id = jobs_store.create_job(
+                conn,
+                "index",
+                args,
+                [jobs_store.NewItem(url) for url in urls],
+                priority=100,
+                collection_id=collection_id,
             )
+            job_id = int(
+                conn.execute("SELECT id FROM jobs WHERE public_id = ?", (public_id,)).fetchone()[0]
+            )
+            for candidate, judged_from in queueing:
+                _write_seen(
+                    conn,
+                    collection_id,
+                    candidate,
+                    "queued",
+                    f"queued as {public_id}",
+                    judged_from=judged_from,
+                    job_id=job_id,
+                    # The same number the loop above added to its running total,
+                    # so the durable sum and the in-flight one cannot disagree.
+                    spend_s=float(candidate.duration_s or 0.0),
+                )
+            return public_id
+
+        try:
+            job_public_id = await self.db.write(queue)
         except jobs_store.DuplicateInFlight:
             # Defensive rather than reachable today: the in-flight guard is a
             # partial unique index on `job_items.video_id`, and these items are
@@ -406,23 +427,6 @@ class FollowCheck:
             )
             return outcome
 
-        job_row_id = await self.db.read(
-            lambda c: c.execute(
-                "SELECT id FROM jobs WHERE public_id = ?", (job_public_id,)
-            ).fetchone()
-        )
-        for candidate, judged_from in queueing:
-            await self._record(
-                collection_id,
-                candidate,
-                "queued",
-                f"queued as {job_public_id}",
-                judged_from=judged_from,
-                job_id=int(job_row_id["id"]) if job_row_id else None,
-                # The same number the loop above added to its running total, so
-                # the durable sum and the in-flight one cannot disagree.
-                spend_s=float(candidate.duration_s or 0.0),
-            )
         outcome.queued = len(queueing)
         outcome.job_public_id = job_public_id
         await ctx.log(
@@ -480,27 +484,19 @@ class FollowCheck:
         writes would leave the budget disagreeing with the ledger in whichever
         direction the interleaving picked.
         """
-
-        def write(conn: sqlite3.Connection) -> None:
-            store.record_seen(
-                conn,
+        await self.db.write(
+            lambda c: _write_seen(
+                c,
                 collection_id,
-                source_id=candidate.source_id,
-                url=candidate.url,
-                title=candidate.title,
-                duration_s=candidate.duration_s,
-                published_at=candidate.published_at,
-                tab=candidate.tab,
-                decision=decision,
-                reason=reason,
+                candidate,
+                decision,
+                reason,
                 judged_from=judged_from,
                 video_id=video_id,
                 job_id=job_id,
+                spend_s=spend_s,
             )
-            if spend_s is not None:
-                store.record_spend(conn, collection_id, candidate.source_id, spend_s)
-
-        await self.db.write(write)
+        )
 
 
 def _failure_sentence(tries: int) -> str:
@@ -600,3 +596,34 @@ async def _to_thread(fn: Any, *args: Any) -> Any:
     import asyncio
 
     return await asyncio.to_thread(fn, *args)
+
+
+def _write_seen(
+    conn: sqlite3.Connection,
+    collection_id: int,
+    candidate: Candidate,
+    decision: str,
+    reason: str | None,
+    *,
+    judged_from: str = "listing",
+    video_id: int | None = None,
+    job_id: int | None = None,
+    spend_s: float | None = None,
+) -> None:
+    store.record_seen(
+        conn,
+        collection_id,
+        source_id=candidate.source_id,
+        url=candidate.url,
+        title=candidate.title,
+        duration_s=candidate.duration_s,
+        published_at=candidate.published_at,
+        tab=candidate.tab,
+        decision=decision,
+        reason=reason,
+        judged_from=judged_from,
+        video_id=video_id,
+        job_id=job_id,
+    )
+    if spend_s is not None:
+        store.record_spend(conn, collection_id, candidate.source_id, spend_s)
