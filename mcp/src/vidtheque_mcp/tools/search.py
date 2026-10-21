@@ -389,6 +389,10 @@ async def run(
         # _cap_per_video).
         leg_per_video = min(50, max(max_per_video * 3, max_per_video + 2))
         fetch_n = CANDIDATE_POOL
+        if order == "video_time":
+            # Single-video scope: a by-score per-video cap would keep the strongest
+            # islands and drop the earliest ones a chronological read asks for.
+            leg_per_video = fetch_n
 
         params = queries.SearchParams(
             q=q,
