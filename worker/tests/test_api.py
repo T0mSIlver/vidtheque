@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import tempfile
+
 import pytest
 from conftest import FakeBackend, FakeHooks, FakeVram, Recorder
 from fastapi.testclient import TestClient
@@ -118,6 +120,24 @@ def test_verbose_json_carries_word_timestamps(client, parts):
     (args, kwargs) = backends["stt"].infer_calls[0]
     assert args[0].endswith(".wav")
     assert kwargs == {"language": None, "align": True}
+
+
+@pytest.mark.parametrize("ran", [True, False])
+def test_the_spooled_upload_is_deleted_whether_or_not_the_job_ran(
+    client, parts, tmp_path, monkeypatch, ran
+):
+    """The job deletes the file once it started (an abandoned request returns
+    while the thread may still be reading it); the handler deletes it otherwise."""
+    backends, _ = parts
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    if not ran:
+        backends["stt"].load_error = BackendUnavailable("no whisperx")
+    response = client.post(
+        "/v1/audio/transcriptions", files={"file": ("clip.wav", b"RIFFfake", "audio/wav")}
+    )
+    assert response.status_code == (200 if ran else 503), response.text
+    assert bool(backends["stt"].infer_calls) is ran
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_a_degraded_seam_is_named_in_the_response_or_is_absent(client, transcription):
