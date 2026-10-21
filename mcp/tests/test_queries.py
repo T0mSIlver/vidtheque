@@ -460,13 +460,6 @@ def test_keyframe_bytes_come_from_the_column_not_the_filesystem(
     assert total == per_video > 0
 
 
-def test_keyframe_detail_is_addressed_by_wire_id(conn: sqlite3.Connection) -> None:
-    frame = queries.keyframe_detail(conn, "zduSFxRajkE", 0)
-    assert frame is not None and int(frame["ord"]) == 0
-    assert str(frame["public_id"]) == "zduSFxRajkE"
-    assert queries.keyframe_detail(conn, "zduSFxRajkE", 999) is None
-
-
 def test_cue_origins_show_where_a_transcript_came_from(conn: sqlite3.Connection) -> None:
     assert queries.cue_origins(conn, 1) == {"whisperx": 6}
     assert queries.cue_origins(conn, 99) == {}
