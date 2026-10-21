@@ -46,14 +46,13 @@ export const readMeta = cache(async (): Promise<MetaOutcome> => {
   }
 });
 
-/** The configured edge header first, else the first X-Forwarded-For hop. */
+/** The configured edge header, or nothing. Empty means forward nothing, and
+ *  there is no X-Forwarded-For fallback: its first hop is the client's word. */
 export async function visitorIp(): Promise<string | undefined> {
-  const h = await headers();
   const configured = process.env.VIDTHEQUE_CLIENT_IP_HEADER ?? "CF-Connecting-IP";
-  const direct = h.get(configured);
-  if (direct) return direct;
-  const forwarded = h.get("x-forwarded-for");
-  return forwarded?.split(",")[0]?.trim() || undefined;
+  if (!configured) return undefined;
+  const h = await headers();
+  return h.get(configured) || undefined;
 }
 
 export type FeedOutcome =

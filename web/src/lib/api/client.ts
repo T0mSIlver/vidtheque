@@ -47,13 +47,15 @@ export interface RequestOptions {
 
 export interface ClientConfig {
   baseUrl: string;
-  /** Header name the API reads the client IP from (its default is Cloudflare's). */
+  /** Header name the API reads the client IP from (its default is Cloudflare's);
+   *  empty forwards none. */
   clientIpHeader?: string;
   fetch?: typeof fetch;
 }
 
 export function createClient(config: ClientConfig) {
   const base = config.baseUrl.replace(/\/+$/, "");
+  // Empty means "forward no address", not a header named "".
   const ipHeader = config.clientIpHeader ?? "CF-Connecting-IP";
   const doFetch = config.fetch ?? fetch;
 
@@ -68,7 +70,7 @@ export function createClient(config: ClientConfig) {
       if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
     }
     const headers = new Headers({ accept: "application/json" });
-    if (opts.clientIp) headers.set(ipHeader, opts.clientIp);
+    if (opts.clientIp && ipHeader) headers.set(ipHeader, opts.clientIp);
 
     const res = await doFetch(url, {
       headers,
