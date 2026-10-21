@@ -251,3 +251,21 @@ def test_transcript_leg_is_not_prefix_expanded() -> None:
     # And the OCR bind actually uses the expanded form.
     params = queries.SearchParams(q="opencode CVE", video_ids=[], limit=5)
     assert queries._ocr_bind(params)["q"] == ocr_q
+
+
+def test_lowercase_operator_words_are_plain_words() -> None:
+    """FTS5 operators are upper-case only; `why not use rag` is four words.
+
+    The lexer upper-cased every word before checking, so an ordinary English
+    question became `"why" NOT "use" AND "rag"` and dropped every cue that
+    said "use".
+    """
+    assert sanitize_fts("why not use rag") == '"why" AND "not" AND "use" AND "rag"'
+    assert sanitize_fts("to be or not to be") == (
+        '"to" AND "be" AND "or" AND "not" AND "to" AND "be"'
+    )
+    conn = _fts(["the cache is not linear", "the cache is linear", "unrelated"])
+    for expr in (sanitize_fts("cache not linear"), expand_prefix_fts("cache not linear")):
+        assert _matches(conn, expr) == {"the cache is not linear"}, expr
+    # The documented upper-case operators keep their meaning.
+    assert _matches(conn, sanitize_fts("cache NOT linear")) == set()
