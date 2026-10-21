@@ -135,6 +135,35 @@ async def test_a_rate_limited_item_is_not_handed_straight_back(
     assert (await job_row(assembled, job_id))["state"] == "done"
 
 
+async def test_a_cancel_requested_during_a_throttled_item_is_not_parked(
+    assembled: Assembled,
+) -> None:
+    """Cancel, then the item fails retryably: the job used to defer anyway.
+
+    `_fail_item` requeued and deferred without reading `cancel_requested`, so
+    the cancelled job sat `queued` for the whole backoff before `_drive` saw it.
+    """
+
+    class CancelThenThrottle:
+        async def run_item(self, ctx) -> None:  # type: ignore[no-untyped-def]
+            public_id = ctx.job_public_id
+            await ctx.db.write(lambda c: jobs_store.request_cancel(c, public_id))
+            raise ItemFailed("E_RATE_LIMIT", "429 from YouTube", retryable=True)
+
+    runner = assembled.runner
+    runner.pipeline = CancelThenThrottle()
+    runner.rate_limit_backoff_s = 5400
+    job_id = await queue(assembled, URL_A, URL_B)
+
+    assert await runner.run_once() is True
+    job = await job_row(assembled, job_id)
+    assert job["state"] == "cancelled"
+    assert [item["state"] for item in await items_of(assembled, job_id)] == [
+        "cancelled",
+        "cancelled",
+    ]
+
+
 async def test_the_source_own_window_wins_over_the_default(
     assembled: Assembled,
 ) -> None:

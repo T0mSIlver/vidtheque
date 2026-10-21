@@ -343,7 +343,7 @@ class PipelineRunner:
                 await self.handlers.get(kind, self.pipeline).run_item(ctx)
             except ItemFailed as failure:
                 if await self._fail_item(item, failure):
-                    return  # deferred: the job is queued again, not now
+                    return  # deferred (queued again, not now) or cancelled
             except ItemCancelled:
                 item_id = ctx.item_id
                 await self.db.write(lambda c: store.finish_item(c, item_id, "cancelled"))
@@ -364,7 +364,7 @@ class PipelineRunner:
                 await self.db.write(lambda c: store.finish_item(c, item_id, "done"))
 
     async def _fail_item(self, item: sqlite3.Row, failure: ItemFailed) -> bool:
-        """Requeue-with-backoff or retire. True means the job was deferred.
+        """Requeue-with-backoff or retire. True means the job was deferred (or cancelled).
 
         A retryable item goes back on the queue *and takes its job off the
         runnable set until the backoff expires*: requeueing alone left the item
@@ -382,20 +382,28 @@ class PipelineRunner:
             )
         if failure.retryable and attempts < max_attempts:
             delay = self._backoff_for(failure)
-            await self.db.write(lambda c: store.requeue_item(c, item_id))
-            await self.db.write(
-                lambda c: store.log(
-                    c,
+            code, message = self._sticky_error(failure, delay)
+
+            def defer_unless_cancelled(conn: sqlite3.Connection) -> None:
+                # One transaction with the cancel check: a cancel asked for
+                # during the item must not wait out the backoff it would end.
+                if conn.execute(
+                    "SELECT cancel_requested FROM jobs WHERE id = ?", (job_id,)
+                ).fetchone()[0]:
+                    store.log(conn, job_id, f"{failure.code}: {failure.message}", "warn", item_id)
+                    _cancel_remaining(conn, job_id)
+                    return
+                store.requeue_item(conn, item_id)
+                store.log(
+                    conn,
                     job_id,
                     f"retrying in {delay}s after {failure.code}: {failure.message}",
                     "warn",
                     item_id,
                 )
-            )
-            code, message = self._sticky_error(failure, delay)
-            await self.db.write(
-                lambda c: store.defer_job(c, job_id, delay, code, message)
-            )
+                store.defer_job(conn, job_id, delay, code, message)
+
+            await self.db.write(defer_unless_cancelled)
             return True
         await self.db.write(
             lambda c: store.finish_item(c, item_id, "failed", failure.code, failure.message)
