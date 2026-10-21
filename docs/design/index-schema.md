@@ -209,6 +209,9 @@ Notes:
   lives in `video_stages`.
 - `stale` means "indexed, but with a pipeline/model version we no longer consider
   current" — it stays fully searchable, it is just a candidate for reindex.
+  A reindex that fails or is cancelled also lands on `stale`: the previous
+  index is still whole on disk. `failed` is only for a video that was never
+  indexed; a failed reindex is reported from its failed `video_stages` row.
 - `chapters_json` holds yt-dlp's chapter payload **verbatim** for provenance;
   `chapters` (§1.3) is the queryable projection. Store the raw thing you were
   given, query the thing you derived — reparsing is free, re-fetching is not.

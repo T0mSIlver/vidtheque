@@ -17,6 +17,7 @@ import httpx2 as httpx
 import pytest
 
 from vidtheque_mcp.config import Settings
+from vidtheque_mcp.db import queries
 from vidtheque_mcp.jobs import store as jobs_store
 from vidtheque_mcp.pipeline import store as pipeline_store
 from vidtheque_mcp.pipeline import keyframes as keyframes_module
@@ -24,8 +25,9 @@ from vidtheque_mcp.pipeline import runner as runner_module
 from vidtheque_mcp.pipeline.captions import CueDraft
 from vidtheque_mcp.pipeline.runner import LIFECYCLE_RETRY_S
 from vidtheque_mcp.pipeline.settings import PipelineSettings
+from vidtheque_mcp.pipeline.sources import RateLimited
 from vidtheque_mcp.pipeline.worker_client import HTTPWorkerClient
-from vidtheque_mcp.tools import indexing
+from vidtheque_mcp.tools import indexing, search
 
 from .pipeline_fakes import (
     INFO,
@@ -485,8 +487,6 @@ async def test_a_403_on_the_media_download_defers_the_job(
             return getattr(self._inner, name)
 
         def download_video(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-            from vidtheque_mcp.pipeline.sources import RateLimited
-
             raise RateLimited(
                 "unable to download video data: HTTP Error 403: Forbidden"
             )
@@ -1053,5 +1053,57 @@ async def test_a_channel_subset_job_leaves_the_other_channels_done(
         assert stages["ocr"]["state"] == "done"
         for stage in ("stt", "chunk", "text_embed", "frame_embed"):
             assert stages[stage]["state"] == "done", stage
+    finally:
+        await close(parts)
+
+
+async def test_a_failed_reindex_keeps_an_indexed_video_searchable(
+    settings: Settings, clip: Path
+) -> None:
+    """`failed` is for a video with nothing to search; a failed *reindex* is `stale`.
+
+    A 429 on a `force_reindex` set the video `failed` with its whole previous
+    index still on disk, and `failed` is outside QUERYABLE_INDEX_STATES: the
+    video vanished from search for the length of the backoff, or for good.
+    """
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        def throttled(*_args, **_kwargs):
+            raise RateLimited("HTTP Error 429: Too Many Requests")
+
+        parts.source.download_audio = throttled
+        await parts.index(url=VIDEO_URL, force_reindex=True)
+        assert await parts.run() is True
+
+        video = await parts.one("SELECT index_state, indexed_at FROM videos")
+        assert video["indexed_at"] is not None
+        assert video["index_state"] == "stale"
+        job = await parts.one("SELECT state, error_code FROM jobs ORDER BY id DESC LIMIT 1")
+        assert (job["state"], job["error_code"]) == ("queued", "E_RATE_LIMIT")
+        result = await search.run(parts.deps, q="fragmentation", limit=5)
+        assert "aB3dEfG7hIj" in {r["video_id"] for r in structured(result)["results"]}
+        # ...and the failure is still reported where corpus-summary reads it.
+        failed = (await parts.db.read(queries.gaps))["failed"]
+        assert ["429" in str(row["error"]) for row in failed] == [True]
+    finally:
+        await close(parts)
+
+
+async def test_a_failed_first_index_is_still_failed(settings: Settings, clip: Path) -> None:
+    parts = await harness(settings, clip)
+    try:
+        video_id = await parts.db.write(
+            lambda c: c.execute(
+                "INSERT INTO videos (owner_id, source, source_id, url, title, index_state) "
+                "VALUES (1, 'youtube', 'aB3dEfG7hIj', ?, 't', 'indexing') RETURNING id",
+                (VIDEO_URL,),
+            ).fetchone()[0]
+        )
+        await parts.db.write(lambda c: pipeline_store.mark_failed(c, video_id))
+        video = await parts.one("SELECT index_state FROM videos")
+        assert video["index_state"] == "failed"
     finally:
         await close(parts)
