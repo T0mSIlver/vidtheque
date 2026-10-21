@@ -479,33 +479,14 @@ DATE_MAX_CHARS = 32
 LIST_FIELDS = "video_id,title,channel,published,duration,coverage,tags,indexed_at,index_state"
 TITLE_CHARS = 200
 
-_COVERAGE_LABELS = (
-    ("t", "transcript"),
-    ("o", "on-screen text"),
-    ("f", "frame embeddings"),
-)
 _COVERAGE_KEYS = (("t", "transcript"), ("o", "ocr"), ("f", "frames"))
 
 
-def coverage_pills(coverage: str) -> list[dict[str, Any]]:
-    """The tool's own `t/o/f/-` string, as three labelled pills.
-
-    §4.2: this is what the videos table shows instead of per-row counts, and it
-    costs nothing extra — `_LIST_SQL` already computes the three booleans.
-    """
-    return [
-        {"letter": letter, "label": label, "present": letter in coverage}
-        for letter, label in _COVERAGE_LABELS
-    ]
-
-
 def coverage_flags(coverage: str) -> dict[str, bool]:
-    """The same three booleans, keyed by leg, for a caller that draws its own.
+    """The tool's `t/o/f/-` coverage string as three booleans, keyed by leg.
 
     The letters are a *text* device — the `tsv` block a model reads — so they
-    are the wrong thing to put on a wire that promises typed values. Both
-    readings are built from the same letters, so the page and the payload
-    cannot come to disagree about which one means on-screen text.
+    are the wrong thing to put on a wire that promises typed values.
     """
     return {key: letter in coverage for letter, key in _COVERAGE_KEYS}
 
@@ -851,7 +832,6 @@ async def videos_reads(request: Request) -> VideosReads:
     for row in rows:
         fact = facts.get(row["video_id"], {})
         row["thumb"] = thumb(deps, fact.get("cover"), STRIP_WIDTH)
-        row["coverage_pills"] = coverage_pills(str(row.get("coverage") or "---"))
         row["tag_list"] = [t for t in str(row.get("tags") or "").split(",") if t]
         # The columns the tool spent on prose, kept beside its record: the page
         # prints `published`, the payload sends `published_at`, and neither is
