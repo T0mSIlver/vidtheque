@@ -559,6 +559,35 @@ async def test_backfill_is_bounded_and_resumable(assembled: Assembled) -> None:
     assert len(again) == 1
 
 
+async def test_backfill_reads_the_queued_verdicts_once(assembled: Assembled) -> None:
+    """`is_queued` per candidate was a scan of `jobs` per video, inside the
+    writer's transaction: 5 s for 3,000 videos against 20,000 jobs."""
+    db = assembled.db
+    total = len(await rows(db, "SELECT id FROM videos WHERE index_state IN ('ready','stale')"))
+    already = await video_id(db, "kCc8FmEb1nY")
+    assert await db.write(lambda c: store.queue(c, already)) is not None
+    statements: list[str] = []
+
+    def counted(conn):  # type: ignore[no-untyped-def]
+        conn.set_trace_callback(statements.append)
+        try:
+            return store.backfill(conn, 100)
+        finally:
+            conn.set_trace_callback(None)
+
+    queued, waiting = await db.write(counted)
+    # Every video but the one already waiting, and that one is not queued twice.
+    assert (len(queued), waiting) == (total - 1, 0)
+    jobs_for_it = await rows(
+        db,
+        "SELECT 1 FROM jobs WHERE kind = 'verdict' AND json_extract(args_json, '$.video_id') = ?",
+        (already,),
+    )
+    assert len(jobs_for_it) == 1
+    lookups = [s for s in statements if "json_extract(args_json" in s]
+    assert len(lookups) == 1, lookups
+
+
 async def test_rescore_queues_the_newest_judged_videos_only(assembled: Assembled) -> None:
     db = assembled.db
     judged = [await video_id(db, s) for s in ("kCc8FmEb1nY", "zduSFxRajkE")]
