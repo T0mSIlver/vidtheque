@@ -7,6 +7,8 @@ and no import crosses the line even in a test.
 
 from __future__ import annotations
 
+import gc
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -187,6 +189,32 @@ async def test_an_untyped_400_carries_no_code_and_is_never_per_item(tmp_path: Pa
         await client.embed_images([_jpeg(tmp_path)])
     assert caught.value.code is None
     assert caught.value.per_item is False
+
+
+async def test_an_upload_that_cannot_be_opened_is_local_not_a_worker_outage(
+    tmp_path: Path,
+) -> None:
+    """Opening the files sat inside the transport `try`, so a missing keyframe
+    read as a connect failure: three backoff sleeps, then `WorkerUnavailable`
+    (retryable, "the worker is down"), and the handles opened before it leaked.
+    It is one bad file: refused without a request, and `per_item`, so the
+    stage cuts that frame out and keeps the rest."""
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("nothing should have been sent")
+
+    client, slept = make_client(handler)
+    images = [_jpeg(tmp_path, "a"), tmp_path / "gone.jpg", _jpeg(tmp_path, "c")]
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        with pytest.raises(WorkerRejected) as caught:
+            await client.ocr(images)
+        gc.collect()
+    assert not isinstance(caught.value, WorkerUnavailable)
+    assert caught.value.per_item is True
+    assert "gone.jpg" in str(caught.value)
+    assert slept == []
+    assert [w for w in caught_warnings if issubclass(w.category, ResourceWarning)] == []
 
 
 async def test_a_connect_failure_becomes_unavailable_not_a_crash(tmp_path: Path) -> None:

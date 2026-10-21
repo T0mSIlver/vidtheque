@@ -29,7 +29,7 @@ import logging
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+from typing import Any, Protocol, Sequence, runtime_checkable
 
 import httpx2 as httpx
 
@@ -111,6 +111,19 @@ class WorkerRejected(RuntimeError):
         and skip the offender. See ``PER_ITEM_CODES``.
         """
         return self.code in PER_ITEM_CODES
+
+
+class UnreadableUpload(WorkerRejected):
+    """A file on *this* side could not be opened for upload; nothing was sent.
+
+    Retrying will not bring the file back, and it is not the worker being
+    down. ``per_item`` like ``invalid_image``: it blames one file, so a frame
+    stage cuts that frame out and keeps the rest of the batch.
+    """
+
+    @property
+    def per_item(self) -> bool:
+        return True
 
 
 @dataclass(frozen=True)
@@ -204,16 +217,18 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         path: str,
         *,
         json_body: dict[str, Any] | None = None,
-        files: Callable[[], list[tuple[str, tuple[str, Any, str]]]] | None = None,
+        uploads: Sequence[tuple[Path, str]] | None = None,
         data: dict[str, Any] | None = None,
         timeout_s: float | None = None,
         replay_after_acceptance: bool = True,
     ) -> dict[str, Any]:
         """POST with the worker's backpressure honoured.
 
-        ``files`` is a *factory*, not a list: each attempt opens its own
-        handles, because a retried multipart body has to start from byte zero
-        and a spent file object silently uploads nothing.
+        ``uploads`` are ``(path, content type)`` pairs, opened afresh on each
+        attempt, because a retried multipart body has to start from byte zero
+        and a spent file object silently uploads nothing. Opening happens
+        outside the transport ``try``: a file that cannot be opened is
+        :class:`UnreadableUpload`, not a worker outage to back off from.
 
         ``replay_after_acceptance=False`` says this call is expensive and not
         idempotent: a connect failure is still replayed (the server never saw
@@ -231,15 +246,16 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         attempt = 0
         waited = 0.0
         while True:
-            handles: list[Any] = []
+            kwargs: dict[str, Any] = {"timeout": timeout_s or self._op_timeout}
+            handles = _open_uploads(path, uploads or ())
             try:
-                kwargs: dict[str, Any] = {"timeout": timeout_s or self._op_timeout}
                 if json_body is not None:
                     kwargs["json"] = json_body
-                if files is not None:
-                    parts = files()
-                    handles = [part[1][1] for part in parts]
-                    kwargs["files"] = parts
+                if uploads is not None:
+                    kwargs["files"] = [
+                        ("file", (file.name, handle, mime))
+                        for (file, mime), handle in zip(uploads, handles, strict=True)
+                    ]
                 if data is not None:
                     kwargs["data"] = data
                 response = await client.post(path, **kwargs)
@@ -256,10 +272,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
                 attempt += 1
                 continue
             finally:
-                for handle in handles:
-                    close = getattr(handle, "close", None)
-                    if callable(close):
-                        close()
+                _close_all(handles)
 
             if response.status_code in RETRYABLE_STATUS:
                 detail = _detail(response)
@@ -360,7 +373,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             )
         return await self._send(
             "/v1/audio/transcriptions",
-            files=lambda: [("file", (audio.name, audio.open("rb"), "application/octet-stream"))],
+            uploads=[(audio, "application/octet-stream")],
             data=data,
             timeout_s=self.stt_budget(duration_s),
             replay_after_acceptance=False,
@@ -425,7 +438,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             data["min_confidence"] = str(min_confidence)
         body = await self._send(
             "/v1/ocr",
-            files=lambda: [("file", (path.name, path.open("rb"), "image/jpeg")) for path in images],
+            uploads=[(image, "image/jpeg") for image in images],
             data=data or None,
         )
         pages = _by_index(body.get("data", []), len(images), "/v1/ocr", "image")
@@ -451,7 +464,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             data["max_num_patches"] = str(max_num_patches)
         body = await self._send(
             "/v1/embeddings/image",
-            files=lambda: [("file", (path.name, path.open("rb"), "image/jpeg")) for path in images],
+            uploads=[(image, "image/jpeg") for image in images],
             data=data or None,
         )
         return _vectors(body, len(images), "/v1/embeddings/image", "image")
@@ -459,6 +472,23 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
     # `embed_frame_query` is inherited on purpose: it is query-time only (the
     # search frame leg), so it keeps the 20 s budget, no 503 wait, and the 404
     # that `FrameQueryUnsupported` names. Nothing at index time calls it.
+
+
+def _open_uploads(path: str, uploads: Sequence[tuple[Path, str]]) -> list[Any]:
+    """Every upload opened, or none: a failure closes what was already open."""
+    handles: list[Any] = []
+    try:
+        for file, _mime in uploads:
+            handles.append(file.open("rb"))
+    except OSError as exc:
+        _close_all(handles)
+        raise UnreadableUpload(f"{path}: could not open {file.name} to upload it: {exc}") from exc
+    return handles
+
+
+def _close_all(handles: Sequence[Any]) -> None:
+    for handle in handles:
+        handle.close()
 
 
 def _by_index(
