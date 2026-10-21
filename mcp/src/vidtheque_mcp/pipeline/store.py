@@ -153,8 +153,15 @@ def mark_ready(conn: sqlite3.Connection, video_id: int) -> None:
 
 
 def mark_failed(conn: sqlite3.Connection, video_id: int) -> None:
+    """`failed` only for a video never indexed; a failed reindex is `stale`.
+
+    Its previous index is whole on disk and `stale` keeps it searchable, as in
+    `jobs/store._reset_video`; the stage rows and the job keep the error.
+    """
     conn.execute(
-        "UPDATE videos SET index_state = 'failed', updated_at = unixepoch() WHERE id = ?",
+        "UPDATE videos SET index_state = "
+        "CASE WHEN indexed_at IS NULL THEN 'failed' ELSE 'stale' END, "
+        "updated_at = unixepoch() WHERE id = ?",
         (video_id,),
     )
 

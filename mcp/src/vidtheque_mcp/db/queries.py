@@ -1622,11 +1622,13 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
             """
         ).fetchone()[0]
     )
+    # `stale` too: a failed reindex keeps its old index searchable (`mark_failed`),
+    # and its failed stage row is the only place that failure is still said.
     failed = conn.execute(
         """
         SELECT v.public_id, v.title, s.error, s.finished_at
         FROM videos v JOIN video_stages s ON s.video_id = v.id
-        WHERE v.index_state = 'failed' AND s.state = 'failed'
+        WHERE v.index_state IN ('failed', 'stale') AND s.state = 'failed'
         ORDER BY s.finished_at DESC LIMIT 5
         """
     ).fetchall()
