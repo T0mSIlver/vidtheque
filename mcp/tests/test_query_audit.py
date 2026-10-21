@@ -277,3 +277,42 @@ async def test_one_long_slide_does_not_hide_the_other_ocr(assembled: Assembled) 
         else:
             # untruncated it does not fit: skipped, and the cap says so
             assert "OCR capped at 1200 chars" in ocr
+
+
+# ------------------------------------------------------------------------- Q3
+
+
+async def test_segment_budget_grows_outward_from_t(assembled: Assembled) -> None:
+    """Q3: the char budget filled forward from the window's start, so with a
+    wide window the printed text could end before t."""
+    from vidtheque_mcp.tools import segment
+
+    rows = [
+        (1000 + i * 6, 1000 + i * 6 + 5.5, f"sentence number {i:03d} " + "lorem ipsum dolor sit amet " * 2)
+        for i in range(117)
+    ]
+    await _add_cues(assembled.deps.db, "kCc8FmEb1nY", rows)
+    r = await segment.run(assembled.deps, video_id="kCc8FmEb1nY", t=1500, window=300)
+    sc = r.structured_content
+    starts = [c["start"] for c in sc["cues"]]
+    assert sc["binding_cap"] == "max_text_chars"
+    assert any(c["start"] <= 1500 <= c["end"] for c in sc["cues"])
+    assert min(starts) < 1450 and max(starts) > 1550
+    assert starts == sorted(starts)
+
+
+async def test_segment_always_prints_the_cue_at_t(assembled: Assembled) -> None:
+    """Q3: a cue longer than the budget printed nothing, and the footer named
+    the last cue of the window: `(cues 11-12 · 0 chars`."""
+    from vidtheque_mcp.tools import segment
+
+    await _add_cues(
+        assembled.deps.db, "eMlx5fFNoYc", [(600.0, 610.0, "y" * 300), (611.0, 612.0, "short")]
+    )
+    r = await segment.run(
+        assembled.deps, video_id="eMlx5fFNoYc", t=605, window=10, max_text_chars=200
+    )
+    cues = r.structured_content["cues"]
+    assert [c["text"] for c in cues] == ["y" * 300]
+    footer = next(ln for ln in r.content[0].text.splitlines() if ln.startswith("(cues"))
+    assert footer.startswith(f"(cues {cues[0]['cue_id']}-{cues[0]['cue_id']} · 300 chars")

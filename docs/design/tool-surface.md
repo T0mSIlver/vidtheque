@@ -1761,8 +1761,13 @@ carries `link` beside `cue_id`/`start`/`end`/`text`, and `next` carries the
 closing line (§3.5 parity).
 
 **Token discipline.** Double-capped: `window` seconds **and** `max_text_chars`,
-whichever binds first, with the binding one named in the payload. OCR capped at
-8 frames / 1200 chars, frame refs at 12 ids — all independent of `window`, so
+whichever binds first, with the binding one named in the payload. The
+character budget grows outward from `t`: the cue at `t` (else the nearest) is
+always printed whole, even when it alone exceeds the budget, then its nearer
+neighbours while they fit (amended 2026-10-21: filling forward from the window's
+start could end before `t`, and one long cue printed nothing). OCR capped at
+8 frames / 1200 chars, charged at the text shown, a frame that does not fit
+skipped rather than ending the block; frame refs at 12 ids — all independent of `window`, so
 `window=300` does not multiply the image-adjacent cost (screenpipe caps the
 analogous `frame-context` at 50 nodes / 2000 chars for the same reason). Never
 returns image content. The per-line `?t=` is counted against neither cap: it is
