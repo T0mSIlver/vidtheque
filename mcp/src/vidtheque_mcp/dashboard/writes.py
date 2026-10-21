@@ -41,7 +41,6 @@ and a navigation needs somewhere to land. Those targets are paths Next serves.
 
 from __future__ import annotations
 
-import hmac
 import json
 import math
 import posixpath
@@ -55,6 +54,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from ..auth.login import SESSION_COOKIE
 from ..auth.provider import OWNER_SUBJECT
+from ..auth.tokens import secrets_equal
 from ..config import Settings
 from ..db import queries
 from ..errors import HTTP_STATUS, ToolError
@@ -353,9 +353,9 @@ def _accepted(settings: Settings, supplied: str) -> bool:
     """
     ok = False
     if settings.password:
-        ok |= hmac.compare_digest(supplied, settings.password)
+        ok |= secrets_equal(supplied, settings.password)
     if settings.auth_mode == "token" and settings.static_token:
-        ok |= hmac.compare_digest(supplied, settings.static_token)
+        ok |= secrets_equal(supplied, settings.static_token)
     return ok
 
 

@@ -617,3 +617,23 @@ def test_the_two_sign_ins_share_one_backoff(corpus: Path) -> None:
             assert wrong.status_code == 401
         held = c.post("/auth/login", data={"rq": "", "password": "pw"}, headers=origin)
         assert held.status_code == 429
+
+
+def test_non_ascii_credentials_are_refused_not_crashed(corpus: Path) -> None:
+    """Every secret compare takes any string: a non-ASCII password, bearer or
+    frame signature is a 401, never a 500."""
+    from .conftest import FakeEmbeddings
+
+    settings = make_settings(corpus, auth_mode="token", static_token="s3cret", password="pw")
+    signer = FrameUrlSigner(settings.resolve_secret(), settings.frame_url_ttl_s)
+    expires_at, _ = signer.sign(FRAME_ID, 512, 75)
+    app = build_app(settings, embeddings=FakeEmbeddings(), run_pipeline=False)
+    origin = {"Origin": "http://localhost:8080"}
+    accented = "é".encode("utf-8")
+    with TestClient(app, base_url=settings.public_url, raise_server_exceptions=False) as c:
+        login = c.post("/dashboard/login", data={"password": "pässword"}, headers=origin)
+        api = c.get("/dashboard/api/health", headers={"Authorization": b"Bearer " + accented})
+        frame = c.get(f"/frames/{FRAME_ID}.jpg", headers={"Authorization": b"Bearer " + accented})
+        signed = c.get(f"/frames/{FRAME_ID}.jpg?w=512&q=75&exp={expires_at}&sig=%C3%A9")
+        codes = [r.status_code for r in (login, api, frame, signed)]
+        assert codes == [401, 401, 401, 401]

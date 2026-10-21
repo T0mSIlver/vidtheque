@@ -27,6 +27,17 @@ _FRAME_SALT = b"vidtheque/frame-url/v1"
 _REFRESH_SALT = b"vidtheque/refresh-token/v1"
 
 
+def secrets_equal(supplied: str, expected: str) -> bool:
+    """Constant-time compare for every secret: password, token, signature.
+
+    `hmac.compare_digest` on `str` raises TypeError outside ASCII, which made a
+    non-ASCII guess a 500 rather than a refusal; UTF-8 bytes accept any string.
+    """
+    return hmac.compare_digest(
+        supplied.encode("utf-8", "surrogatepass"), expected.encode("utf-8", "surrogatepass")
+    )
+
+
 def derive_key(secret: str, salt: bytes) -> bytes:
     """One configured secret, several independent keys."""
     return hmac.new(salt, secret.encode("utf-8"), hashlib.sha256).digest()
@@ -149,4 +160,4 @@ class FrameUrlSigner:
             return False
         if expiry < (now if now is not None else int(time.time())):
             return False
-        return hmac.compare_digest(self._mac(frame_id, width, quality, expiry), signature)
+        return secrets_equal(signature, self._mac(frame_id, width, quality, expiry))

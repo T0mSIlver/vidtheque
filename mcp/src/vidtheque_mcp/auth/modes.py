@@ -12,7 +12,6 @@ bundle the app assembles, rather than becoming per-route conditionals.
 
 from __future__ import annotations
 
-import hmac
 import time
 from dataclasses import dataclass, field
 
@@ -33,7 +32,7 @@ from .login import LoginThrottle, login_routes
 from .metadata import metadata_routes
 from .provider import VidthequeOAuthProvider
 from .store import AuthStore
-from .tokens import FrameUrlSigner, TokenIssuer
+from .tokens import FrameUrlSigner, TokenIssuer, secrets_equal
 
 
 class StaticTokenVerifier(TokenVerifier):
@@ -44,7 +43,7 @@ class StaticTokenVerifier(TokenVerifier):
         self._resource = resource
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        if not hmac.compare_digest(token, self._token):
+        if not secrets_equal(token, self._token):
             return None
         return AccessToken(
             token=token,
