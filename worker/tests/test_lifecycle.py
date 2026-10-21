@@ -884,6 +884,107 @@ async def test_load_failure_releases_the_lease(recorder):
 
 
 # --------------------------------------------------------------------------
+# the lease around admission
+# --------------------------------------------------------------------------
+
+
+class CoTenantVram(FakeVram):
+    """A co-tenant (llama.cpp) holds `cotenant_mb` until the acquire hook stops it."""
+
+    def __init__(self, backends, cotenant_mb: int, total_mb: int = 24000) -> None:
+        super().__init__(backends, total_mb=total_mb)
+        self.cotenant_mb = cotenant_mb
+
+    def __call__(self):
+        info = super().__call__()
+        used = info.used_mb + self.cotenant_mb
+        return type(info)(total_mb=info.total_mb, used_mb=used, free_mb=info.total_mb - used)
+
+
+def stopping_hooks(recorder: Recorder, vram: CoTenantVram) -> FakeHooks:
+    """Hooks that do what GPU_ACQUIRE_CMD is for: stop the co-tenant."""
+
+    class Hooks(FakeHooks):
+        async def __call__(self, command: str, label: str) -> None:
+            await super().__call__(command, label)
+            if label == "GPU_ACQUIRE_CMD":
+                vram.cotenant_mb = 0
+
+    return Hooks(recorder)
+
+
+async def test_acquire_frees_the_cotenant_before_admission(recorder):
+    """GPU_ACQUIRE_CMD exists to stop llama.cpp. Admission ran first, saw its
+    20 GB, found nothing of ours to evict and refused, so the hook never ran."""
+    backends = make_backends(recorder, embed=4400)
+    vram = CoTenantVram(backends, cotenant_mb=20000)
+    hooks = stopping_hooks(recorder, vram)
+    manager = await make_manager(
+        backends, recorder, vram_probe=vram, hook_runner=hooks, acquire_cmd="a", release_cmd="r"
+    )
+    try:
+        assert await manager.submit("embed", lambda b: b.infer(["hi"])) == "embed-ok"
+        assert recorder.names("hook", "load") == ["GPU_ACQUIRE_CMD", "embed"]
+    finally:
+        await manager.stop()
+
+
+async def test_a_refused_admission_gives_the_lease_back(recorder):
+    backends = make_backends(recorder, embed=4400)
+    vram = CoTenantVram(backends, cotenant_mb=20000)  # plain hooks: it never leaves
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends, recorder, vram_probe=vram, hook_runner=hooks, acquire_cmd="a", release_cmd="r"
+    )
+    try:
+        with pytest.raises(InsufficientVRAM):
+            await manager.submit("embed", lambda b: b.infer(["hi"]))
+        assert [label for _, label in hooks.calls] == ["GPU_ACQUIRE_CMD", "GPU_RELEASE_CMD"]
+        assert not manager.hooks.acquired
+    finally:
+        await manager.stop()
+
+
+async def test_swapping_two_gpu_models_keeps_the_lease(recorder):
+    """Each eviction released the lease (restarting llama.cpp) and the load
+    right after it re-acquired it (stopping it again): one co-tenant restart
+    per swap, mid-indexing."""
+    backends = make_backends(recorder, stt=12000, embed=12000)
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends, recorder, hook_runner=hooks, acquire_cmd="a", release_cmd="r",
+        idle_unload_seconds=0,
+    )
+    try:
+        await manager.submit("stt", lambda b: b.infer("a.wav"))
+        await manager.submit("embed", lambda b: b.infer(["hi"]))
+        await manager.submit("stt", lambda b: b.infer("a.wav"))
+        assert recorder.names("unload") == ["stt", "embed"]  # really swapped
+        assert [label for _, label in hooks.calls] == ["GPU_ACQUIRE_CMD"]
+    finally:
+        await manager.stop()
+    assert [label for _, label in hooks.calls] == ["GPU_ACQUIRE_CMD", "GPU_RELEASE_CMD"]
+
+
+async def test_a_failed_load_after_a_swap_still_gives_the_lease_back(recorder):
+    backends = make_backends(recorder, stt=12000, embed=12000)
+    backends["embed"].load_error = RuntimeError("no weights")
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends, recorder, hook_runner=hooks, acquire_cmd="a", release_cmd="r"
+    )
+    try:
+        await manager.submit("stt", lambda b: b.infer("a.wav"))
+        with pytest.raises(BackendError):
+            await manager.submit("embed", lambda b: b.infer(["hi"]))
+        assert not backends["stt"].loaded
+        assert [label for _, label in hooks.calls] == ["GPU_ACQUIRE_CMD", "GPU_RELEASE_CMD"]
+        assert not manager.hooks.acquired
+    finally:
+        await manager.stop()
+
+
+# --------------------------------------------------------------------------
 # snapshot
 # --------------------------------------------------------------------------
 
