@@ -677,3 +677,38 @@ def test_a_registered_clients_consent_names_where_the_code_goes(corpus: Path) ->
         assert '<span class="host">notes.app.example.net</span>' in page
         assert client_id not in page.split("<form")[0]
         assert "Some Assistant" in page and "unverified" in page
+
+
+def test_a_registered_clients_consent_shows_a_scheme_that_is_not_https(corpus: Path) -> None:
+    """A custom scheme hands the code to whichever app claims it, whatever host
+    follows, so the host alone would read as a site the owner trusts."""
+    origin = {"Origin": "http://localhost:8080"}
+    redirect = "evil-app://github.com/cb"
+    with client(make_settings(corpus, auth_mode="oauth", password="pw")) as c:
+        registered = c.post(
+            "/register",
+            json={
+                "redirect_uris": [redirect],
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+            },
+        )
+        assert registered.status_code == 201, registered.text
+        resp = c.get(
+            "/authorize",
+            params={
+                "client_id": registered.json()["client_id"],
+                "redirect_uri": redirect,
+                "response_type": "code",
+                "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                "code_challenge_method": "S256",
+                "state": "s",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code in (302, 307), resp.text
+        rq = parse_qs(urlparse(resp.headers["location"]).query)["rq"][0]
+        page = c.post("/auth/login", data={"rq": rq, "password": "pw"}, headers=origin).text
+        assert '<span class="host">evil-app://github.com</span>' in page
+        assert '<span class="host">github.com</span>' not in page
