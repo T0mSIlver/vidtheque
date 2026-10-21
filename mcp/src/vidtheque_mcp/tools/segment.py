@@ -149,19 +149,23 @@ async def run(
         # The independent 1200-char block cap still binds; it announces itself
         # in words rather than through a marker that promises an opt-out.
         per_frame = OCR_CHARS_PER_FRAME if max_text_chars else 0
+        ocr_capped = False
         for frame in frames:
-            text = str(frame["screen_text"] or "")
-            if not text:
+            # Charged at what is shown, and a frame that does not fit is skipped,
+            # not a stop: one wall of code must not hide every slide after it.
+            shown = middle_truncate(str(frame["screen_text"] or ""), per_frame)
+            if not shown:
                 continue
-            if ocr_used + len(text) > MAX_OCR_CHARS:
-                lines.append(f"… ({len(frames)} keyframes, OCR capped at {MAX_OCR_CHARS} chars)")
-                break
-            ocr_used += len(text)
+            if ocr_used + len(shown) > MAX_OCR_CHARS:
+                ocr_capped = True
+                continue
+            ocr_used += len(shown)
             lines.append(
                 f"[{clock(frame['t_s'])} ?t={deeplink_t(frame['t_s'], lead)}] "
-                f"{video_id}-{int(frame['ord']):05d}  "
-                f"{middle_truncate(text, per_frame)}"
+                f"{video_id}-{int(frame['ord']):05d}  {shown}"
             )
+        if ocr_capped:
+            lines.append(f"… ({len(frames)} keyframes, OCR capped at {MAX_OCR_CHARS} chars)")
 
     if include_frame_refs and frame_ids:
         lines.append("")
