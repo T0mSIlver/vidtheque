@@ -288,7 +288,7 @@ class Evidence:
     def record(self, hit: dict[str, Any]) -> int:
         """Return the `[n]` for this hit, deduplicated on (video, second)."""
         video_id = str(hit.get("video_id") or "")
-        t = int(hit.get("start") or 0)
+        t = int(search.at_match(hit))
         key = (video_id, t)
         if key in self._seen:
             n = self._seen[key]
@@ -860,8 +860,8 @@ async def _tool_search(
         # for get_segment_context, not something to write a sentence about.
         lines.append(
             f"[{n}] {attribution(hit.get('title'), hit.get('channel'))} · "
-            f"{hit.get('source') or 'transcript'} at {clock(hit.get('start'))} "
-            f"(video_id={hit.get('video_id')}, t={int(hit.get('start') or 0)})"
+            f"{hit.get('source') or 'transcript'} at {clock(search.at_match(hit))} "
+            f"(video_id={hit.get('video_id')}, t={int(search.at_match(hit))})"
         )
         lines.append(f"    {str(hit.get('text') or '')}")
     return "\n".join(lines), outcome

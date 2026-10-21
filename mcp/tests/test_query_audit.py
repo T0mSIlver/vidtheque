@@ -316,3 +316,56 @@ async def test_segment_always_prints_the_cue_at_t(assembled: Assembled) -> None:
     assert [c["text"] for c in cues] == ["y" * 300]
     footer = next(ln for ln in r.content[0].text.splitlines() if ln.startswith("(cues"))
     assert footer.startswith(f"(cues {cues[0]['cue_id']}-{cues[0]['cue_id']} · 300 chars")
+
+
+# ------------------------------------------------------------------------- Q7
+
+
+async def _wide_island(db) -> None:
+    """21 weak cues then one strong one, contiguous: one island whose anchor
+    sits ~105 s after its start."""
+    rows = []
+    for i in range(22):
+        t = 2160 + i * 5
+        text = (
+            "gadget " + " ".join(f"pad{j}" for j in range(25)) if i < 21 else "gadget gadget gadget"
+        )
+        rows.append((t, t + 4.5, text))
+    await _add_cues(db, "kCc8FmEb1nY", rows)
+
+
+async def test_follow_ups_aim_at_the_match_not_the_segment_start(assembled: Assembled) -> None:
+    """Q7: search's `next:` line, the ask evidence and the demo facade's
+    timestamp and thumbnail used the segment start, while the link (§3.6)
+    points at the matched cue."""
+    import re
+
+    from vidtheque_mcp.public import api, ask
+
+    await _wide_island(assembled.deps.db)
+    r = await search.run(assembled.deps, q="gadget", limit=1)
+    hit = r.structured_content["results"][0]
+    assert hit["match_start"] - hit["start"] > 60  # the case under test
+    t = int(re.search(r"get-segment-context .* t=(\d+)", r.structured_content["next"]).group(1))
+    assert t == int(hit["match_start"])
+    assert f"t={int(hit['match_start'])}" in r.content[0].text.split("next:")[-1]
+
+    evidence = ask.Evidence()
+    evidence.record(hit)
+    assert evidence.items[0].t == int(hit["match_start"])
+
+    from vidtheque_mcp.text import clock
+
+    row = api._decorate_hit(assembled.deps, hit)
+    assert row["timestamp"] == clock(hit["match_start"])
+    # a keyframe between the segment's start and its match
+    await assembled.deps.db.write(
+        lambda c: c.execute(
+            "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, "
+            "phash, sharpness, width, height, jpeg_path, jpeg_bytes) "
+            "SELECT id, 2, 2200, 2, 2200, 2205, 77, 10.0, 1280, 720, 'x', 1 FROM videos "
+            "WHERE public_id='kCc8FmEb1nY'"
+        )
+    )
+    shown = await assembled.deps.db.read(lambda c: api._frames_on_screen(c, [hit]))
+    assert shown == {0: "kCc8FmEb1nY-00002"}

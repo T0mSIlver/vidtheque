@@ -478,7 +478,9 @@ tools out of five: an agent that had been told never to invent a timestamp
 read the guide, saw the disagreement, and hand-corrected a chapter link to
 `?t=398` (terra eval §4.3). A `t=` a payload prints as a *parameter* for the
 next call (`get-segment-context t=…`) is never lead-adjusted — it is a position,
-not a link.
+not a link. It is the same position the link names: the anchor (`match_start`),
+never the segment's start, which can sit two minutes earlier (amended
+2026-10-21; the demo facade's `timestamp` and on-screen frame follow it too).
 
 ### 3.7 Tags
 

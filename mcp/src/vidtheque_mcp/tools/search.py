@@ -1284,6 +1284,12 @@ def _render(
     return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else "")
 
 
+def at_match(result: dict[str, Any]) -> float:
+    """The second a result dict's link points at: `match_start`, else `start`."""
+    value = result.get("match_start")
+    return float((result.get("start") if value is None else value) or 0.0)
+
+
 def _next_line(page: Sequence[Any]) -> str | None:
     """The closing `next:` line, so the text block and `structuredContent` agree.
 
@@ -1293,12 +1299,14 @@ def _next_line(page: Sequence[Any]) -> str | None:
     """
     if not page:
         return None
+    # `t` is the matched cue, the moment the link points at (§3.6), not the
+    # segment's start, which can sit two minutes before it.
     first = page[0]
     return (
         f'next: video-summary video_id="{first.public_id}" for the chapter '
         "list (fastest way to name the moment), or "
         f'get-segment-context video_id="{first.public_id}" '
-        f"t={int(first.start_s)} for the full surrounding transcript."
+        f"t={int(first.cite_s)} for the full surrounding transcript."
     )
 
 

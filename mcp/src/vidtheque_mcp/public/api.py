@@ -236,7 +236,7 @@ def _decorate_hit(
 ) -> dict[str, Any]:
     """The fields the facade adds. `shown` is the keyframe on screen at a spoken hit."""
     row = dict(hit)
-    row["timestamp"] = clock(hit.get("start"))
+    row["timestamp"] = clock(search.at_match(hit))
     # `frame_id` stays the tool's: it names the frame that matched, and nothing matched here.
     frame = hit.get("frame_id") or shown
     row["thumb"] = thumb_url(deps, frame, THUMB_WIDTH)
@@ -258,7 +258,7 @@ def _frames_on_screen(
     frame it repeats, and a hit before the first keyframe takes the first.
     """
     wanted = [
-        [index, hit.get("video_id"), float(hit.get("start") or 0.0)]
+        [index, hit.get("video_id"), search.at_match(hit)]
         for index, hit in enumerate(hits)
         if not hit.get("frame_id") and hit.get("video_id")
     ]
