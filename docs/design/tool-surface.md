@@ -240,7 +240,8 @@ it, items are dropped from the tail and the payload ends with:
 Response truncated at 60000 chars — 4 results dropped. Re-run with a smaller limit or max_text_chars.
 ```
 
-The cap binds every format (`text` and `tsv`), and the rest of the payload
+The cap binds every format (`text` and `tsv`); the first result is always kept
+whole, so one hit larger than the cap still comes back alone. The rest of the payload
 describes what was kept, not what was ranked (amended 2026-10-21): the header
 counts the kept results and points at `offset=<offset + kept>` instead of
 saying `(no more results)`, `structuredContent.results` holds the kept results
@@ -853,7 +854,7 @@ substring-based.
 | `content_type` | enum `all\|transcript\|ocr\|frame` | `all` | — | `all` queries **all three**. Never silently narrowed; leg skips are printed as `note:`. |
 | `limit` | int | `10` | **clamped 1..50** | Not prompt-only. screenpipe's "max 20" is advisory with no clamp (live bug). |
 | `offset` | int | `0` | clamped 0..10000 | |
-| `order` | enum `relevance\|recency\|video_time` | `relevance` | — | `recency` = video publish date desc, ties by relevance. `video_time` requires a single-video scope → else `E_ORDER_SCOPE`. |
+| `order` | enum `relevance\|recency\|video_time` | `relevance` | — | `recency` = video publish date desc, ties by relevance. `video_time` requires a single-video scope → else `E_ORDER_SCOPE`; it orders the video's top `CANDIDATE_POOL` (400) islands by score, so past 400 matching islands the earliest may be missing. |
 | `video_id` | string \| string[] | — | ≤ 20 ids | Scope to specific videos. |
 | `channel` | string | — | ≤ 128 chars | **Case-insensitive substring.** (screenpipe's `app_name` is case-sensitive exact — a footgun they repeat in every description.) |
 | `video_title` | string | — | ≤ 256 chars | Case-insensitive substring. |
@@ -1358,7 +1359,8 @@ documented first call, so it is where the list costs least.
 **A filter scopes the whole rollup** (amended 2026-10-21: it used to scope the
 channel, tag and recent sections only, and a filter that matched nothing said
 nothing). With `channel`, `tags` or `published_*`, the headline, published span,
-sections and gaps count the matching videos in every `index_state`, a `note:`
+and gaps count the matching videos in every `index_state` (the Channels, Tags
+and Recent sections count the queryable ones among them), a `note:`
 says so (`these N of M videos`) and `structuredContent.scope` echoes the filters
 and `corpus_videos`. `data_status`, the queue line and the embed backlog
 describe the server and stay corpus-wide. A filter that matches no video says
