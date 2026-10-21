@@ -2353,22 +2353,6 @@ def keyframe_bytes_total(conn: sqlite3.Connection) -> int:
     )
 
 
-def keyframe_detail(
-    conn: sqlite3.Connection, public_id: str, ordinal: int
-) -> sqlite3.Row | None:
-    """One keyframe by wire id (`<public_id>-<ord:05d>`), with its shot."""
-    return conn.execute(
-        """
-        SELECT k.id, k.ord, k.t_s, k.shot_id, k.shot_start_s, k.shot_end_s,
-               k.sharpness, k.width, k.height, k.jpeg_bytes, k.dup_of, k.ocr_state,
-               v.public_id, v.title
-        FROM keyframes k JOIN videos v ON v.id = k.video_id
-        WHERE v.public_id = ? AND k.ord = ?
-        """,
-        (public_id, ordinal),
-    ).fetchone()
-
-
 # ---------------------------------------------------------------------------
 # tag-video (writes)
 
