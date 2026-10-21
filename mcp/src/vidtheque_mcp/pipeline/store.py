@@ -20,7 +20,7 @@ from ..db.queries import OCR_FRAME_SEPARATOR, pack_f32
 from .captions import CueDraft
 from .chunking import ChunkDraft
 from .keyframes import KeyframeDraft
-from .sources import VideoMeta
+from .sources import VideoMeta, looks_like_container
 from .worker_client import OcrLine
 
 STAGES = ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed")
@@ -601,8 +601,8 @@ def append_items(
     ``max_items`` is job-wide, not per-container. `index-video` clamps its own
     `max_items` to 200 and accepts ten roots, and each root then expanded up to
     that many *independently* — so one call could produce ~2,010 items while
-    advertising 200. The cap now counts what the job already holds.
-    (2026-08-10 audit, F-19.)
+    advertising 200. The cap now counts the videos the job already holds.
+    (2026-08-10 audit, F-19; container items excluded, 2026-10-21.)
     """
     if not urls:
         return 0
@@ -622,7 +622,8 @@ def append_items(
             "SELECT COALESCE(MAX(seq), -1) + 1 FROM job_items WHERE job_id = ?", (job_id,)
         ).fetchone()[0]
     )
-    room = max(0, max_items - len(seen))
+    # Videos only: a container item is the request, not one of the N it asked for.
+    room = max(0, max_items - sum(1 for url in seen if not looks_like_container(url)))
     added = 0
     for url in urls:
         if url in seen:

@@ -247,6 +247,37 @@ async def test_re_expanding_a_playlist_does_not_double_its_items(
         await close(parts)
 
 
+async def test_max_items_counts_videos_not_the_container(
+    settings: Settings, clip: Path
+) -> None:
+    """`max_items=2` on a playlist used to queue one video.
+
+    The job-wide room counted every item the job held, the container itself
+    among them, so each expansion lost one slot to the URL being expanded.
+    """
+    parts = await harness(settings, clip)
+    try:
+        job_id = await parts.db.write(
+            lambda c: jobs_store.create_job(c, "index", {}, [(PLAYLIST_URL, None)])
+        )
+        row = await parts.one("SELECT id FROM jobs WHERE public_id = ?", (job_id,))
+        urls = [VIDEO_URL, "https://youtu.be/zZ9yY8xX7wV", "https://youtu.be/Qk7mF2xLp0A"]
+
+        added = await parts.db.write(
+            lambda c: pipeline_store.append_items(c, int(row["id"]), urls, 2)
+        )
+        assert added == 2
+        # A second container in the same job shares the cap, which is now full.
+        again = await parts.db.write(
+            lambda c: pipeline_store.append_items(
+                c, int(row["id"]), ["https://youtu.be/xYzxYzxYz12"], 2
+            )
+        )
+        assert again == 0
+    finally:
+        await close(parts)
+
+
 # ================================================================== frame source
 
 
