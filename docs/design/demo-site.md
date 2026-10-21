@@ -154,7 +154,8 @@ Facade rules:
   code to an HTTP status, so the facade returns that status with
   `{"error": code, "message": …, "next": …}`. One table, two consumers.
 - **Nothing new is queried.** The facade adds three derived fields per result —
-  a `timestamp` clock string and two frame URLs, `thumb` and `thumb_large` —
+  a `timestamp` clock string (of `match_start`, the second the link lands on)
+  and two frame URLs, `thumb` and `thumb_large` —
   every one of them computed from data the tool already returned, except the
   frame a spoken hit is pictured with (§2.1). `thumb_large`
   is a *URL*, not bytes: the enlarged frame is fetched only if a visitor opens
