@@ -2921,7 +2921,7 @@ inline base64, and the three widths are §6.4's set.
 
 **Percentages are not sent.** The shot band's `left` and `width` are a
 rendering of `start_s`/`end_s` against `video.duration_s`, and all three of
-those are on the payload. The page still computes them, in `views._shot_bars`.
+those are on the payload. The page computes them, in the web `Timeline`.
 
 **The projection, per field.** The table is **not** redacted: §2.4 gives it to
 the demo whole, and every column on it is corpus. The detail loses exactly the
