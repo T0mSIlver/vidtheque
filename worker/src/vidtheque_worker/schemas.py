@@ -275,9 +275,10 @@ class ErrorBody(BaseModel):
     type: str = Field(
         description=(
             "Stable code for the failure. `invalid_input`/`invalid_image`/"
-            "`invalid_media` (400) mean the payload is the problem and "
-            "re-sending it will fail identically; `backend_crashed`, "
-            "`insufficient_vram`, `gpu_lease_failed`, `backend_unavailable`, "
+            "`invalid_media` (400, and `invalid_input` for a 413 batch over the "
+            "cap) mean the payload is the problem and re-sending it will fail "
+            "identically; `backend_crashed`, `insufficient_vram`, "
+            "`gpu_lease_failed`, `backend_unavailable`, `worker_busy`, "
             "`worker_shutting_down` and `worker_not_ready` (503, with "
             "`Retry-After`) all mean not-now rather than never."
         )
