@@ -218,6 +218,18 @@ def matches_json(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[
 # ------------------------------------------------------------------ queue
 
 
+def queued_video_ids(conn: sqlite3.Connection) -> set[int]:
+    """Every video with a `verdict` job waiting or running, in one scan."""
+    return {
+        int(r[0])
+        for r in conn.execute(
+            "SELECT json_extract(args_json, '$.video_id') FROM jobs"
+            " WHERE kind = 'verdict' AND state IN ('queued','running')"
+        )
+        if r[0] is not None
+    }
+
+
 def is_queued(conn: sqlite3.Connection, video_id: int) -> bool:
     """A `verdict` job for this video is waiting or running."""
     row = conn.execute(
@@ -246,6 +258,10 @@ def queue(conn: sqlite3.Connection, video_id: int) -> str | None:
     """
     if is_queued(conn, video_id):
         return None
+    return _create(conn, video_id)
+
+
+def _create(conn: sqlite3.Connection, video_id: int) -> str | None:
     row = conn.execute("SELECT url FROM videos WHERE id = ?", (video_id,)).fetchone()
     if row is None:
         return None
@@ -301,16 +317,20 @@ def backfill(
         ]
     queued: list[str] = []
     waiting = 0
+    # One scan of `jobs`, not one per candidate: this runs inside the writer's
+    # transaction, and per-video lookups made it quadratic in corpus size.
+    already = queued_video_ids(conn)
     for video_id in candidates:
-        if is_queued(conn, video_id):
+        if video_id in already:
             continue
         if len(queued) >= limit:
             if rescore:
                 break  # the rest of the judged corpus is not waiting for anything
             waiting += 1
             continue
-        job = queue(conn, video_id)
+        job = _create(conn, video_id)
         if job is not None:
             queued.append(job)
+            already.add(video_id)
     return queued, waiting
 
