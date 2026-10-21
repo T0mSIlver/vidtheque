@@ -461,8 +461,8 @@ class CorpusFilter:
 
     def as_params(self) -> dict[str, Any]:
         return {
-            "channel": self.channel,
-            "video_title": self.video_title,
+            "channel": like_escape(self.channel),
+            "video_title": like_escape(self.video_title),
             "published_after": self.published_after,
             "published_before": self.published_before,
             "indexed_after": self.indexed_after,
@@ -471,10 +471,17 @@ class CorpusFilter:
         }
 
 
+def like_escape(value: str | None) -> str | None:
+    """A substring for `LIKE … ESCAPE '\\'`: `_` and `%` in a name are literal."""
+    if value is None:
+        return None
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 _RESOLVE_SQL = """
 SELECT id, public_id FROM videos
-WHERE (:channel          IS NULL OR channel_lc LIKE '%' || lower(:channel) || '%')
-  AND (:video_title      IS NULL OR title_lc   LIKE '%' || lower(:video_title) || '%')
+WHERE (:channel          IS NULL OR channel_lc LIKE '%' || lower(:channel) || '%' ESCAPE '\\')
+  AND (:video_title      IS NULL OR title_lc   LIKE '%' || lower(:video_title) || '%' ESCAPE '\\')
   AND (:published_after  IS NULL OR published_at >= :published_after)
   AND (:published_before IS NULL OR published_at <  :published_before)
   AND (:indexed_after    IS NULL OR indexed_at   >= :indexed_after)
@@ -532,10 +539,10 @@ def resolve_speakers(conn: sqlite3.Connection, name: str) -> list[int]:
     rows = conn.execute(
         """
         SELECT id FROM speakers
-        WHERE lower(label) LIKE '%' || lower(:name) || '%'
-           OR lower(COALESCE(display_name, '')) LIKE '%' || lower(:name) || '%'
+        WHERE lower(label) LIKE '%' || lower(:name) || '%' ESCAPE '\\'
+           OR lower(COALESCE(display_name, '')) LIKE '%' || lower(:name) || '%' ESCAPE '\\'
         """,
-        {"name": name},
+        {"name": like_escape(name)},
     ).fetchall()
     ids = {int(r["id"]) for r in rows}
     if not ids:
