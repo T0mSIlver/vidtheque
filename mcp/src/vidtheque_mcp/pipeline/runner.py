@@ -830,17 +830,21 @@ class IndexingPipeline:
         target = float(self.db.config_int("chunk.target_seconds", 45))
         overlap = float(self.db.config_int("chunk.overlap_seconds", 15))
         model_key = f"chunk-{int(target)}-{int(overlap)}"
-        if not run.cues:
-            # `stt` was left alone as already-current, so its chunks are too —
-            # unless the chunker's own parameters moved, and then there are no
-            # cues in memory to rebuild from and it is a reindex, not a resume.
-            if self._should_run(run, "chunk", model_key):
-                await self._skip(run, "chunk", "no fresh cues to chunk")
-            return
+        video_id = run.video_id
+        cues, cue_ids = run.cues, run.cue_ids
+        if not cues:
+            # `stt` was left alone as already-current. Its chunks are too unless
+            # this stage is owed (the chunker moved, or `replace_cues` reset it
+            # and the run stopped before re-chunking): rebuild from stored cues.
+            if not self._should_run(run, "chunk", model_key):
+                return
+            cues, cue_ids = await self.db.read(lambda c: store.stored_cues(c, video_id))
+            if not cues:
+                await self._skip(run, "chunk", "this video has no cues to chunk")
+                return
 
         await self._stage_running(run, "chunk")
-        chunks = build_chunks(run.cues, target, overlap)
-        video_id, cue_ids = run.video_id, run.cue_ids
+        chunks = build_chunks(cues, target, overlap)
         await self.db.write(lambda c: store.replace_chunks(c, video_id, chunks, cue_ids))
         await self._stage_done(run, "chunk", model_key)
         await run.ctx.record("chunk", 1.0)
