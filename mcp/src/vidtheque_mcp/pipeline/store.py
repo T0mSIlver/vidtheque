@@ -227,8 +227,13 @@ def replace_cues(
     run of cues is an id-contiguous range. That is what lets `search` print
     `cues 1841-1849` instead of a list, and what makes the chunk span exact.
     Reindexing reallocates the block; ids are stable *between* reindexes only.
+
+    The delete cascades to the chunks (`first_cue_id`) and through `chunks_ad`
+    to their vectors, so `chunk` and `text_embed` go back to `pending` here, in
+    the same transaction: a cancel before the re-chunk leaves them owed.
     """
     conn.execute("DELETE FROM cues WHERE video_id = ?", (video_id,))
+    _reset_stages(conn, video_id, ("chunk", "text_embed"))
     ids: list[int] = []
     for seq, cue in enumerate(cues):
         cursor = conn.execute(
@@ -260,12 +265,7 @@ def replace_chunks(
     a stage that is owed, not a `done` row over no vectors (rehearsal, 2026-09-18).
     """
     conn.execute("DELETE FROM chunks WHERE video_id = ?", (video_id,))
-    conn.execute(
-        "UPDATE video_stages SET state = 'pending', model_key = NULL, started_at = NULL, "
-        "finished_at = NULL, error = NULL "
-        "WHERE video_id = ? AND stage = 'text_embed' AND state = 'done'",
-        (video_id,),
-    )
+    _reset_stages(conn, video_id, ("text_embed",))
     ids: list[int] = []
     for chunk in chunks:
         cursor = conn.execute(
@@ -284,6 +284,26 @@ def replace_chunks(
         )
         ids.append(int(cursor.lastrowid or 0))
     return ids
+
+
+def stored_cues(conn: sqlite3.Connection, video_id: int) -> tuple[list[CueDraft], list[int]]:
+    """The video's cues back as drafts, with their ids, for a re-chunk without re-transcribing."""
+    rows = conn.execute(
+        "SELECT id, start_s, end_s, text FROM cues WHERE video_id = ? ORDER BY seq", (video_id,)
+    ).fetchall()
+    cues = [CueDraft(float(r["start_s"]), float(r["end_s"]), str(r["text"])) for r in rows]
+    return cues, [int(r["id"]) for r in rows]
+
+
+def _reset_stages(conn: sqlite3.Connection, video_id: int, stages: Sequence[str]) -> None:
+    """`done` → `pending` for stages whose output the caller just deleted."""
+    marks = ", ".join("?" for _ in stages)
+    conn.execute(
+        "UPDATE video_stages SET state = 'pending', model_key = NULL, started_at = NULL, "
+        f"finished_at = NULL, error = NULL WHERE video_id = ? AND stage IN ({marks}) "
+        "AND state = 'done'",
+        (video_id, *stages),
+    )
 
 
 def pending_chunks(conn: sqlite3.Connection, video_id: int) -> list[sqlite3.Row]:
@@ -313,8 +333,13 @@ def write_chunk_vectors(
 def replace_keyframes(
     conn: sqlite3.Connection, video_id: int, drafts: Sequence[KeyframeDraft]
 ) -> dict[int, int]:
-    """Insert the frames, then resolve `dup_of` — it is a self-reference."""
+    """Insert the frames, then resolve `dup_of` — it is a self-reference.
+
+    The delete cascades to the frames' OCR lines and vectors, so `ocr` and
+    `frame_embed` go back to `pending` in the same transaction, as for cues.
+    """
     conn.execute("DELETE FROM keyframes WHERE video_id = ?", (video_id,))
+    _reset_stages(conn, video_id, ("ocr", "frame_embed"))
     by_ordinal: dict[int, int] = {}
     for draft in drafts:
         cursor = conn.execute(

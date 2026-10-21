@@ -10,14 +10,18 @@ Nothing here reaches the network or a GPU: same fakes as `test_pipeline_e2e`.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import httpx2 as httpx
 import pytest
 
 from vidtheque_mcp.config import Settings
+from vidtheque_mcp.jobs import store as jobs_store
+from vidtheque_mcp.pipeline import store as pipeline_store
 from vidtheque_mcp.pipeline import keyframes as keyframes_module
 from vidtheque_mcp.pipeline import runner as runner_module
+from vidtheque_mcp.pipeline.captions import CueDraft
 from vidtheque_mcp.pipeline.runner import LIFECYCLE_RETRY_S
 from vidtheque_mcp.pipeline.settings import PipelineSettings
 from vidtheque_mcp.pipeline.worker_client import HTTPWorkerClient
@@ -894,3 +898,108 @@ async def test_a_stage_whose_every_frame_is_unreadable_fails_rather_than_lying(
         assert states == {"failed"}
     finally:
         await close(parts)
+
+
+# ========================================================= stage invalidation
+#
+# A write that deletes a stage's output owes that stage a re-run, in the same
+# transaction; a job that did not ask for a stage never rewrites its row
+# (ingest audit, 2026-10-21).
+
+
+async def _output_counts(parts: Harness) -> dict[str, int]:
+    tables = ("cues", "chunks", "vec_chunks", "keyframes", "ocr_lines", "vec_frames")
+    return {t: int((await parts.one(f"SELECT COUNT(*) AS n FROM {t}"))["n"]) for t in tables}
+
+
+async def test_a_cancel_between_stt_and_chunk_does_not_lose_the_chunks(
+    settings: Settings, clip: Path
+) -> None:
+    """`replace_cues` cascades away the chunks and their vectors.
+
+    A cancel landing after `stt` left `chunk` and `text_embed` reading `done`
+    over nothing — or, on a first index, the resume found `stt` current, no
+    cues in memory, and skipped chunking: a `ready` video with no chunks that
+    `index-video` then refused to touch.
+    """
+    holder: list[str] = []
+
+    async def cancel_now() -> None:
+        job_id = holder[0]
+        await parts.db.write(lambda c: jobs_store.request_cancel(c, job_id))
+
+    worker = FakeWorker(on_transcribe=cancel_now)
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        holder.append(await parts.index(url=VIDEO_URL))
+        assert await parts.run() is True
+        worker.on_transcribe = None
+        assert (await parts.stages())["stt"]["state"] == "done"
+
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        counts = await _output_counts(parts)
+        assert counts["chunks"] > 0
+        assert counts["vec_chunks"] == counts["chunks"]
+        stages = await parts.stages()
+        assert stages["chunk"]["state"] == "done"
+        assert stages["text_embed"]["state"] == "done"
+        assert (await parts.one("SELECT index_state FROM videos"))["index_state"] == "ready"
+    finally:
+        await close(parts)
+
+
+async def test_new_cues_reset_the_chunk_and_text_embed_stages(
+    settings: Settings, clip: Path
+) -> None:
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        video_id = int((await parts.one("SELECT id FROM videos"))["id"])
+        cues = [CueDraft(start_s=0.0, end_s=1.0, text="hello")]
+        await parts.db.write(
+            lambda c: pipeline_store.replace_cues(c, video_id, cues, "yt_auto")
+        )
+        stages = await parts.stages()
+        assert stages["chunk"]["state"] == "pending"
+        assert stages["text_embed"]["state"] == "pending"
+        assert stages["chunk"]["model_key"] is None
+    finally:
+        await close(parts)
+
+
+async def test_new_keyframes_reset_the_ocr_and_frame_embed_stages(
+    settings: Settings, clip: Path
+) -> None:
+    """`replace_keyframes` cascades away the on-screen text and frame vectors.
+
+    A keyframe contract change re-extracted the frames, but `ocr` and
+    `frame_embed` still read `done` and were left alone: a `ready` video with
+    `has_ocr` and `has_frames` true and nothing behind either.
+    """
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        before = await _output_counts(parts)
+        assert before["ocr_lines"] > 0 and before["vec_frames"] > 0
+
+        parts.parts.runner.pipeline.settings = replace(FAST, keyframe_max_width=640)
+        video_id = int((await parts.one("SELECT id FROM videos"))["id"])
+        await parts.db.write(
+            lambda c: jobs_store.create_job(c, "index", {}, [(VIDEO_URL, video_id)])
+        )
+        assert await parts.run() is True
+
+        after = await _output_counts(parts)
+        assert after["ocr_lines"] > 0
+        assert after["vec_frames"] > 0
+        stages = await parts.stages()
+        assert stages["keyframe"]["model_key"].startswith("scenedetect-screencast-w640")
+        assert stages["ocr"]["state"] == "done"
+        assert stages["frame_embed"]["state"] == "done"
+    finally:
+        await close(parts)
+
