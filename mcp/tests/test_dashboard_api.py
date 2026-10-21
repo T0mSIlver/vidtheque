@@ -449,6 +449,32 @@ def test_health_says_a_video_failed_and_leaves_the_count_to_corpus(
     assert "Sign in to confirm" not in json.dumps([health, corpus])
 
 
+def test_a_failed_reindex_raises_no_failed_videos_notice(tmp_path: Path) -> None:
+    """A failed reindex stays `stale` and searchable; the notice's link lists
+    index_state=failed, so a stale video behind it would link to an empty list."""
+    with make_client(tmp_path) as client:
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "INSERT INTO videos (owner_id, source_id, url, title, "
+                "channel_name, published_at, duration_s, index_state, indexed_at) VALUES "
+                "(1, 'stalefail00', 'https://youtu.be/stalefail00', 'Stale', "
+                "'Channel', 1740000000, 600, 'stale', 150)"
+            )
+            conn.execute(
+                "INSERT INTO video_stages (video_id, stage, state, started_at, "
+                "finished_at, error) VALUES (last_insert_rowid(), 'fetch', "
+                "'failed', 100, 200, 'rate limited')"
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        health = read(client, HEALTH)
+
+    assert health["gaps"]["has_failed"] is False
+
+
 def test_the_corpus_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
     """Four videos split three ready and one indexing."""
     with make_client(tmp_path) as client:

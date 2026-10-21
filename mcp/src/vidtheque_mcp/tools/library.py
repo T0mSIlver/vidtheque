@@ -471,6 +471,7 @@ async def corpus_summary(
             "transcript_no_ocr": gap_info["transcript_no_ocr"],
             "indexing": state.queue.videos_indexing,
             "failed": len(gap_info["failed"]),
+            "failed_videos": gap_info["failed_videos"],
             "jobs_active": state.queue.active,
             "jobs_running": state.queue.running,
             "jobs_deferred": state.queue.deferred,

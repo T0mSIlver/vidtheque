@@ -231,7 +231,9 @@ async def health(request: Request) -> Response:
             "indexing": int(gaps.get("indexing") or 0),
             # Whether, not how many: the count is the Corpus page's, and the
             # rows behind it carry `video_stages.error`, which reaches no surface.
-            "has_failed": bool(gaps.get("failed")),
+            # Only `failed` videos: the notice links to index_state=failed, and a
+            # failed reindex (`stale`, still searchable) is said by the jobs notice.
+            "has_failed": bool(gaps.get("failed_videos")),
         },
         "embed_backlog": {
             "text": int(backlog.get("text") or 0),

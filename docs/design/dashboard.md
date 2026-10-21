@@ -4172,6 +4172,9 @@ on-screen text", "No videos yet") with the last index clock. The key
 failed in the window (a count, linking to `jobs?state=failed`) and failed
 videos (linking to `videos?index_state=failed`). Each failure is said here
 and not counted again lower down; the failed-video count lives on Corpus.
+*2026-10-21:* the failed-videos notice counts only `index_state='failed'`
+(`gaps.failed_videos`). A failed **re**index leaves its video `stale` and
+searchable, so it would link to an empty list; its job is in the jobs notice.
 
 **Pipeline** prints each service with its state word in its tone, then the
 models the corpus was built with and, beside them, the ones the worker
