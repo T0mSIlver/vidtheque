@@ -1236,6 +1236,10 @@ async def test_every_printed_next_line_is_also_structured(assembled: Assembled) 
         await library.video_summary(assembled.deps, video_id="kCc8FmEb1nY"),
         await segment.run(assembled.deps, video_id="kCc8FmEb1nY", t=420),
     ]
+    created = await indexing.index_video(assembled.deps, url="https://youtu.be/Qk7mF2xLp0A")
+    results.append(
+        await indexing.job_status(assembled.deps, job_id=structured(created)["job_id"])
+    )
     for result in results:
         text = body(result)
         printed = [ln for ln in text.splitlines() if ln.startswith(("next:", "next_best_query:"))]

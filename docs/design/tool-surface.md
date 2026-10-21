@@ -1760,7 +1760,10 @@ base URL to append it to. The whole URL on 40 lines would spend roughly a third
 of the transcript budget on repetition of one string; the suffix costs ~2%.
 Conformant clients do not compose anything: `structuredContent.cues[]` now
 carries `link` beside `cue_id`/`start`/`end`/`text`, and `next` carries the
-closing line (§3.5 parity).
+closing line (§3.5 parity). So does every other printed line (amended
+2026-10-21): `ocr[]` holds `{frame_id, t, text}` exactly as the on-screen block
+shows it, `ocr_capped` says the 1200-char cap skipped a frame, and `notes[]`
+holds the clamp note and the capped line.
 
 **Token discipline.** Double-capped: `window` seconds **and** `max_text_chars`,
 whichever binds first, with the binding one named in the payload. The
@@ -2149,7 +2152,9 @@ indexing (§4.3, demo-queries §9.1.4). A deferred job now says so on its own li
 *"deferred until 2026-08-09T22:00:00Z (1794s to go) — this job is queued and is
 not running; nothing is being indexed for it right now"* — the list mode carries
 `deferred until …` per row and counts them in its header, and the structured
-payload carries `deferred` and `defer_s` per job. Both come from `_JOB_SQL`'s
+payload carries `deferred` and `defer_s` per job (the single-job mode adds
+`deferred_until`, `cancel_requested`, `degraded[]`, `notes[]` with every note
+line it prints, and `next`; amended 2026-10-21, §3.5 parity). Both come from `_JOB_SQL`'s
 `not_before` / `defer_s`, computed on the clock the column was written against.
 
 **Parameters:**

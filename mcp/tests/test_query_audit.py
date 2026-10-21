@@ -369,3 +369,58 @@ async def test_follow_ups_aim_at_the_match_not_the_segment_start(assembled: Asse
     )
     shown = await assembled.deps.db.read(lambda c: api._frames_on_screen(c, [hit]))
     assert shown == {0: "kCc8FmEb1nY-00002"}
+
+
+# ------------------------------------------------------------------------ Q12
+
+
+async def test_segment_structured_carries_ocr_and_notes(assembled: Assembled) -> None:
+    """Q12: get-segment-context printed the on-screen text, the clamp note and
+    the OCR-capped line, and structuredContent had none of them (§3.5)."""
+    from vidtheque_mcp.tools import segment
+
+    r = await segment.run(assembled.deps, video_id="zduSFxRajkE", t=99999, window=300)
+    sc = r.structured_content
+    assert sc["ocr"] == []  # clamped to 3600 s, the slide at 12 s is outside
+    assert sc["notes"] and all(n in r.content[0].text for n in sc["notes"])
+    assert any("clamped" in n for n in sc["notes"])
+
+    await _long_slide(assembled.deps.db)
+    r = await segment.run(
+        assembled.deps, video_id="zduSFxRajkE", t=12, window=10, max_text_chars=0
+    )
+    sc = r.structured_content
+    assert sc["ocr"] == [
+        {
+            "frame_id": "zduSFxRajkE-00000",
+            "t": 12.0,
+            "text": "paged kv cache | block table | 4% fragmentation",
+        }
+    ]
+    assert sc["ocr_capped"] is True
+    assert all(n in r.content[0].text for n in sc["notes"])
+
+
+async def test_job_status_structured_carries_deferral_cancel_and_next(
+    assembled: Assembled,
+) -> None:
+    """Q12: job-status printed the deferral, the cancel request and its
+    `next:` line in prose only."""
+    from vidtheque_mcp.tools import indexing
+
+    created = await indexing.index_video(assembled.deps, url="https://youtu.be/Qk7mF2xLp0A")
+    job_id = created.structured_content["job_id"]
+    await assembled.deps.db.write(
+        lambda c: c.execute(
+            "UPDATE jobs SET not_before = unixepoch() + 600, cancel_requested = 1 "
+            "WHERE public_id = ?",
+            (job_id,),
+        )
+    )
+    r = await indexing.job_status(assembled.deps, job_id=job_id)
+    sc = r.structured_content
+    text = r.content[0].text
+    assert sc["deferred"] and sc["deferred_until"] and 0 < sc["defer_s"] <= 600
+    assert sc["cancel_requested"] is True
+    assert sc["notes"] and all(n in text for n in sc["notes"])
+    assert sc["next"] == [ln for ln in text.splitlines() if ln.startswith("next:")][-1]

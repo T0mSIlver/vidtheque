@@ -436,14 +436,19 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     # both: waiting for a runner slot, and held behind a backoff nothing could
     # see (demo-queries §9.1.4). `not_before` is the difference, and `defer_s`
     # is the remainder on the clock it was written against.
-    if (deferral := _deferral(row)) is not None:
+    # Every note and `next:` printed here is also structured (§3.5 parity).
+    notes: list[str] = []
+    deferral = _deferral(row)
+    if deferral is not None:
         until, remaining = deferral
-        lines.append(
+        notes.append(
             f"deferred until {until} ({remaining}s to go) — this job is queued and "
             "is not running; nothing is being indexed for it right now."
         )
+        lines.append(notes[-1])
     if row["cancel_requested"]:
-        lines.append("cancel requested — the job stops at the next stage boundary.")
+        notes.append("cancel requested — the job stops at the next stage boundary.")
+        lines.append(notes[-1])
 
     redacted = _redacted(deps)
     running = next((i for i in items if i["state"] == "running"), None)
@@ -515,7 +520,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             label = entry["public_id"] or entry["source_url"]
             reason = middle_truncate(str(entry["error"] or ""), MAX_ERROR_CHARS)
             lines.append(f"  {label} {entry['stage']}: {reason}")
-        lines.append(
+        notes.append(
             deps.hint(
                 "index-video",
                 'fix: index-video url="…" (no force_reindex) re-runs only the failed '
@@ -524,6 +529,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
                 "here. The video's other channels are searchable.",
             )
         )
+        lines.append(notes[-1])
 
     n_done = int(row["n_done"])
     n_failed = int(row["n_failed"])
@@ -544,6 +550,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         else:
             lines.append("Queryable now: nothing — this job indexed no video.")
             if skipped_note:
+                notes.append(skipped_note)
                 lines.append(skipped_note)
             lines.append(_reindex_hint(deps, "to index it now"))
     elif row["state"] == "failed":
@@ -563,12 +570,24 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         )
         lines.append(f'next: job-status job_id="{row["public_id"]}" again in ~60s.')
 
+    nxt = next((ln for ln in reversed(lines) if ln.startswith("next:")), None)
     return text_result(
         "\n".join(lines),
         {
             "job_id": str(row["public_id"]),
             "state": str(row["state"]),
             "progress": float(row["progress"] or 0.0),
+            # the list mode's keys, plus the clock time the line prints
+            "deferred": deferral is not None,
+            "defer_s": deferral[1] if deferral else 0,
+            "deferred_until": deferral[0] if deferral else None,
+            "cancel_requested": bool(row["cancel_requested"]),
+            "degraded": [
+                {"video_id": entry["public_id"], "stage": str(entry["stage"])}
+                for entry in degraded[:5]
+            ],
+            "notes": notes,
+            "next": nxt,
             # n_done + n_failed + n_skipped + n_cancelled == n_items once the
             # job is terminal, so "done with nothing indexed" is visible in the
             # numbers and not only in the prose.

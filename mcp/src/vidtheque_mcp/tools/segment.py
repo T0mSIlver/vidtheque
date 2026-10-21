@@ -101,8 +101,11 @@ async def run(
         f"Window: {clock(lo)}-{clock(hi)} (t={int(centre)} ±{int(window)}s) · "
         f"{deeplink(video_id, centre, lead)}"
     )
+    # Every note printed is also structured (§3.5 parity).
+    notes: list[str] = []
     if clamped:
-        lines.append(f"note: t was past the end of the video and was clamped to {int(centre)}s.")
+        notes.append(f"note: t was past the end of the video and was clamped to {int(centre)}s.")
+        lines.append(notes[-1])
 
     lines.append("")
     # Twenty to forty stamped lines under exactly one link is what made a
@@ -132,6 +135,8 @@ async def run(
         lines.append("(no transcript cues in this window)")
 
     frame_ids = [f"{video_id}-{int(f['ord']):05d}" for f in frames][:MAX_FRAME_REFS]
+    ocr: list[dict[str, Any]] = []
+    ocr_capped = False
     if include_ocr and frames:
         lines.append("")
         lines.append(f"ON-SCREEN TEXT ({len(frames)} keyframes)")
@@ -142,7 +147,6 @@ async def run(
         # The independent 1200-char block cap still binds; it announces itself
         # in words rather than through a marker that promises an opt-out.
         per_frame = OCR_CHARS_PER_FRAME if max_text_chars else 0
-        ocr_capped = False
         for frame in frames:
             # Charged at what is shown, and a frame that does not fit is skipped,
             # not a stop: one wall of code must not hide every slide after it.
@@ -153,12 +157,15 @@ async def run(
                 ocr_capped = True
                 continue
             ocr_used += len(shown)
+            frame_id = f"{video_id}-{int(frame['ord']):05d}"
+            ocr.append({"frame_id": frame_id, "t": float(frame["t_s"]), "text": shown})
             lines.append(
                 f"[{clock(frame['t_s'])} ?t={deeplink_t(frame['t_s'], lead)}] "
-                f"{video_id}-{int(frame['ord']):05d}  {shown}"
+                f"{frame_id}  {shown}"
             )
         if ocr_capped:
-            lines.append(f"… ({len(frames)} keyframes, OCR capped at {MAX_OCR_CHARS} chars)")
+            notes.append(f"… ({len(frames)} keyframes, OCR capped at {MAX_OCR_CHARS} chars)")
+            lines.append(notes[-1])
 
     if include_frame_refs and frame_ids:
         lines.append("")
@@ -196,6 +203,9 @@ async def run(
             }
             for c in printed
         ],
+        "ocr": ocr,
+        "ocr_capped": ocr_capped,
+        "notes": notes,
         "frame_ids": frame_ids,
         "chapter": dict(chapter) if chapter is not None else None,
         "binding_cap": binding,
