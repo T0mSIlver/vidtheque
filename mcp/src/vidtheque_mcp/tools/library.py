@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from typing import Any
 
 from mcp_types import CallToolResult
@@ -317,18 +318,41 @@ async def corpus_summary(
         tags=tag_list,
     )
 
-    rollup = await deps.db.read(queries.corpus_rollup)
     pool = await deps.db.read(lambda c: queries.resolve_videos(c, flt))
     gap_info = await deps.db.read(queries.gaps)
     backlog = await deps.db.read(queries.embed_backlog)
-    states = await corpus_state.read_video_states(deps)
+    corpus_total = None
+    # A filter scopes the whole rollup (§4.3): headline, span and gaps count the
+    # matching videos in every index_state, not only the queryable `pool`.
+    scope = _scope_words(channel, tag_list, published_after, published_before)
+    if scope:
+        scoped = await deps.db.read(
+            lambda c: queries.resolve_videos(
+                c, replace(flt, index_states=queries.INDEX_STATES)
+            )
+        )
+        rollup = await deps.db.read(lambda c: queries.corpus_rollup(c, scoped))
+        states = corpus_state.VideoStates(
+            await deps.db.read(lambda c: queries.index_state_counts(c, scoped))
+        )
+        corpus_total = sum(
+            (await deps.db.read(queries.index_state_counts)).values()
+        )
+        section_gaps = await deps.db.read(lambda c: queries.gaps(c, scoped))
+    else:
+        rollup = await deps.db.read(queries.corpus_rollup)
+        states = await corpus_state.read_video_states(deps)
+        section_gaps = gap_info
 
     total = int(rollup["videos_ready"]) + int(rollup["videos_pending"])
     # `data_status` is derived in exactly one place for all three surfaces that
     # print it (tools/corpus_state.py). `indexing` used to be "the jobs table is
     # not empty", which is how five deferred jobs made this line contradict the
-    # Gaps block eight lines below it (demo-queries §9.1.4).
-    state = await corpus_state.read_corpus_state(deps, total, gap_info, backlog)
+    # Gaps block eight lines below it (demo-queries §9.1.4). It describes the
+    # server, so it stays corpus-wide under a filter.
+    state = await corpus_state.read_corpus_state(
+        deps, corpus_total if scope else total, gap_info, backlog
+    )
     status = state.word
 
     hours = float(rollup["hours"] or 0.0)
@@ -370,6 +394,26 @@ async def corpus_summary(
         },
     }
     notes: list[str] = []
+    if scope and not total:
+        notes.append(
+            f"note: no video matches {scope} — every count and section below is "
+            "empty. list-videos (or the vidtheque://corpus resource) shows the "
+            "channels and dates there are."
+        )
+    elif scope:
+        notes.append(
+            f"note: scoped to {scope} — the counts, span, sections and gaps cover "
+            f"these {total} of {corpus_total} videos; data_status and the queue "
+            "describe the whole server."
+        )
+    if scope:
+        structured["scope"] = {
+            "channel": channel,
+            "tags": list(tag_list),
+            "published_after": published_after,
+            "published_before": published_before,
+            "corpus_videos": corpus_total,
+        }
     if backlog["text"] or backlog["frame"]:
         waiting = " and ".join(
             f"{backlog[key]} {what}"
@@ -445,9 +489,9 @@ async def corpus_summary(
         lines.append("")
         lines.append("Gaps:")
         lines.append(
-            f"  {gap_info['transcript_no_ocr']} videos have transcript but no OCR"
+            f"  {section_gaps['transcript_no_ocr']} videos have transcript but no OCR"
         )
-        for row in gap_info["failed"]:
+        for row in section_gaps["failed"]:
             if deps.offers("index-video"):
                 lines.append(
                     f"  failed: {row['public_id']} — "
@@ -460,21 +504,21 @@ async def corpus_summary(
                 # is nothing they can do with the reason. (2026-08-10 audit,
                 # F-4: the same redaction the dashboard applies, applied here.)
                 lines.append(f"  failed: {row['public_id']}")
-        more_failed = gap_info["failed_count"] - len(gap_info["failed"])
+        more_failed = section_gaps["failed_count"] - len(section_gaps["failed"])
         if more_failed > 0:
             lines.append(f"  … and {more_failed} more video(s) with a failed stage")
         # Two counters, each with one name. `indexing` counts *videos* whose
         # index_state says mid-pipeline; the job line counts *rows in `jobs`*.
         # Printing both as "indexing" is what let the headline and this block
         # disagree without either of them being wrong (§9.1.4).
-        lines.append(f"  {state.queue.videos_indexing} video(s) mid-pipeline (index_state=indexing)")
+        lines.append(f"  {section_gaps['indexing']} video(s) mid-pipeline (index_state=indexing)")
         if state.queue.active:
             lines.append(f"  {state.queue.active} indexing job(s) queued or running: {queue_phrase}")
         structured["gaps"] = {
-            "transcript_no_ocr": gap_info["transcript_no_ocr"],
-            "indexing": state.queue.videos_indexing,
-            "failed": gap_info["failed_count"],
-            "failed_videos": gap_info["failed_videos"],
+            "transcript_no_ocr": section_gaps["transcript_no_ocr"],
+            "indexing": section_gaps["indexing"],
+            "failed": section_gaps["failed_count"],
+            "failed_videos": section_gaps["failed_videos"],
             "jobs_active": state.queue.active,
             "jobs_running": state.queue.running,
             "jobs_deferred": state.queue.deferred,
@@ -501,7 +545,12 @@ async def corpus_summary(
 
     if include_guidance:
         lines.append("")
-        if total == 0:
+        if total == 0 and scope:
+            guidance = (
+                "next_best_query: list-videos to see the channels and dates there "
+                "are, then filter on one of them."
+            )
+        elif total == 0:
             guidance = deps.hint(
                 "index-video",
                 'next_best_query: index-video url="https://youtu.be/…" to add '
@@ -519,6 +568,26 @@ async def corpus_summary(
 
     structured["notes"] = notes
     return text_result("\n".join(lines), structured)
+
+
+def _scope_words(
+    channel: str | None,
+    tags: list[str],
+    published_after: str | None,
+    published_before: str | None,
+) -> str:
+    """`channel=GPU MODE · tags=topic:x`, the filters as the caller passed them."""
+    parts = [
+        f"{name}={value}"
+        for name, value in (
+            ("channel", channel),
+            ("tags", ",".join(tags)),
+            ("published_after", published_after),
+            ("published_before", published_before),
+        )
+        if value
+    ]
+    return " · ".join(parts)
 
 
 # The Following section is capped like every other section here, and low: it
