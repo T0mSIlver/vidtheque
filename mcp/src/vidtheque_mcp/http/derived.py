@@ -22,7 +22,8 @@ load rather than in a unit test:
 
 Reads deliberately do **not** touch the file's mtime: it costs a syscall per hit
 on the hot path, and recency is already tracked in memory for as long as the
-process lives.
+process lives. A hit does compare it with the source's, because a re-index
+rewrites keyframes under the ordinals the key is made of.
 """
 
 from __future__ import annotations
@@ -156,7 +157,7 @@ class DerivedCache:
         stored_quality = quality if quality is not None else DEFAULT_QUALITY
         key = variant_key(video, ordinal, width, stored_quality)
         async with self._single_flight(key):
-            cached = await self._take(key)
+            cached = await self._take(key, _mtime_ns(source))
             if cached is not None:
                 self.hits += 1
                 return Derived(path=cached)
@@ -196,14 +197,21 @@ class DerivedCache:
 
     # --------------------------------------------------------------- index
 
-    async def _take(self, key: str) -> Path | None:
-        """A hit, promoted to most-recent — or ``None``, forgetting a lost file."""
+    async def _take(self, key: str, source_mtime_ns: int | None) -> Path | None:
+        """A hit, promoted to most-recent — or ``None``, forgetting a lost file
+        or one older than its source."""
         async with self._index_lock:
             await self._scan_once()
             if key not in self._entries:
                 return None
             path = self.root / key
-            if not path.is_file():  # someone ran `rm -rf derived/`, which is allowed
+            variant_mtime_ns = _mtime_ns(path)
+            # `rm -rf derived/` is allowed. And a re-index rewrites keyframes
+            # under the same ordinals, so the key cannot tell old pixels from
+            # new: a variant not newer than its source is stale.
+            if variant_mtime_ns is None or (
+                source_mtime_ns is not None and variant_mtime_ns <= source_mtime_ns
+            ):
                 self._total -= self._entries.pop(key)
                 return None
             self._entries.move_to_end(key)
@@ -246,6 +254,13 @@ class DerivedCache:
         for key in live:
             self._entries.move_to_end(key)
         self._evict(protect="")
+
+
+def _mtime_ns(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
 
 
 def _scan(root: Path) -> list[tuple[str, int]]:

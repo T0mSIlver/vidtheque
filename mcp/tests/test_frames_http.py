@@ -126,6 +126,34 @@ def test_width_resizes_and_preserves_aspect(corpus: Path) -> None:
     assert len(response.content) < len(SOURCE) / 4
 
 
+def test_a_reindexed_frame_is_not_served_from_a_stale_variant(corpus: Path) -> None:
+    """A re-index rewrites keyframes under the same ordinals, so the variant
+    key alone cannot tell the old pixels from the new ones; a variant older
+    than its source is re-encoded, in this process and after a restart."""
+
+    def solid(colour: tuple[int, int, int]) -> bytes:
+        buffer = BytesIO()
+        Image.new("RGB", (SRC_W, SRC_H), colour).save(buffer, format="JPEG", quality=92)
+        return buffer.getvalue()
+
+    def centre(payload: bytes) -> tuple[int, int, int]:
+        with Image.open(BytesIO(payload)) as image:
+            return image.convert("RGB").getpixel((image.width // 2, image.height // 2))
+
+    def is_blue(rgb: tuple[int, int, int]) -> bool:
+        return rgb[2] > 200 and rgb[0] < 60
+
+    (keyframe,) = (corpus / "keyframes" / VIDEO_ID).glob("00000-*.jpg")
+    keyframe.write_bytes(solid((255, 0, 0)))
+    with client(make_settings(corpus)) as c:
+        assert centre(c.get(f"/frames/{FRAME_ID}.jpg?w=192").content)[0] > 200
+        keyframe.write_bytes(solid((0, 0, 255)))
+        assert is_blue(centre(c.get(f"/frames/{FRAME_ID}.jpg?w=192").content))
+    keyframe.write_bytes(solid((255, 0, 0)))
+    with client(make_settings(corpus)) as restarted:
+        assert centre(restarted.get(f"/frames/{FRAME_ID}.jpg?w=192").content)[0] > 200
+
+
 def test_an_arbitrary_width_snaps_to_the_nearest_the_product_uses(corpus: Path) -> None:
     """The clamps bounded the values; they never bounded the *key space*.
 
