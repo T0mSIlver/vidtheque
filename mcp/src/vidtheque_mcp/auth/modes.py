@@ -12,6 +12,7 @@ bundle the app assembles, rather than becoming per-route conditionals.
 
 from __future__ import annotations
 
+import hmac
 import time
 from dataclasses import dataclass, field
 
@@ -32,7 +33,9 @@ from .login import LoginThrottle, login_routes
 from .metadata import metadata_routes
 from .provider import VidthequeOAuthProvider
 from .store import AuthStore
-from .tokens import FrameUrlSigner, TokenIssuer, secrets_equal
+from .tokens import FrameUrlSigner, TokenIssuer, derive_key, secrets_equal
+
+_CREDENTIALS_SALT = b"vidtheque/credentials-fingerprint/v1"
 
 
 class StaticTokenVerifier(TokenVerifier):
@@ -84,6 +87,15 @@ class AuthBundle:
             self.store.close()
 
 
+def credentials_fingerprint(settings: Settings, secret: str) -> str:
+    """What a login session was made under: the mode, password and token,
+    keyed by the server secret so auth.db never holds a guessable hash."""
+    message = "\0".join(
+        (settings.auth_mode, settings.password or "", settings.static_token or "")
+    ).encode("utf-8", "surrogatepass")
+    return hmac.new(derive_key(secret, _CREDENTIALS_SALT), message, "sha256").hexdigest()
+
+
 def build_auth(settings: Settings) -> AuthBundle:
     secret = settings.resolve_secret()
     signer = FrameUrlSigner(secret, settings.frame_url_ttl_s)
@@ -108,6 +120,7 @@ def build_auth(settings: Settings) -> AuthBundle:
         # the table is not a credential.
         token_store = AuthStore(settings.auth_db_path)
         token_store.purge_expired()
+        token_store.bind_credentials(credentials_fingerprint(settings, secret))
         return AuthBundle(
             mode="token",
             token_verifier=StaticTokenVerifier(settings.static_token, resource),
@@ -135,6 +148,7 @@ def build_auth(settings: Settings) -> AuthBundle:
 
     store = AuthStore(settings.auth_db_path)
     store.purge_expired()
+    store.bind_credentials(credentials_fingerprint(settings, secret))
     issuer = TokenIssuer(
         secret=secret,
         issuer=settings.issuer_url,
