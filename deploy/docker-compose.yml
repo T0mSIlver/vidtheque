@@ -116,8 +116,9 @@ services:
       # The header those reads carry the visitor's address under. It MUST equal
       # the instance's VIDTHEQUE_TRUSTED_IP_HEADER — hence one variable, read
       # twice from the same `.env` — or every visitor this server reads for
-      # shares one rate-limit bucket.
-      VIDTHEQUE_CLIENT_IP_HEADER: ${VIDTHEQUE_TRUSTED_IP_HEADER:-CF-Connecting-IP}
+      # shares one rate-limit bucket. `-`, not `:-`: an empty value means no
+      # header here, as it does for mcp.
+      VIDTHEQUE_CLIENT_IP_HEADER: ${VIDTHEQUE_TRUSTED_IP_HEADER-CF-Connecting-IP}
     # Not published either, for the same reason as mcp: caddy reaches it as
     # http://web:3000 and nothing else has business talking to it.
     depends_on:
