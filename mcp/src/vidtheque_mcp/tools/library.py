@@ -635,6 +635,7 @@ async def video_summary(
     max_chars = clamp_text_chars(max_chars, 80, 1200, 300)
     span_start = parse_offset(t_start, "t_start")
     span_end = parse_offset(t_end, "t_end")
+    in_span = span_start is not None or span_end is not None
 
     row = await deps.db.read(lambda c: queries.lookup_video(c, video_id))
     if row is None:
@@ -712,11 +713,17 @@ async def video_summary(
     aim_chapter: float | None = None
 
     if include_chapters:
-        rows = await deps.db.read(lambda c: queries.chapters(c, vid, max_chapters))
-        total = await deps.db.read(lambda c: queries.chapter_count(c, vid))
+        rows = await deps.db.read(
+            lambda c: queries.chapters(c, vid, max_chapters, span_start, span_end)
+        )
+        total = await deps.db.read(
+            lambda c: queries.chapter_count(c, vid, span_start, span_end)
+        )
         lines.append("")
         if rows:
             lines.append(f"Chapters ({len(rows)} of {total}):")
+        elif in_span:
+            lines.append("Chapters: none in the requested t_start/t_end span.")
         else:
             # A bare `Chapters (0 of 0):` heading over nothing is the shape §3.7
             # forbids for tags, and it left a caller unable to tell "this video
@@ -761,7 +768,7 @@ async def video_summary(
         else:
             lines.append(
                 "Key texts: none — this video has no transcript cues"
-                + (" in the requested t_start/t_end span." if (span_start or span_end) else ".")
+                + (" in the requested t_start/t_end span." if in_span else ".")
             )
         for cue in rows:
             lines.append(
@@ -787,7 +794,10 @@ async def video_summary(
             lines.append(f"On-screen text highlights ({len(rows)}):")
         else:
             lines.append(
-                "On-screen text highlights: none — no keyframe of this video "
+                "On-screen text highlights: none — no keyframe in the requested "
+                "t_start/t_end span carries readable on-screen text."
+                if in_span
+                else "On-screen text highlights: none — no keyframe of this video "
                 "carries readable on-screen text."
             )
         for frame in rows:
@@ -809,7 +819,9 @@ async def video_summary(
         ]
 
     if include_links:
-        rows = await deps.db.read(lambda c: queries.video_links(c, vid, 10))
+        rows = await deps.db.read(
+            lambda c: queries.video_links(c, vid, 10, span_start, span_end)
+        )
         if rows:
             lines.append("")
             lines.append("Links:")
