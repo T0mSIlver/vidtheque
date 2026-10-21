@@ -1635,6 +1635,9 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
     indexing = int(
         conn.execute("SELECT COUNT(*) FROM videos WHERE index_state = 'indexing'").fetchone()[0]
     )
+    failed_videos = int(
+        conn.execute("SELECT COUNT(*) FROM videos WHERE index_state = 'failed'").fetchone()[0]
+    )
     active_jobs = int(
         conn.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0]
     )
@@ -1648,6 +1651,7 @@ def gaps(conn: sqlite3.Connection) -> dict[str, Any]:
         "transcript_no_ocr": transcript_no_ocr,
         "failed": failed,
         "indexing": indexing,
+        "failed_videos": failed_videos,
         "active_jobs": active_jobs,
         "recent_failed_jobs": recent_failed_jobs,
     }
