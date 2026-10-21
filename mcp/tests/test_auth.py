@@ -637,3 +637,43 @@ def test_non_ascii_credentials_are_refused_not_crashed(corpus: Path) -> None:
         signed = c.get(f"/frames/{FRAME_ID}.jpg?w=512&q=75&exp={expires_at}&sig=%C3%A9")
         codes = [r.status_code for r in (login, api, frame, signed)]
         assert codes == [401, 401, 401, 401]
+
+
+def test_a_registered_clients_consent_names_where_the_code_goes(corpus: Path) -> None:
+    """A DCR client_id is a random uuid, so the consent screen names the
+    redirect's host instead, and shows the self-chosen client_name only as
+    unverified."""
+    origin = {"Origin": "http://localhost:8080"}
+    with client(make_settings(corpus, auth_mode="oauth", password="pw")) as c:
+        registered = c.post(
+            "/register",
+            json={
+                "redirect_uris": ["https://notes.app.example.net/oauth/cb"],
+                "client_name": "Some Assistant",
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+            },
+        )
+        assert registered.status_code == 201, registered.text
+        client_id = registered.json()["client_id"]
+        resp = c.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "https://notes.app.example.net/oauth/cb",
+                "response_type": "code",
+                "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                "code_challenge_method": "S256",
+                "state": "s",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code in (302, 307), resp.text
+        rq = parse_qs(urlparse(resp.headers["location"]).query)["rq"][0]
+        consent = c.post("/auth/login", data={"rq": rq, "password": "pw"}, headers=origin)
+        assert consent.status_code == 200
+        page = consent.text
+        assert '<span class="host">notes.app.example.net</span>' in page
+        assert client_id not in page.split("<form")[0]
+        assert "Some Assistant" in page and "unverified" in page

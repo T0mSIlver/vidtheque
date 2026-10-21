@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 import secrets
 import time
+from urllib.parse import urlparse
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
@@ -21,7 +22,7 @@ from starlette.routing import Route
 
 from ..config import Settings
 from . import android
-from .cimd import display_host
+from .cimd import display_host, looks_like_cimd
 from .provider import OWNER_SUBJECT, VidthequeOAuthProvider
 from .tokens import secrets_equal
 
@@ -132,9 +133,24 @@ def login_routes(
 ) -> list[Route]:
     store = provider.store
 
-    def _consent_body(request_key: str, client_id: str, scopes: list[str]) -> str:
-        host = html.escape(display_host(client_id))
-        scope_text = html.escape(", ".join(scopes))
+    def _consent_body(request_key: str, pending: dict) -> str:
+        client_id = str(pending["client_id"])
+        scope_text = html.escape(", ".join(pending["scopes"]))
+        unverified = ""
+        if looks_like_cimd(client_id):
+            host = html.escape(display_host(client_id))
+        else:
+            # A DCR client_id is a random uuid: name where the code goes, and
+            # the name the client gave itself only as a claim.
+            target = urlparse(str(pending.get("redirect_uri") or ""))
+            host = html.escape(target.hostname or f"{target.scheme}:")
+            stored = store.load_client(client_id) or {}
+            if stored.get("client_name"):
+                unverified = (
+                    '<p class="muted">It registered as “'
+                    f"{html.escape(str(stored['client_name']))}”, a name nobody "
+                    "checked (unverified).</p>"
+                )
         # Any app can claim the Android client's scheme, so its consent cannot
         # vouch for the app; it asks the owner whether they started it.
         asking = (
@@ -143,7 +159,7 @@ def login_routes(
             '<p class="muted">Allow only if you just tapped Sign in in the app.</p>'
             if android.enabled(settings) and client_id == android.client_id(settings)
             else f'<p><span class="host">{host}</span> is asking to connect to your '
-            "vidtheque corpus.</p>"
+            f"vidtheque corpus.</p>{unverified}"
         )
         return (
             f"{asking}"
@@ -226,7 +242,7 @@ def login_routes(
         store.save_pending(request_key, pending)
         return _render(
             "Authorize access",
-            _consent_body(request_key, pending["client_id"], pending["scopes"]),
+            _consent_body(request_key, pending),
         )
 
     async def consent(request: Request) -> Response:
