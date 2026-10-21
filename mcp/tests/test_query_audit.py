@@ -424,3 +424,42 @@ async def test_job_status_structured_carries_deferral_cancel_and_next(
     assert sc["cancel_requested"] is True
     assert sc["notes"] and all(n in text for n in sc["notes"])
     assert sc["next"] == [ln for ln in text.splitlines() if ln.startswith("next:")][-1]
+
+
+# ------------------------------------------------------------------------- Q5
+
+
+@pytest.mark.parametrize("fmt", ["text", "tsv"])
+async def test_response_cap_binds_every_format_and_says_so(assembled: Assembled, fmt: str) -> None:
+    """Q5: the response cap applied to the text format only; TSV and
+    structuredContent were uncapped, and a capped text block still said
+    `(no more results)` over the dropped tail."""
+    import json
+
+    rows = [(1000 + i * 200, 1003 + i * 200, f"zebra item {i} " + "x" * 5000) for i in range(25)]
+    await _add_cues(assembled.deps.db, "kCc8FmEb1nY", rows)
+    cap = assembled.deps.settings.response_max_chars
+    r = await search.run(
+        assembled.deps,
+        q="zebra",
+        limit=50,
+        max_per_video=20,
+        max_text_chars=0,
+        format=fmt,
+        fields="video_id,start,text",
+    )
+    text = r.content[0].text
+    sc = r.structured_content
+    kept = len(sc["results"])
+    assert len(text) <= cap
+    assert 0 < kept < 20
+    assert sc["truncated"]["dropped"] == 20 - kept
+    assert sc["truncated"]["next_offset"] == kept
+    assert sc["pagination"]["has_more"] is True
+    assert "Response truncated" in text
+    assert "no more results" not in text
+    assert f"use offset={kept}" in text.splitlines()[0]
+    if fmt == "tsv":
+        assert len(text.split("\nvideo_id\tstart\ttext\n")[1].splitlines()) >= kept
+    # structuredContent holds the same kept results, not the whole page
+    assert len(json.dumps(sc["results"])) < 20 * 5000

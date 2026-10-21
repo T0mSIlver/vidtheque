@@ -236,6 +236,13 @@ it, items are dropped from the tail and the payload ends with:
 Response truncated at 60000 chars — 4 results dropped. Re-run with a smaller limit or max_text_chars.
 ```
 
+The cap binds every format (`text` and `tsv`), and the rest of the payload
+describes what was kept, not what was ranked (amended 2026-10-21): the header
+counts the kept results and points at `offset=<offset + kept>` instead of
+saying `(no more results)`, `structuredContent.results` holds the kept results
+only, `pagination.has_more` is true, and `truncated: {dropped, max_chars,
+next_offset}` says what the text's closing line says.
+
 ### 3.4 Pagination and `has_more`
 
 No tool ever runs a second count query. The rule:
