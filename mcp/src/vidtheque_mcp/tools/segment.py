@@ -113,23 +113,16 @@ async def run(
     # would cost a third of the transcript budget, the seven-character suffix
     # costs ~2%, and the base URL is on the line above.
     lines.append(f"TRANSCRIPT (cite one line: https://youtu.be/{video_id} + the ?t= printed on it)")
-    used = 0
-    printed = 0
-    binding = "window"
-    for cue in transcript:
-        text = str(cue["text"])
-        if max_text_chars and used + len(text) > max_text_chars:
-            binding = "max_text_chars"
-            break
+    lo_i, hi_i, used, binding = _fit_around(transcript, centre, max_text_chars)
+    printed = transcript[lo_i:hi_i]
+    for cue in printed:
         speaker = f" {cue['speaker']}:" if cue["speaker"] else ""
         lines.append(
-            f"[{clock(cue['start_s'])} ?t={deeplink_t(cue['start_s'], lead)}]{speaker} {text}"
+            f"[{clock(cue['start_s'])} ?t={deeplink_t(cue['start_s'], lead)}]{speaker} {cue['text']}"
         )
-        used += len(text)
-        printed += 1
-    if transcript:
-        first_id = int(transcript[0]["cue_id"])
-        last_id = int(transcript[min(printed, len(transcript)) - 1]["cue_id"])
+    if printed:
+        first_id = int(printed[0]["cue_id"])
+        last_id = int(printed[-1]["cue_id"])
         budget = "under" if binding == "window" else "capped by"
         lines.append(
             f"(cues {first_id}-{last_id} · {used:,} chars, {budget} the "
@@ -201,10 +194,52 @@ async def run(
                 # One key, and a conformant client never composes a URL at all.
                 "link": deeplink(video_id, c["start_s"], lead),
             }
-            for c in transcript[:printed]
+            for c in printed
         ],
         "frame_ids": frame_ids,
         "chapter": dict(chapter) if chapter is not None else None,
         "binding_cap": binding,
     }
     return text_result("\n".join(lines), structured)
+
+
+def _fit_around(transcript, centre: float, max_text_chars: int) -> tuple[int, int, int, str]:
+    """The contiguous cues `[lo, hi)` the budget affords, grown outward from t.
+
+    Filling forward from the window's start could end before t. The cue at t
+    (else the nearest one) is always printed whole, even over budget, like
+    get-transcript's `_fit`; then the nearer neighbour is added while it fits.
+    """
+    if not transcript:
+        return 0, 0, 0, "window"
+    lengths = [len(str(c["text"])) for c in transcript]
+    if not max_text_chars:
+        return 0, len(transcript), sum(lengths), "window"
+
+    def distance(i: int) -> float:
+        cue = transcript[i]
+        return max(float(cue["start_s"]) - centre, centre - float(cue["end_s"]), 0.0)
+
+    at = min(range(len(transcript)), key=lambda i: (distance(i), i))
+    lo, hi, used = at, at + 1, lengths[at]
+    left_open, right_open = lo > 0, hi < len(transcript)
+    binding = "max_text_chars" if used > max_text_chars else "window"
+    while left_open or right_open:
+        go_left = left_open and (not right_open or distance(lo - 1) <= distance(hi))
+        i = lo - 1 if go_left else hi
+        if used + lengths[i] > max_text_chars:
+            binding = "max_text_chars"
+            # that side is closed: skipping a cue would break contiguity
+            if go_left:
+                left_open = False
+            else:
+                right_open = False
+            continue
+        used += lengths[i]
+        if go_left:
+            lo -= 1
+            left_open = lo > 0
+        else:
+            hi += 1
+            right_open = hi < len(transcript)
+    return lo, hi, used, binding
