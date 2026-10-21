@@ -2490,3 +2490,117 @@ def test_the_jobs_payloads_carry_no_rendered_string_but_the_one_sentence(
         raw = json.dumps(payload)
         assert not ISO_STAMP.search(raw)
         assert not SPOKEN_DURATION.search(raw)
+
+
+# ------------------------------------------------ the cap flags, at the cap
+
+
+@pytest.mark.parametrize("extra, capped", [(0, False), (1, True)])
+def test_a_job_with_exactly_item_cap_items_is_not_capped(
+    tmp_path: Path, extra: int, capped: bool
+) -> None:
+    """`items_capped` says rows were left out, so a job of exactly
+    `ITEM_CAP` items, every one on the page, is not capped."""
+    from vidtheque_mcp.dashboard.read_models import ITEM_CAP
+
+    data = corpus_dir(tmp_path)
+    n = ITEM_CAP + extra
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, priority, "
+            "state, created_at) VALUES (1, 'job_manyitems', 'index', '{}', ?, 100, "
+            "'done', unixepoch() - 60)",
+            (n,),
+        )
+        job = conn.execute("SELECT id FROM jobs WHERE public_id = 'job_manyitems'").fetchone()[0]
+        conn.executemany(
+            "INSERT INTO job_items (job_id, seq, source_url, state) VALUES (?, ?, ?, 'done')",
+            [(job, seq, f"https://youtu.be/x{seq:010d}") for seq in range(n)],
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    with make_client(tmp_path) as client:
+        body = read(client, f"{ROOT}/api/jobs/job_manyitems")
+    assert body["items_capped"] is capped
+    assert len(body["items"]) == ITEM_CAP
+
+
+@pytest.mark.parametrize("extra, capped", [(0, False), (1, True)])
+def test_a_page_with_exactly_ocr_line_cap_lines_is_not_capped(
+    tmp_path: Path, extra: int, capped: bool
+) -> None:
+    """Same rule for the frames page's line budget: spent exactly is not cut."""
+    data = corpus_dir(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        keyframe = conn.execute(
+            "SELECT k.id, k.video_id, k.t_s FROM keyframes k "
+            "JOIN videos v ON v.id = k.video_id "
+            "WHERE v.source_id = 'kCc8FmEb1nY' ORDER BY k.ord DESC LIMIT 1"
+        ).fetchone()
+        have = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM ocr_lines WHERE video_id = ?", (keyframe["video_id"],)
+            ).fetchone()[0]
+        )
+        start = int(
+            conn.execute(
+                "SELECT COALESCE(MAX(line_no), -1) + 1 FROM ocr_lines WHERE keyframe_id = ?",
+                (keyframe["id"],),
+            ).fetchone()[0]
+        )
+        conn.executemany(
+            "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+            "x0, y0, x1, y1) VALUES (?, ?, ?, ?, 'line', 0.9, 0, 0, 1, 1)",
+            [
+                (keyframe["id"], keyframe["video_id"], keyframe["t_s"], start + i)
+                for i in range(OCR_LINE_CAP + extra - have)
+            ],
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    with make_client(tmp_path) as client:
+        body = read(client, f"{LIBRARY}/{FIRST}?frames=96")
+    assert body["frames"]["ocr_lines_capped"] is capped
+    sent = sum(len(frame["lines"]) for frame in body["frames"]["frames"])
+    assert sent == OCR_LINE_CAP
+
+
+@pytest.mark.parametrize("extra, capped", [(0, False), (1, True)])
+def test_a_video_with_exactly_shot_cap_shots_is_not_capped(
+    tmp_path: Path, extra: int, capped: bool
+) -> None:
+    """And for the shot timeline."""
+    from vidtheque_mcp.dashboard.read_models import SHOT_CAP
+
+    data = corpus_dir(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        video = conn.execute(
+            "SELECT id FROM videos WHERE source_id = 'kCc8FmEb1nY'"
+        ).fetchone()["id"]
+        conn.execute("DELETE FROM ocr_lines WHERE video_id = ?", (video,))
+        conn.execute("DELETE FROM ocr_frames WHERE video_id = ?", (video,))
+        conn.execute("DELETE FROM keyframes WHERE video_id = ?", (video,))
+        conn.executemany(
+            "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, "
+            "phash, sharpness, width, height, jpeg_path, jpeg_bytes, ocr_state) "
+            "VALUES (?, ?, ?, ?, ?, ?, 0, 1.0, 640, 360, ?, 100, 'done')",
+            [
+                (video, i, float(i), i, float(i), float(i) + 1.0, f"keyframes/kCc8FmEb1nY/{i:05d}.jpg")
+                for i in range(SHOT_CAP + extra)
+            ],
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    with make_client(tmp_path) as client:
+        body = read(client, f"{LIBRARY}/{FIRST}")
+    assert body["shots"]["capped"] is capped
+    assert len(body["shots"]["shots"]) == SHOT_CAP

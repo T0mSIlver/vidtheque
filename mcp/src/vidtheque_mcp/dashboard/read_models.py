@@ -1105,7 +1105,11 @@ async def video_detail_reads(
     stages = await db.read(lambda c: queries.video_stages(c, vid))
     counts = await db.read(lambda c: queries.per_video_counts(c, vid))
     origins = await db.read(lambda c: queries.cue_origins(c, vid))
-    shots = await db.read(lambda c: queries.shot_timeline(c, vid, SHOT_CAP))
+    # One row past each cap, so `*_capped` means rows were left out, not that
+    # the cap was reached.
+    shots = await db.read(lambda c: queries.shot_timeline(c, vid, SHOT_CAP + 1))
+    shots_capped = len(shots) > SHOT_CAP
+    shots = shots[:SHOT_CAP]
     frame_rows = await db.read(
         lambda c: queries.keyframe_page(c, vid, frame_offset, frame_page)
     )
@@ -1127,9 +1131,16 @@ async def video_detail_reads(
 
     ocr_lines = await db.read(
         lambda c: queries.ocr_for_frames(
-            c, [int(f["id"]) for f in frame_rows], OCR_LINE_CAP
+            c, [int(f["id"]) for f in frame_rows], OCR_LINE_CAP + 1
         )
     )
+    ocr_lines_capped = sum(len(v) for v in ocr_lines.values()) > OCR_LINE_CAP
+    if ocr_lines_capped:
+        # Rows come in (keyframe_id, line_no) order: the extra one is the last.
+        last = next(reversed(ocr_lines))
+        ocr_lines[last].pop()
+        if not ocr_lines[last]:
+            del ocr_lines[last]
     return VideoDetailReads(
         row=row,
         vid=vid,
@@ -1139,7 +1150,7 @@ async def video_detail_reads(
         counts=counts,
         origins=origins,
         shots=shot_rows(deps, video_id, shots),
-        shots_capped=len(shots) >= SHOT_CAP,
+        shots_capped=shots_capped,
         frames=frame_cards(deps, video_id, frame_rows, ocr_lines),
         frames_more=frames_more,
         frame_page=frame_page,
@@ -1147,7 +1158,7 @@ async def video_detail_reads(
         # The honest half of the double cap: when the *page's* line budget is
         # spent the per-frame counts under-report by definition, so the surface
         # says so rather than showing a short list as if it were the whole one.
-        ocr_lines_capped=sum(len(v) for v in ocr_lines.values()) >= OCR_LINE_CAP,
+        ocr_lines_capped=ocr_lines_capped,
         cue_totals=cue_totals,
         tags=tag_map.get(vid, []),
         history=[
@@ -1585,7 +1596,9 @@ async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any]
     internal_id = int(row["id"])
     now = int(time.time())
 
-    item_rows = await db.read(lambda c: jobs_store.job_items(c, internal_id, ITEM_CAP))
+    item_rows = await db.read(lambda c: jobs_store.job_items(c, internal_id, ITEM_CAP + 1))
+    items_capped = len(item_rows) > ITEM_CAP
+    item_rows = item_rows[:ITEM_CAP]
     counts = await db.read(lambda c: jobs_store.item_counts(c, internal_id))
     error_counts = await db.read(lambda c: jobs_store.item_error_counts(c, internal_id))
     degraded_rows = await db.read(
@@ -1627,7 +1640,7 @@ async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any]
             row, now, degraded=len({d["seq"] for d in degraded}), redact=redact
         ),
         "items": items,
-        "items_capped": len(item_rows) >= ITEM_CAP,
+        "items_capped": items_capped,
         "counts": counts,
         "error_counts": error_counts,
         "degraded": degraded,
