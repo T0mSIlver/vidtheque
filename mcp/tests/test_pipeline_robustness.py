@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx2 as httpx
 import pytest
 
 from vidtheque_mcp.config import Settings
@@ -19,9 +20,17 @@ from vidtheque_mcp.pipeline import keyframes as keyframes_module
 from vidtheque_mcp.pipeline import runner as runner_module
 from vidtheque_mcp.pipeline.runner import LIFECYCLE_RETRY_S
 from vidtheque_mcp.pipeline.settings import PipelineSettings
+from vidtheque_mcp.pipeline.worker_client import HTTPWorkerClient
 from vidtheque_mcp.tools import indexing
 
-from .pipeline_fakes import INFO, PLAYLIST_URL, VIDEO_URL, FakeWorker, canned_source
+from .pipeline_fakes import (
+    INFO,
+    PLAYLIST_URL,
+    VIDEO_URL,
+    FakeWorker,
+    canned_source,
+    unit_vector,
+)
 from .test_job_recovery import close
 from .test_pipeline_e2e import FAST, Harness, harness, structured
 
@@ -754,6 +763,76 @@ async def test_one_undecodable_frame_is_skipped_and_the_rest_still_index(
         assert worker.calls.count("embed_images:3") == 1
         assert worker.calls.count("embed_images:1") >= 2
     finally:
+        await close(parts)
+
+
+class _RealUploads(FakeWorker):
+    """OCR and frame embeddings through the real HTTP client's upload path,
+    against an in-process transport; everything else stays fake."""
+
+    def __init__(self, missing_ord: int) -> None:
+        super().__init__()
+        self.missing_ord = missing_ord
+        self.sent: list[int] = []
+        self.http = HTTPWorkerClient("http://worker:8081")
+        self.http._client = httpx.AsyncClient(
+            base_url="http://worker:8081", transport=httpx.MockTransport(self._answer)
+        )
+
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        count = request.content.count(b'filename="')
+        self.sent.append(count)
+        if request.url.path == "/v1/ocr":
+            item = {"text": "nvidia-smi", "confidence": 0.9, "bbox": [0, 0, 10, 10]}
+            data = [{"index": i, "items": [item]} for i in range(count)]
+            return httpx.Response(200, json={"data": data, "model": "rapidocr-default"})
+        data = [{"index": i, "embedding": unit_vector(str(i), self.frame_dim)} for i in range(count)]
+        return httpx.Response(
+            200, json={"data": data, "model": self.frame_model, "dimensions": self.frame_dim}
+        )
+
+    def _lose_the_file(self, images) -> None:
+        for path in images:
+            if int(path.name.split("-")[0]) == self.missing_ord and path.exists():
+                path.unlink()
+
+    async def ocr(self, images, *, min_confidence=None):
+        self._lose_the_file(images)
+        return await self.http.ocr(images, min_confidence=min_confidence)
+
+    async def embed_images(self, images, *, model=None, max_num_patches=None):
+        return await self.http.embed_images(
+            images, model=model, max_num_patches=max_num_patches
+        )
+
+
+async def test_a_keyframe_missing_on_disk_is_skipped_not_a_worker_outage(
+    settings: Settings, clip: Path
+) -> None:
+    """Opening the uploads sat inside the transport `try`, so one missing JPEG
+    was a connect failure: backoff sleeps, then `WorkerUnavailable`, and the
+    whole OCR and frame stages soft-failed as "worker down". It is one frame."""
+    worker = _RealUploads(missing_ord=1)
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["ocr"]["state"] == "done"
+        assert stages["frame_embed"]["state"] == "done"
+        frames = {int(row["ord"]): row for row in await parts.rows("SELECT * FROM keyframes")}
+        assert frames[1]["ocr_state"] == "failed"
+        assert frames[0]["ocr_state"] == "done" and frames[2]["ocr_state"] == "done"
+        embedded = {
+            int(row["keyframe_id"])
+            for row in await parts.rows("SELECT keyframe_id FROM vec_frames")
+        }
+        assert embedded == {int(frames[0]["id"]), int(frames[2]["id"])}
+        for stage in ("ocr", "frame_embed"):
+            assert "1 frame(s) skipped" in str(stages[stage]["error"])
+    finally:
+        await worker.http.aclose()
         await close(parts)
 
 
