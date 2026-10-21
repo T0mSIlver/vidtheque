@@ -1469,6 +1469,23 @@ def test_the_sign_in_backs_off_whatever_address_the_guesses_claim(tmp_path: Path
         assert "set-cookie" not in held.headers
 
 
+def test_a_sign_in_ends_when_the_secret_it_was_made_with_changes(tmp_path: Path) -> None:
+    """A session row outlives a restart, but not a new password or token: the
+    store wipes `login_sessions` at boot when the credentials differ."""
+    from vidtheque_mcp.auth.login import SESSION_COOKIE
+
+    health = f"{ROOT}/api/health"
+    with owner_client(tmp_path) as first:
+        sign_in(first)
+        sid = first.cookies[SESSION_COOKIE]
+    with owner_client(tmp_path) as same:
+        same.cookies.set(SESSION_COOKIE, sid)
+        assert same.get(health).status_code == 200
+    with owner_client(tmp_path, password="a-new-password") as rotated:
+        rotated.cookies.set(SESSION_COOKIE, sid)
+        assert rotated.get(health).status_code == 401
+
+
 # ------------------------------------------- 9. the projection (phase 4)
 
 # `VIDTHEQUE_PUBLIC_READONLY=1` — the deployment Tom ships through the tunnel:

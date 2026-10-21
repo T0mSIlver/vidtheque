@@ -1,7 +1,7 @@
 """SQLite persistence for the authorization server.
 
 A separate file from the corpus DB, so a corpus rebuild, copy or restore never
-touches credentials (research doc §7.2). Four tables and no ORM.
+touches credentials (research doc §7.2). Six tables and no ORM.
 
 **CIMD clients are never stored.** Only DCR registrations land in
 ``oauth_clients``; a Client ID Metadata Document is fetched, validated and
@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS login_sessions (
   sid        TEXT PRIMARY KEY,
   subject    TEXT NOT NULL,
   expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS pending_authorizations (
@@ -204,6 +209,22 @@ class AuthStore:
         if row is None or int(row["expires_at"]) < int(time.time()):
             return None
         return str(row["subject"])
+
+    def bind_credentials(self, fingerprint: str) -> None:
+        """Wipe every login session when the credentials they were made with
+        changed since the last boot: a new password or token must sign out
+        whoever held the old one. `fingerprint` is a keyed hash, never a secret.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = 'credentials'"
+        ).fetchone()
+        if row is not None and row["value"] == fingerprint:
+            return
+        self._conn.execute("DELETE FROM login_sessions")
+        self._conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('credentials', ?)",
+            (fingerprint,),
+        )
 
     # ------------------------------------------- pending /authorize state
 
