@@ -82,7 +82,7 @@ def _matches(supplied: str, expected: str) -> bool:
     return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
 
 
-class _LoginThrottle:
+class LoginThrottle:
     """A global backoff on wrong passwords.
 
     The root limiter passes `/auth/*` through, and this endpoint mints an owner
@@ -91,6 +91,9 @@ class _LoginThrottle:
     there is exactly one password here, so spreading guesses across addresses
     must not buy anything, and locking out "everyone" means locking out one
     person who knows their own password and can wait ten seconds.
+
+    One per app, on the `AuthBundle`: `/dashboard/login` checks the same
+    secret and pays the same backoff.
     """
 
     def __init__(self, threshold: int = 5, base_delay_s: float = 2.0) -> None:
@@ -115,8 +118,6 @@ class _LoginThrottle:
         self._next_allowed = 0.0
 
 
-_throttle = _LoginThrottle()
-
 
 def _same_origin(request: Request, public_url: str) -> bool:
     """Refuse a form post that another site made the browser send.
@@ -137,7 +138,9 @@ def _same_origin(request: Request, public_url: str) -> bool:
     return bool(origin) and origin.rstrip("/") == public_url.rstrip("/")
 
 
-def login_routes(settings: Settings, provider: VidthequeOAuthProvider) -> list[Route]:
+def login_routes(
+    settings: Settings, provider: VidthequeOAuthProvider, throttle: LoginThrottle
+) -> list[Route]:
     store = provider.store
 
     def _consent_body(request_key: str, client_id: str, scopes: list[str]) -> str:
@@ -195,7 +198,7 @@ def login_routes(settings: Settings, provider: VidthequeOAuthProvider) -> list[R
         form = await request.form()
         request_key = str(form.get("rq", ""))
         supplied = str(form.get("password", ""))
-        delay = _throttle.retry_after()
+        delay = throttle.retry_after()
         if delay:
             return _render(
                 "Sign in to vidtheque",
@@ -203,11 +206,11 @@ def login_routes(settings: Settings, provider: VidthequeOAuthProvider) -> list[R
                 status=429,
             )
         if not settings.password or not _matches(supplied, settings.password):
-            _throttle.record_failure()
+            throttle.record_failure()
             return _render(
                 "Sign in to vidtheque", _login_body(request_key, "bad"), status=401
             )
-        _throttle.reset()
+        throttle.reset()
         sid = secrets.token_urlsafe(32)
         store.save_session(sid, OWNER_SUBJECT, int(time.time()) + settings.login_session_ttl_s)
         response = _consent_page(request_key, request)

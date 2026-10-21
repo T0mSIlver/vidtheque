@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import math
 import posixpath
 import re
 import secrets
@@ -304,9 +305,24 @@ async def login(request: Request) -> Response:
     if store is None:  # pragma: no cover - every write-side mode builds one
         return auth_required(settings.auth_mode)
 
+    # The same global backoff as `/auth/login`: the per-address bucket in
+    # front of this route keys on a header the client sets.
+    throttle = assembled.auth.login_throttle
+    delay = throttle.retry_after()
+    if delay:
+        return _refusal_json(
+            {
+                "code": "E_RATE_LIMIT",
+                "message": "Too many wrong secrets.",
+                "next": "wait, then sign in again.",
+                "retry_after_s": max(1, math.ceil(delay)),
+            }
+        )
     supplied = str(form.get("password") or "")
     if not _accepted(settings, supplied):
+        throttle.record_failure()
         return _bad_credential()
+    throttle.reset()
 
     sid = secrets.token_urlsafe(32)
     ttl = settings.login_session_ttl_s
