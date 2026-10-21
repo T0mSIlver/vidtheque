@@ -200,6 +200,8 @@ async def transcriptions(
         align = "word" in {g.strip().lower() for g in timestamp_granularities}
     bias = _context_bias(context_bias)
 
+    # Before the spool: a full queue should not first cost a disk copy.
+    manager.check_capacity()
     path = await _spool(file)
     # Whoever runs last deletes the file: an abandoned request returns while
     # its job may already be reading it in the worker thread.
@@ -371,6 +373,7 @@ async def image_embeddings(
     if model and configured and model != configured:
         log.info("ignoring requested model=%s; worker serves %s", model, configured)
 
+    manager.check_capacity()
     blobs = [await upload.read() for upload in file]
     if any(not blob for blob in blobs):
         raise HTTPException(status_code=400, detail="one or more uploads were empty")
@@ -490,6 +493,7 @@ async def ocr(
         )
 
     manager = get_manager(request)
+    manager.check_capacity()
     blobs = [await upload.read() for upload in file]
     filenames = [upload.filename for upload in file]
     if any(not blob for blob in blobs):
