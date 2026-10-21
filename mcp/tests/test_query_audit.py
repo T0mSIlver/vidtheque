@@ -102,3 +102,36 @@ async def test_segment_refuses_a_video_that_is_not_indexed(assembled: Assembled)
         )
         r = await segment.run(assembled.deps, video_id="eMlx5fFNoYc", t=30)
         assert r.is_error and r.structured_content["code"] == code
+
+
+# ------------------------------------------------------------------------ Q13
+
+
+async def test_like_wildcards_in_name_filters_are_literal(assembled: Assembled) -> None:
+    """Q13: `channel="_"` matched every channel (LIKE wildcard), `%` and
+    `video_title=` too."""
+    from vidtheque_mcp.tools import library
+
+    for wildcard in ("_", "%"):
+        r = await library.list_videos(assembled.deps, channel=wildcard)
+        assert r.structured_content.get("videos", []) == []
+        r = await search.run(assembled.deps, q="cache", video_title=wildcard)
+        assert r.structured_content.get("results", []) == []
+    # A literal underscore still matches where it occurs.
+    await assembled.deps.db.write(
+        lambda c: c.execute("UPDATE videos SET channel_name='gpu_mode' WHERE public_id='zduSFxRajkE'")
+    )
+    r = await library.list_videos(assembled.deps, channel="gpu_mode")
+    assert [v["video_id"] for v in r.structured_content["videos"]] == ["zduSFxRajkE"]
+
+
+async def test_speaker_wildcard_is_literal(assembled: Assembled) -> None:
+    """Q13: the speaker resolver had the same unescaped LIKE."""
+    from vidtheque_mcp.db import queries
+
+    def write(c):
+        c.execute("INSERT INTO speakers (label) VALUES ('SPEAKER_00')")
+
+    await assembled.deps.db.write(write)
+    assert await assembled.deps.db.read(lambda c: queries.resolve_speakers(c, "%")) == []
+    assert await assembled.deps.db.read(lambda c: queries.resolve_speakers(c, "speaker_0"))
