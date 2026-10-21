@@ -29,7 +29,7 @@ from starlette.routing import Route
 from ..config import OFFLINE_SCOPE, READ_SCOPE, WRITE_SCOPE, Settings
 from .android import android_routes
 from .cimd import CIMDFetcher
-from .login import login_routes
+from .login import LoginThrottle, login_routes
 from .metadata import metadata_routes
 from .provider import VidthequeOAuthProvider
 from .store import AuthStore
@@ -77,6 +77,8 @@ class AuthBundle:
     frame_signer: FrameUrlSigner | None = None
     store: AuthStore | None = None
     provider: VidthequeOAuthProvider | None = None
+    # Shared by `/auth/login` and `/dashboard/login`: one secret, one backoff.
+    login_throttle: LoginThrottle = field(default_factory=LoginThrottle)
 
     def close(self) -> None:
         if self.store is not None:
@@ -173,6 +175,7 @@ def build_auth(settings: Settings) -> AuthBundle:
         if route.path != "/.well-known/oauth-authorization-server"
     ]
 
+    throttle = LoginThrottle()
     return AuthBundle(
         mode="oauth",
         token_verifier=JWTTokenVerifier(provider),
@@ -180,10 +183,11 @@ def build_auth(settings: Settings) -> AuthBundle:
         routes=[
             *metadata_routes(settings),
             *android_routes(settings),
-            *login_routes(settings, provider),
+            *login_routes(settings, provider, throttle),
             *sdk_routes,
         ],
         frame_signer=signer,
         store=store,
         provider=provider,
+        login_throttle=throttle,
     )

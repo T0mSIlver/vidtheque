@@ -601,3 +601,19 @@ def test_android_app_signs_in_through_its_scheme(corpus: Path) -> None:
         trade = {"grant_type": "authorization_code", "code": query["code"][0], "redirect_uri": redirect, "client_id": app_id}
         assert c.post("/token", data={**trade, "code_verifier": "x" * 43}).status_code == 400
         assert "access_token" in c.post("/token", data={**trade, "code_verifier": verifier}).json()
+
+
+def test_the_two_sign_ins_share_one_backoff(corpus: Path) -> None:
+    """`/dashboard/login` and `/auth/login` take the same password, so wrong
+    guesses on one hold the other back too."""
+    origin = {"Origin": "http://localhost:8080"}
+    with client(make_settings(corpus, auth_mode="oauth", password="pw")) as c:
+        for n in range(5):
+            wrong = c.post(
+                "/dashboard/login",
+                data={"password": f"guess-{n}"},
+                headers={**origin, "CF-Connecting-IP": f"203.0.113.{n + 1}"},
+            )
+            assert wrong.status_code == 401
+        held = c.post("/auth/login", data={"rq": "", "password": "pw"}, headers=origin)
+        assert held.status_code == 429

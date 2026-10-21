@@ -1446,6 +1446,29 @@ def test_the_sign_in_write_has_its_own_much_tighter_bucket(tmp_path: Path) -> No
         assert client.get(LIBRARY).status_code in (200, 401)
 
 
+def test_the_sign_in_backs_off_whatever_address_the_guesses_claim(tmp_path: Path) -> None:
+    """The per-address bucket keys on a header a client sets, so the guesses
+    also pay the global backoff `/auth/login` has: after five wrong secrets
+    the right one waits too, from any claimed address."""
+    with owner_client(tmp_path) as client:
+        for n in range(5):
+            wrong = client.post(
+                f"{ROOT}/login",
+                data={"password": f"guess-{n}"},
+                headers={**SAME_ORIGIN, "CF-Connecting-IP": f"203.0.113.{n + 1}"},
+            )
+            assert wrong.status_code == 401
+        held = client.post(
+            f"{ROOT}/login",
+            data={"password": PASSWORD},
+            headers={**SAME_ORIGIN, "CF-Connecting-IP": "198.51.100.7", "accept": "application/json"},
+        )
+        assert held.status_code == 429
+        assert held.json()["error"] == "E_RATE_LIMIT"
+        assert int(held.headers["Retry-After"]) >= 1
+        assert "set-cookie" not in held.headers
+
+
 # ------------------------------------------- 9. the projection (phase 4)
 
 # `VIDTHEQUE_PUBLIC_READONLY=1` — the deployment Tom ships through the tunnel:
