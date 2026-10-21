@@ -463,3 +463,53 @@ async def test_response_cap_binds_every_format_and_says_so(assembled: Assembled,
         assert len(text.split("\nvideo_id\tstart\ttext\n")[1].splitlines()) >= kept
     # structuredContent holds the same kept results, not the whole page
     assert len(json.dumps(sc["results"])) < 20 * 5000
+
+
+# ------------------------------------------------------------------------- Q6
+
+
+async def test_ranking_does_not_move_with_max_text_chars(assembled: Assembled) -> None:
+    """Q6: an OCR hit's text was the FTS snippet, or the whole frame at
+    max_text_chars=0, and that text fed the OCR/transcript dedup and the match
+    scores — so the same query ranked differently at a different display
+    budget (§3.6: same query, same order, same scores)."""
+    P = " ".join(f"word{i}" for i in range(60)) + " quokka " + " ".join(
+        f"word{i}" for i in range(60, 120)
+    )
+    A = " ".join(f"intro{i}" for i in range(80))
+    B = " | ".join(
+        f"extra line {i} " + " ".join(f"tail{i}x{j}" for j in range(8)) for i in range(10)
+    )
+    await _add_cues(assembled.deps.db, "kCc8FmEb1nY", [(498.0, 503.0, A + " " + P)])
+
+    def write(c):
+        vid = c.execute("SELECT id FROM videos WHERE public_id='kCc8FmEb1nY'").fetchone()[0]
+        cur = c.execute(
+            "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, "
+            "phash, sharpness, width, height, jpeg_path, jpeg_bytes, ocr_state) "
+            "VALUES (?, 2, 500.0, 7, 500.0, 505.0, 4242, 10.0, 1280, 720, 'x', 1, 'done')",
+            (vid,),
+        )
+        c.execute(
+            "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) VALUES (?, ?, 500.0, ?)",
+            (cur.lastrowid, vid, P + " | " + B),
+        )
+
+    await assembled.deps.db.write(write)
+    seen = []
+    for mtc in (1000, 0):
+        sc = (await search.run(assembled.deps, q="quokka", max_text_chars=mtc, limit=10)).structured_content
+        seen.append(
+            (
+                sc["pagination"]["approx_total"],
+                [(x["source"], x["start"], x["frame_id"], x["score"]) for x in sc["results"]],
+            )
+        )
+    assert seen[0] == seen[1]
+    # and the opt-out still shows an OCR hit's whole frame
+    ocr = [
+        (await search.run(assembled.deps, q="quokka", content_type="ocr", max_text_chars=mtc))
+        .structured_content["results"][0]["text"]
+        for mtc in (1000, 0)
+    ]
+    assert "tail9x7" not in ocr[0] and "tail9x7" in ocr[1]

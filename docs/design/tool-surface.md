@@ -214,7 +214,11 @@ loses the payoff of a transcript sentence; both ends carry signal.
   terms — 64 tokens, line separators (` | `) intact — rather than the whole
   slide middle-truncated, which is as likely to cut the match out as to keep it.
   `max_text_chars=0` still means everything: the frame's every line, in reading
-  order. `get-frames` on the `frame_id` in the hit shows the frame itself.
+  order. `get-frames` on the `frame_id` in the hit shows the frame itself. That
+  is display only (amended 2026-10-21): the OCR/transcript dedup and the match
+  scores read the snippet at every budget, so the result set, order and scores
+  do not move with `max_text_chars`. A slide merged into a narrated passage whose
+  text was longer shows the passage; the slide stays reachable by its `frame_id`.
 - **`search`'s transcript leg truncates around the match, not through it**
   (added 2026-08-09). A clustered segment is a passage, not a sentence, so
   middle-truncation's premise — the signal is at both ends — is wrong for it: at
