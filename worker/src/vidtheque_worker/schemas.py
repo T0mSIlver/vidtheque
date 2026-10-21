@@ -280,7 +280,8 @@ class ErrorBody(BaseModel):
             "identically; `backend_crashed`, `insufficient_vram`, "
             "`gpu_lease_failed`, `backend_unavailable`, `worker_busy`, "
             "`worker_shutting_down` and `worker_not_ready` (503, with "
-            "`Retry-After`) all mean not-now rather than never."
+            "`Retry-After`) all mean not-now rather than never; `client_closed` "
+            "(499) answers a caller that already hung up, so nobody reads it."
         )
     )
 

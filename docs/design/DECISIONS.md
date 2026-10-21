@@ -540,6 +540,12 @@ The route table is `docs/design/frontend-migration.md` §1a.
   0 MB) are outside the bracket for the same reason in reverse: they never
   contend, so they must never stop a co-tenant. Measured in
   `research/gpu-validation-2026-08-08.md` §5.2–5.3.
+  *Amended 2026-10-21:* a lease-taking load acquires **before** VRAM
+  admission, since the hook's whole job is to free the co-tenant's VRAM that
+  admission measures; an eviction made to fit such a load keeps the lease
+  rather than releasing and re-acquiring it. The cost: when something other
+  than the co-tenant holds the card, every refused request stops and restarts
+  the co-tenant once.
 
 ## Amended 2026-08-11 (repo cleanup; flagged in the cleanup PR for Tom)
 
