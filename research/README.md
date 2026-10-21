@@ -45,3 +45,7 @@ This index is the one navigational file — when you add a doc, add its line.
 ## Release
 
 - `release-staging-2026-08-11.md` — the fresh LXC, the tunnel, the migration reasoning (executed 2026-08-11; the launch checklist it fed has been retired, its durable rules folded into `docs/LESSONS.md`)
+
+## Audits
+
+- `audit-2026-10-21.md` — code audit of mcp, worker and web: about 50 findings ranked, what was fixed in #213–#216 and the query PR, and what is still open

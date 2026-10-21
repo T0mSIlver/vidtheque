@@ -13,6 +13,27 @@ and anything marked **[Tom]** is a decision before it is a ticket.
 
 ## Open
 
+### 2026-10-21: what the code audit left open
+
+`research/audit-2026-10-21.md` has the findings and the evidence. Every fix
+landed; these four items each need a decision first.
+
+- **[Tom]** A long multi-item job starves follow checks and the nightly ticks,
+  because `jobs/runner._drive` never yields between items. This contradicts
+  following.md "a check never waits on indexing". The smallest fix: between
+  items, run `before_claim` and requeue the job when a more urgent job is due.
+- **[Tom]** 0-MB worker slots (Voxtral STT, CPU OCR) queue behind the GPU
+  lock, so a search during a Voxtral transcription loses its vector legs.
+  The smallest fix is a second lane for `vram_estimate_mb == 0`; it changes
+  the `/status` shape and shutdown.
+- No CI step checks `worker/openapi.json` against the code. Suggested step:
+  `make openapi && git diff --exit-code worker/openapi.json`. Uploads are
+  still copied twice and have no size cap, which needs a new env var.
+- Two small follow-ups:
+  - The web search views should page by `truncated.next_offset`, which the
+    facade does not yet forward.
+  - `follows/store.py` should escape `LIKE` in title terms, as `queries.like_escape` does.
+
 ### 2026-10-04: captions-only self-host, what it still lacks
 
 `docs/self-host.md` is the guide (#195). Two gaps are open:
