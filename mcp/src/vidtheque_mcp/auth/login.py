@@ -12,7 +12,6 @@ whatever the client chose to claim.
 from __future__ import annotations
 
 import html
-import hmac
 import secrets
 import time
 
@@ -24,6 +23,7 @@ from ..config import Settings
 from . import android
 from .cimd import display_host
 from .provider import OWNER_SUBJECT, VidthequeOAuthProvider
+from .tokens import secrets_equal
 
 SESSION_COOKIE = "vidtheque_session"
 
@@ -69,17 +69,6 @@ def _render(heading: str, body: str, status: int = 200) -> HTMLResponse:
         status_code=status,
         headers=dict(_FRAME_HEADERS),
     )
-
-
-def _matches(supplied: str, expected: str) -> bool:
-    """Constant-time compare that a non-ASCII password cannot crash.
-
-    `hmac.compare_digest` on `str` raises TypeError for anything outside
-    ASCII, so `password=%C3%A9` was a 500 rather than a refusal — the same trap
-    exists on the bearer and signature paths. Comparing UTF-8 bytes keeps the
-    timing property and accepts every string. (2026-08-10 audit, auth hardening.)
-    """
-    return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
 
 
 class LoginThrottle:
@@ -205,7 +194,7 @@ def login_routes(
                 _login_body(request_key, "slow"),
                 status=429,
             )
-        if not settings.password or not _matches(supplied, settings.password):
+        if not settings.password or not secrets_equal(supplied, settings.password):
             throttle.record_failure()
             return _render(
                 "Sign in to vidtheque", _login_body(request_key, "bad"), status=401
