@@ -22,6 +22,14 @@ mkdir -p "$state"
 # The memory the routine may read, filtered by the deny list before it sees any.
 (cd "$repo" && uv run --quiet tools/claude-picks/memory.py) > "$state/memory.md"
 
+# Server down: the model reports "no tools" and exits 0, so 3 weeks of runs
+# (2026-10-16 to 11-09) looked fine to systemd. Fail the unit instead.
+url=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"].values()))["url"])' "$mcp")
+code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$url" || true)
+case $code in
+  000|5??) echo "claude-picks: $url unreachable (HTTP $code); no picks today" >&2; exit 3 ;;
+esac
+
 if [ "${1:-}" = "--dry-run" ]; then
   mode="This is a dry run."
   edit=()
